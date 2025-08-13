@@ -37,18 +37,6 @@ const Sidebar: React.FC<SidebarProps> = ({ activeSection, onSectionChange }) => 
       category: 'Inventory',
       children: [
         { id: 'all-products', label: 'All Products', icon: Archive, category: 'Inventory' },
-        { 
-          id: 'categories', 
-          label: 'Categories', 
-          icon: FileText, 
-          category: 'Inventory',
-          children: [
-            { id: 'feeds', label: 'Feeds', icon: Apple, category: 'Inventory' },
-            { id: 'medicine', label: 'Medicine', icon: Pill, category: 'Inventory' },
-            { id: 'agriculture', label: 'Agriculture', icon: Wrench, category: 'Inventory' },
-            { id: 'tools', label: 'Tools & Accessories', icon: Hammer, category: 'Inventory' },
-          ]
-        },
         { id: 'low-stock', label: 'Low Stock Alerts', icon: AlertTriangle, category: 'Inventory' },
       ]
     },

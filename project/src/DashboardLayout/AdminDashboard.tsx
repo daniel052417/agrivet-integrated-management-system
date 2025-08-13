@@ -10,6 +10,7 @@ import ProductSalesReport from '../Admin/components/Sales/ProductSalesReport';
 import InventorySummaryPage from '../Admin/components/Inventory/InventorySummaryPage';
 import InventoryManagement from '../Admin/components/Inventory/InventoryManagement';
 import StaffManagement from '../Admin/components/Staff/StaffManagement';
+import Reports from '../Admin/components/Reports/Reports';
 import AttendanceTimesheet from '../Admin/components/Staff/AttendanceTimesheet';
 import RolesPermissions from '../Admin/components/Staff/RolesPermissions';
 import LeaveRequest from '../Admin/components/Staff/LeaveRequest';
@@ -18,11 +19,15 @@ import Announcements from '../Admin/components/Marketing/Announcements';
 import ReferralsVenueAds from '../Admin/components/Marketing/ReferralsVenueAds';
 import ClientNotifications from '../Admin/components/Marketing/ClientNotifications';
 import LoyaltyRewards from '../Admin/components/Marketing/LoyaltyRewards';
-import ReportsAnalytics from '../Admin/components/Reports/ReportsAnalytics';
+import InventoryReports from '../Admin/components/Reports/InventoryReports';
+import TransactionReports from '../Admin/components/Reports/TransactionReports';
+import StaffActivityReports from '../Admin/components/Reports/StaffActivityReports';
+import ClientReports from '../Admin/components/Reports/ClientReports';
 import EventCenter from '../Admin/components/Reports/EventCenter';
+import ReportsAnalytics from '../Admin/components/Reports/ReportsAnalytics';
 import SettingsPage from '../Admin/components/Settings/SettingsPage';
+import LowStockAlerts from '../Admin/components/Inventory/LowStockAlerts';
 import { UserProfile } from '../lib/supabase';
-
 interface AdminDashboardProps {
   user: UserProfile;
   onLogout: () => void;
@@ -33,7 +38,7 @@ function AdminDashboard({user}: AdminDashboardProps) {
   const [activeSection, setActiveSection] = useState('overview');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
-  const renderContent = () => {
+   const renderContent = () => {
     switch (activeSection) {
       case 'overview':
         return <Overview />;
@@ -56,8 +61,9 @@ function AdminDashboard({user}: AdminDashboardProps) {
       case 'medicine':
       case 'agriculture':
       case 'tools':
-      case 'low-stock':
         return <InventoryManagement />;
+      case 'low-stock':
+        return <LowStockAlerts />;
       case 'staff':
       case 'staff-management':
       case 'add-staff':
