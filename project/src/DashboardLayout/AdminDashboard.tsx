@@ -27,6 +27,7 @@ import EventCenter from '../Admin/components/Reports/EventCenter';
 import ReportsAnalytics from '../Admin/components/Reports/ReportsAnalytics';
 import SettingsPage from '../Admin/components/Settings/SettingsPage';
 import LowStockAlerts from '../Admin/components/Inventory/LowStockAlerts';
+import Categories from '../Admin/components/Inventory/Categories';
 import { UserProfile } from '../lib/supabase';
 interface AdminDashboardProps {
   user: UserProfile;
@@ -56,7 +57,9 @@ function AdminDashboard({user, onLogout}: AdminDashboardProps) {
         return <InventorySummaryPage />;
       case 'inventory-management':
       case 'all-products':
+        return <InventoryManagement />;
       case 'categories':
+        return <Categories />;
       case 'feeds':
       case 'medicine':
       case 'agriculture':

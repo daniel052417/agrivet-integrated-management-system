@@ -1,73 +1,148 @@
-import React, { useState } from 'react';
-import { DollarSign, TrendingUp, TrendingDown, Calendar, Filter, Download, Eye, BarChart3, PieChart, Target } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { DollarSign, TrendingUp, TrendingDown, Download, BarChart3, PieChart, Target } from 'lucide-react';
+import { supabase } from '../../../lib/supabase';
 
 const SalesValue: React.FC = () => {
   const [selectedPeriod, setSelectedPeriod] = useState('monthly');
-  const [selectedCategory, setSelectedCategory] = useState('all');
+  // const [selectedCategory, setSelectedCategory] = useState('all');
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const salesMetrics = [
-    {
-      title: 'Total Sales Value',
-      value: '₱1,247,850',
-      change: '+18.5%',
-      isPositive: true,
-      period: 'This Month',
-      color: 'bg-green-600',
-      icon: 'sales'
-    },
-    {
-      title: 'Average Order Value',
-      value: '₱2,450',
-      change: '+12.3%',
-      isPositive: true,
-      period: 'This Month',
-      color: 'bg-blue-600',
-      icon: 'order'
-    },
-    {
-      title: 'Daily Sales Average',
-      value: '₱41,595',
-      change: '+8.7%',
-      isPositive: true,
-      period: 'Last 30 Days',
-      color: 'bg-purple-600',
-      icon: 'daily'
-    },
-    {
-      title: 'Sales Target Achievement',
-      value: '87.5%',
-      change: '+5.2%',
-      isPositive: true,
-      period: 'Monthly Target',
-      color: 'bg-orange-600',
-      icon: 'target'
-    }
-  ];
+  type TxRow = { id: string; total_amount: number; transaction_date: string; payment_method: string | null };
+  type ItemRow = { product_id: string; quantity: number; unit_price: number; discount_amount: number | null; line_total: number | null; created_at: string };
+  type ProductRow = { id: string; name: string; category_id: string | null; cost_price: number };
+  type CategoryRow = { id: string; name: string };
 
-  const salesByCategory = [
-    { category: 'Veterinary Medicines', value: '₱485,200', percentage: 38.9, growth: '+22.1%', color: 'bg-red-500' },
-    { category: 'Agricultural Products', value: '₱324,150', percentage: 26.0, growth: '+15.8%', color: 'bg-green-500' },
-    { category: 'Fresh Fruits', value: '₱218,750', percentage: 17.5, growth: '+8.3%', color: 'bg-orange-500' },
-    { category: 'Tools & Equipment', value: '₱156,890', percentage: 12.6, growth: '+18.9%', color: 'bg-blue-500' },
-    { category: 'Animal Feed', value: '₱62,860', percentage: 5.0, growth: '+12.4%', color: 'bg-yellow-500' }
-  ];
+  type Metric = { title: string; value: string; change: string; isPositive: boolean; period: string; color: string; icon: 'sales' | 'order' | 'daily' | 'target' };
+  type CategoryMetric = { category: string; value: string; percentage: number; growth: string; color: string };
+  type Trend = { month: string; sales: number; target: number; orders: number };
+  type TopProd = { name: string; sales: string; units: number; margin: string };
 
-  const monthlyTrends = [
-    { month: 'Jan', sales: 980000, target: 1000000, orders: 245 },
-    { month: 'Feb', sales: 1120000, target: 1100000, orders: 289 },
-    { month: 'Mar', sales: 1050000, target: 1150000, orders: 267 },
-    { month: 'Apr', sales: 1280000, target: 1200000, orders: 312 },
-    { month: 'May', sales: 1350000, target: 1250000, orders: 334 },
-    { month: 'Jun', sales: 1247850, target: 1300000, orders: 298 }
-  ];
+  const [salesMetrics, setSalesMetrics] = useState<Metric[]>([]);
+  const [salesByCategory, setSalesByCategory] = useState<CategoryMetric[]>([]);
+  const [monthlyTrends, setMonthlyTrends] = useState<Trend[]>([]);
+  const [topProducts, setTopProducts] = useState<TopProd[]>([]);
 
-  const topProducts = [
-    { name: 'Veterinary Antibiotics', sales: '₱125,400', units: 234, margin: '45%' },
-    { name: 'Organic Fertilizer Premium', sales: '₱98,750', units: 189, margin: '38%' },
-    { name: 'Fresh Mango Export Grade', sales: '₱87,200', units: 156, margin: '52%' },
-    { name: 'Professional Pruning Tools', sales: '₱76,890', units: 98, margin: '42%' },
-    { name: 'Animal Vitamin Complex', sales: '₱65,430', units: 145, margin: '48%' }
-  ];
+  function getPeriodRange(period: string): { start: Date; end: Date; prevStart: Date; prevEnd: Date } {
+    const now = new Date();
+    let start: Date; let end: Date;
+    if (period === 'daily') { start = new Date(now); start.setHours(0,0,0,0); end = new Date(now); end.setHours(23,59,59,999); }
+    else if (period === 'weekly') { end = new Date(now); end.setHours(23,59,59,999); start = new Date(end); start.setDate(end.getDate()-6); start.setHours(0,0,0,0); }
+    else if (period === 'yearly') { start = new Date(now.getFullYear(),0,1); end = new Date(now.getFullYear(),11,31); end.setHours(23,59,59,999); }
+    else { start = new Date(now.getFullYear(), now.getMonth(), 1); end = new Date(now.getFullYear(), now.getMonth()+1, 0); end.setHours(23,59,59,999); }
+    const prevEnd = new Date(start.getTime() - 1);
+    const prevStart = new Date(prevEnd.getTime() - (end.getTime() - start.getTime()));
+    return { start, end, prevStart, prevEnd };
+  }
+
+  function formatPHP(n: number): string { return `₱${Math.round(n).toLocaleString()}`; }
+
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const { start, end, prevStart, prevEnd } = getPeriodRange(selectedPeriod);
+
+        const [{ data: txRows, error: txErr }, { data: prevTxRows, error: prevTxErr }] = await Promise.all([
+          supabase.from('sales_transactions').select('id, total_amount, transaction_date, payment_method').gte('transaction_date', start.toISOString()).lt('transaction_date', end.toISOString()) as any,
+          supabase.from('sales_transactions').select('id, total_amount, transaction_date').gte('transaction_date', prevStart.toISOString()).lt('transaction_date', prevEnd.toISOString()) as any,
+        ]);
+        if (txErr) throw txErr; if (prevTxErr) throw prevTxErr;
+        const txs = (txRows as TxRow[] | null) || [];
+        const prevTxs = (prevTxRows as TxRow[] | null) || [];
+
+        const totalSales = txs.reduce((s, t) => s + Number(t.total_amount || 0), 0);
+        const totalOrders = txs.length;
+        const avgOrder = totalOrders > 0 ? totalSales / totalOrders : 0;
+        const prevTotal = prevTxs.reduce((s, t) => s + Number(t.total_amount || 0), 0);
+        const salesGrowth = prevTotal > 0 ? ((totalSales - prevTotal) / prevTotal) * 100 : 0;
+        const dailyAvg = (totalSales / Math.max(1, (end.getTime() - start.getTime() + 1) / (24*60*60*1000)));
+        const targetAch = prevTotal > 0 ? (totalSales / prevTotal) * 100 : 0;
+
+        setSalesMetrics([
+          { title: 'Total Sales Value', value: formatPHP(totalSales), change: `${salesGrowth >= 0 ? '+' : ''}${salesGrowth.toFixed(1)}%`, isPositive: salesGrowth >= 0, period: 'vs previous', color: 'bg-green-600', icon: 'sales' },
+          { title: 'Average Order Value', value: formatPHP(avgOrder), change: '', isPositive: true, period: 'Current Period', color: 'bg-blue-600', icon: 'order' },
+          { title: 'Daily Sales Average', value: formatPHP(dailyAvg), change: '', isPositive: true, period: selectedPeriod === 'monthly' ? 'This Month' : 'Current Period', color: 'bg-purple-600', icon: 'daily' },
+          { title: 'Sales Target Achievement', value: `${targetAch.toFixed(1)}%`, change: '', isPositive: true, period: 'vs previous', color: 'bg-orange-600', icon: 'target' },
+        ]);
+
+        // Category breakdown and top products based on items
+        const txIds = Array.from(new Set(txs.map(t => t.id)));
+        const { data: itemsData, error: itemsErr } = txIds.length ? await supabase.from('transaction_items').select('product_id, quantity, unit_price, discount_amount, line_total, created_at').in('transaction_id', txIds) : { data: [], error: null } as any;
+        if (itemsErr) throw itemsErr;
+        const items = (itemsData as ItemRow[] | null) || [];
+        const productIds = Array.from(new Set(items.map(i => i.product_id)));
+        const [{ data: prodRows, error: prodErr }, { data: catRows, error: catErr }] = await Promise.all([
+          productIds.length ? supabase.from('products').select('id, name, category_id, cost_price').in('id', productIds) : { data: [], error: null } as any,
+          supabase.from('categories').select('id, name'),
+        ]);
+        if (prodErr) throw prodErr; if (catErr) throw catErr;
+        const products = (prodRows as ProductRow[]) || [];
+        const cats = (catRows as CategoryRow[]) || [];
+        const catNameById = new Map<string, string>(); cats.forEach(c => catNameById.set(c.id, c.name));
+
+        const byCategory = new Map<string, { revenue: number; units: number }>();
+        const byProduct = new Map<string, { name: string; revenue: number; units: number; margin: number }>();
+        items.forEach(i => {
+          const revenue = Number(i.line_total ?? (i.quantity * (i.unit_price || 0) - (i.discount_amount || 0)));
+          const p = products.find(pp => pp.id === i.product_id);
+          const category = p?.category_id ? (catNameById.get(p.category_id) || 'Uncategorized') : 'Uncategorized';
+          const prevC = byCategory.get(category) || { revenue: 0, units: 0 };
+          prevC.revenue += revenue; prevC.units += Number(i.quantity || 0); byCategory.set(category, prevC);
+          if (p) {
+            const prevP = byProduct.get(p.id) || { name: p.name, revenue: 0, units: 0, margin: 0 };
+            prevP.revenue += revenue;
+            prevP.units += Number(i.quantity || 0);
+            const unitCost = Number(p.cost_price || 0);
+            const profit = revenue - unitCost * Number(i.quantity || 0);
+            prevP.margin = prevP.revenue > 0 ? (profit / prevP.revenue) * 100 : 0;
+            byProduct.set(p.id, prevP);
+          }
+        });
+
+        const catTotal = Array.from(byCategory.values()).reduce((s, v) => s + v.revenue, 0);
+        const COLORS = ['bg-red-500','bg-green-500','bg-orange-500','bg-blue-500','bg-yellow-500','bg-purple-500'];
+        const catList: CategoryMetric[] = Array.from(byCategory.entries()).map(([category, v], idx) => ({
+          category,
+          value: formatPHP(v.revenue),
+          percentage: catTotal > 0 ? (v.revenue / catTotal) * 100 : 0,
+          growth: '',
+          color: COLORS[idx % COLORS.length],
+        }))
+        .sort((a, b) => Number(a.value.replace(/[^0-9]/g,'') ) < Number(b.value.replace(/[^0-9]/g,'')) ? 1 : -1);
+        setSalesByCategory(catList);
+
+        const topList: TopProd[] = Array.from(byProduct.values())
+          .map(p => ({ name: p.name, sales: formatPHP(p.revenue), units: p.units, margin: `${p.margin.toFixed(1)}%` }))
+          .sort((a, b) => Number(a.sales.replace(/[^0-9]/g,'')) < Number(b.sales.replace(/[^0-9]/g,'')) ? 1 : -1)
+          .slice(0, 5);
+        setTopProducts(topList);
+
+        // Monthly trends using last 6 months
+        const months: Trend[] = [];
+        for (let i = 5; i >= 0; i--) {
+          const d = new Date(); d.setMonth(d.getMonth() - i, 1); d.setHours(0,0,0,0);
+          const next = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+          const { data, error: e } = await supabase.from('sales_transactions').select('total_amount, transaction_date').gte('transaction_date', d.toISOString()).lt('transaction_date', next.toISOString());
+          if (e) throw e;
+          const monthSales = ((data as any[])||[]).reduce((s, r) => s + Number(r.total_amount || 0), 0);
+          months.push({ month: d.toLocaleString('en-US', { month: 'short' }), sales: monthSales, target: monthSales * 1.05, orders: ((data as any[])||[]).length });
+        }
+        setMonthlyTrends(months);
+
+      } catch (e: any) {
+        console.error('Failed to load sales value', e);
+        setError('Failed to load sales value');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [selectedPeriod]);
+
+  // Static demo arrays removed; now using state populated from Supabase
 
   return (
     <div className="p-6 space-y-6">
@@ -96,7 +171,15 @@ const SalesValue: React.FC = () => {
 
       {/* Sales Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {salesMetrics.map((metric, index) => (
+        {loading && (
+          <>
+            <div className="h-28 bg-gray-100 rounded-xl animate-pulse" />
+            <div className="h-28 bg-gray-100 rounded-xl animate-pulse" />
+            <div className="h-28 bg-gray-100 rounded-xl animate-pulse" />
+            <div className="h-28 bg-gray-100 rounded-xl animate-pulse" />
+          </>
+        )}
+        {!loading && !error && salesMetrics.map((metric, index) => (
           <div key={index} className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-all duration-300 group">
             <div className="flex items-start justify-between mb-4">
               <div className={`w-12 h-12 ${metric.color.replace('bg-', 'bg-').replace('-600', '-50')} rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform duration-300`}>
@@ -121,6 +204,9 @@ const SalesValue: React.FC = () => {
             <div className={`w-full h-1 ${metric.color} rounded-full mt-4 opacity-20 group-hover:opacity-40 transition-opacity duration-300`}></div>
           </div>
         ))}
+        {error && !loading && (
+          <div className="col-span-4 text-sm text-red-600">{error}</div>
+        )}
       </div>
 
       {/* Sales Trends Chart */}
@@ -140,12 +226,20 @@ const SalesValue: React.FC = () => {
         </div>
 
         <div className="space-y-4">
-          {monthlyTrends.map((trend, index) => (
+          {loading ? (
+            <div className="space-y-2">
+              <div className="h-6 bg-gray-100 rounded animate-pulse" />
+              <div className="h-6 bg-gray-100 rounded animate-pulse" />
+              <div className="h-6 bg-gray-100 rounded animate-pulse" />
+            </div>
+          ) : error ? (
+            <div className="text-sm text-red-600">{error}</div>
+          ) : monthlyTrends.map((trend, index) => (
             <div key={index} className="flex items-center space-x-4">
               <div className="w-12 text-sm font-medium text-gray-600">{trend.month}</div>
               <div className="flex-1">
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-sm text-gray-700">₱{(trend.sales / 1000).toFixed(0)}K</span>
+                  <span className="text-sm text-gray-700">{formatPHP(trend.sales)}</span>
                   <span className="text-xs text-gray-500">{trend.orders} orders</span>
                 </div>
                 <div className="relative">
@@ -179,7 +273,15 @@ const SalesValue: React.FC = () => {
           </div>
 
           <div className="space-y-4">
-            {salesByCategory.map((category, index) => (
+            {loading ? (
+              <div className="space-y-2">
+                <div className="h-6 bg-gray-100 rounded animate-pulse" />
+                <div className="h-6 bg-gray-100 rounded animate-pulse" />
+                <div className="h-6 bg-gray-100 rounded animate-pulse" />
+              </div>
+            ) : error ? (
+              <div className="text-sm text-red-600">{error}</div>
+            ) : salesByCategory.map((category, index) => (
               <div key={index} className="space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-3">
@@ -197,7 +299,7 @@ const SalesValue: React.FC = () => {
                     style={{ width: `${category.percentage}%` }}
                   ></div>
                 </div>
-                <div className="text-xs text-gray-500">{category.percentage}% of total sales</div>
+                <div className="text-xs text-gray-500">{category.percentage.toFixed(1)}% of total sales</div>
               </div>
             ))}
           </div>
@@ -211,7 +313,15 @@ const SalesValue: React.FC = () => {
           </div>
 
           <div className="space-y-4">
-            {topProducts.map((product, index) => (
+            {loading ? (
+              <div className="space-y-2">
+                <div className="h-12 bg-gray-100 rounded animate-pulse" />
+                <div className="h-12 bg-gray-100 rounded animate-pulse" />
+                <div className="h-12 bg-gray-100 rounded animate-pulse" />
+              </div>
+            ) : error ? (
+              <div className="text-sm text-red-600">{error}</div>
+            ) : topProducts.map((product, index) => (
               <div key={index} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
                 <div className="flex items-center space-x-3">
                   <div className="flex items-center justify-center w-8 h-8 bg-green-100 text-green-600 rounded-full text-sm font-bold">

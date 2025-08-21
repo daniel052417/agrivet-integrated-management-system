@@ -1,120 +1,180 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Calendar, Clock, User, CheckCircle, XCircle, AlertCircle, Filter, Download, Eye, Edit } from 'lucide-react';
+import { supabase } from '../../../lib/supabase';
 
 const AttendanceTimesheet: React.FC = () => {
-  const [selectedDate, setSelectedDate] = useState('2024-01-15');
+  const todayStr = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const [selectedDate, setSelectedDate] = useState(todayStr);
   const [selectedStaff, setSelectedStaff] = useState('all');
+  const [selectedDepartment, setSelectedDepartment] = useState('all');
   const [viewMode, setViewMode] = useState('daily');
 
-  const attendanceData = [
-    {
-      id: 1,
-      name: 'Maria Santos',
-      position: 'Store Manager',
-      timeIn: '08:00 AM',
-      timeOut: '05:30 PM',
-      breakTime: '1h 00m',
-      totalHours: '8h 30m',
-      status: 'Present',
-      overtime: '0h 30m',
-      location: 'Main Branch'
-    },
-    {
-      id: 2,
-      name: 'Juan Dela Cruz',
-      position: 'Veterinarian',
-      timeIn: '09:15 AM',
-      timeOut: '06:00 PM',
-      breakTime: '45m',
-      totalHours: '8h 00m',
-      status: 'Late',
-      overtime: '1h 00m',
-      location: 'Main Branch'
-    },
-    {
-      id: 3,
-      name: 'Ana Rodriguez',
-      position: 'Sales Associate',
-      timeIn: '08:30 AM',
-      timeOut: '05:00 PM',
-      breakTime: '1h 15m',
-      totalHours: '7h 15m',
-      status: 'Present',
-      overtime: '0h 00m',
-      location: 'Branch 2'
-    },
-    {
-      id: 4,
-      name: 'Carlos Martinez',
-      position: 'Inventory Clerk',
-      timeIn: '-',
-      timeOut: '-',
-      breakTime: '-',
-      totalHours: '0h 00m',
-      status: 'Absent',
-      overtime: '0h 00m',
-      location: 'Warehouse'
-    },
-    {
-      id: 5,
-      name: 'Lisa Chen',
-      position: 'Cashier',
-      timeIn: '07:45 AM',
-      timeOut: '04:45 PM',
-      breakTime: '1h 00m',
-      totalHours: '8h 00m',
-      status: 'Present',
-      overtime: '0h 00m',
-      location: 'Branch 3'
-    }
-  ];
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+  const [records, setRecords] = useState<any[]>([]);
+  const [staffById, setStaffById] = useState<Map<string, { name: string; position: string; department: string; active: boolean }>>(new Map());
+  const [staffOptions, setStaffOptions] = useState<{ id: string; name: string }[]>([]);
+  const [departmentOptions, setDepartmentOptions] = useState<string[]>([]);
 
-  const weeklyStats = [
-    { day: 'Monday', present: 18, late: 2, absent: 1, total: 21 },
-    { day: 'Tuesday', present: 19, late: 1, absent: 1, total: 21 },
-    { day: 'Wednesday', present: 20, late: 0, absent: 1, total: 21 },
-    { day: 'Thursday', present: 17, late: 3, absent: 1, total: 21 },
-    { day: 'Friday', present: 19, late: 1, absent: 1, total: 21 }
-  ];
+  const startOfWeek = (d: Date) => {
+    const day = d.getUTCDay();
+    const diff = (day === 0 ? -6 : 1) - day; // Monday as start
+    const res = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+    res.setUTCDate(res.getUTCDate() + diff);
+    return res;
+  };
+  const endOfWeek = (d: Date) => {
+    const s = startOfWeek(d);
+    const e = new Date(s);
+    e.setUTCDate(e.getUTCDate() + 7);
+    return e;
+  };
+
+  const formatTime = (t?: string | null) => {
+    if (!t) return '-';
+    const [hh, mm] = t.split(':');
+    let h = Number(hh);
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12 || 12;
+    return `${String(h)}:${mm} ${ampm}`;
+  };
+
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        // Staff master data
+        const { data: staffRows, error: staffErr } = await supabase
+          .from('staff')
+          .select('id, first_name, last_name, position, department, is_active')
+          .order('first_name', { ascending: true });
+        if (staffErr) throw staffErr;
+        const sMap = new Map<string, { name: string; position: string; department: string; active: boolean }>();
+        const deptSet = new Set<string>();
+        (staffRows || []).forEach(s => {
+          sMap.set(s.id, { name: `${s.first_name || ''} ${s.last_name || ''}`.trim(), position: s.position || '', department: s.department || '—', active: !!s.is_active });
+          if (s.department) deptSet.add(s.department);
+        });
+        setStaffById(sMap);
+        setStaffOptions((staffRows || []).map(s => ({ id: s.id, name: `${s.first_name || ''} ${s.last_name || ''}`.trim() })));
+        setDepartmentOptions(['all', ...Array.from(deptSet.values())]);
+
+        // Attendance for the week window
+        const d = new Date(`${selectedDate}T00:00:00.000Z`);
+        const start = startOfWeek(d);
+        const end = endOfWeek(d);
+        const { data: recs, error: recErr } = await supabase
+          .from('attendance_records')
+          .select('id, staff_id, attendance_date, time_in, time_out, break_start, break_end, total_hours, overtime_hours, status, notes')
+          .gte('attendance_date', start.toISOString())
+          .lt('attendance_date', end.toISOString())
+          .order('attendance_date', { ascending: true });
+        if (recErr) throw recErr;
+        setRecords(recs || []);
+      } catch (e: any) {
+        console.error('Failed to load attendance', e);
+        setError('Failed to load attendance');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, [selectedDate]);
+
+  const matchesFilters = (staffId: string) => {
+    if (selectedStaff !== 'all' && staffId !== selectedStaff) return false;
+    if (selectedDepartment !== 'all') {
+      const dep = staffById.get(staffId)?.department || '';
+      if (dep !== selectedDepartment) return false;
+    }
+    return true;
+  };
+
+  const dailyRecords = useMemo(() => {
+    const dayStr = selectedDate;
+    return (records || []).filter(r => r.attendance_date?.slice(0, 10) === dayStr && matchesFilters(r.staff_id));
+  }, [records, selectedDate, selectedStaff, selectedDepartment, staffById]);
+
+  const totalActiveStaff = useMemo(() => {
+    const all = Array.from(staffById.entries()).filter(([, v]) => v.active);
+    if (selectedDepartment !== 'all') {
+      return all.filter(([, v]) => v.department === selectedDepartment).length;
+    }
+    return all.length;
+  }, [staffById, selectedDepartment]);
+
+  const presentCount = useMemo(() => dailyRecords.filter(r => (r.status || 'present') === 'present').length, [dailyRecords]);
+  const lateCount = useMemo(() => dailyRecords.filter(r => (r.status || '') === 'late').length, [dailyRecords]);
+  const absentCount = useMemo(() => dailyRecords.filter(r => (r.status || '') === 'absent').length, [dailyRecords]);
+  const totalHours = useMemo(() => dailyRecords.reduce((s, r) => s + Number(r.total_hours || 0), 0), [dailyRecords]);
 
   const summaryMetrics = [
-    {
-      title: 'Present Today',
-      value: '17',
-      total: '21',
-      percentage: 81,
-      color: 'text-green-600',
-      bgColor: 'bg-green-100',
-      icon: CheckCircle
-    },
-    {
-      title: 'Late Arrivals',
-      value: '3',
-      total: '21',
-      percentage: 14,
-      color: 'text-orange-600',
-      bgColor: 'bg-orange-100',
-      icon: AlertCircle
-    },
-    {
-      title: 'Absent',
-      value: '1',
-      total: '21',
-      percentage: 5,
-      color: 'text-red-600',
-      bgColor: 'bg-red-100',
-      icon: XCircle
-    },
-    {
-      title: 'Total Hours',
-      value: '136h',
-      total: '168h',
-      percentage: 81,
-      color: 'text-blue-600',
-      bgColor: 'bg-blue-100',
-      icon: Clock
-    }
+    { title: 'Present Today', value: String(presentCount), total: String(totalActiveStaff), percentage: totalActiveStaff > 0 ? Math.round((presentCount / totalActiveStaff) * 100) : 0, color: 'text-green-600', bgColor: 'bg-green-100', icon: CheckCircle },
+    { title: 'Late Arrivals', value: String(lateCount), total: String(totalActiveStaff), percentage: totalActiveStaff > 0 ? Math.round((lateCount / totalActiveStaff) * 100) : 0, color: 'text-orange-600', bgColor: 'bg-orange-100', icon: AlertCircle },
+    { title: 'Absent', value: String(absentCount), total: String(totalActiveStaff), percentage: totalActiveStaff > 0 ? Math.round((absentCount / totalActiveStaff) * 100) : 0, color: 'text-red-600', bgColor: 'bg-red-100', icon: XCircle },
+    { title: 'Total Hours', value: `${totalHours.toFixed(1)}h`, total: `${(totalActiveStaff * 8).toFixed(0)}h`, percentage: totalActiveStaff > 0 ? Math.min(100, Math.round((totalHours / (totalActiveStaff * 8)) * 100)) : 0, color: 'text-blue-600', bgColor: 'bg-blue-100', icon: Clock }
   ];
+
+  const weeklyStats = useMemo(() => {
+    const d = new Date(`${selectedDate}T00:00:00.000Z`);
+    const s = startOfWeek(d);
+    const days: { day: string; present: number; late: number; absent: number; total: number }[] = [];
+    for (let i = 0; i < 5; i++) {
+      const cur = new Date(s);
+      cur.setUTCDate(cur.getUTCDate() + i);
+      const curStr = cur.toISOString().slice(0, 10);
+      const rows = (records || []).filter(r => r.attendance_date?.slice(0, 10) === curStr && matchesFilters(r.staff_id));
+      const present = rows.filter(r => (r.status || 'present') === 'present').length;
+      const late = rows.filter(r => (r.status || '') === 'late').length;
+      const absent = rows.filter(r => (r.status || '') === 'absent').length;
+      const dayName = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][cur.getUTCDay()];
+      days.push({ day: dayName, present, late, absent, total: totalActiveStaff });
+    }
+    return days;
+  }, [records, selectedDate, selectedStaff, selectedDepartment, staffById, totalActiveStaff]);
+
+  const tableRows = useMemo(() => {
+    return dailyRecords.map(r => {
+      const staff = staffById.get(r.staff_id);
+      const breakMinutes = (() => {
+        if (!r.break_start || !r.break_end) return null;
+        const [bsH, bsM] = r.break_start.split(':').map((x: string) => Number(x));
+        const [beH, beM] = r.break_end.split(':').map((x: string) => Number(x));
+        const minutes = (beH * 60 + beM) - (bsH * 60 + bsM);
+        return minutes;
+      })();
+      const breakStr = breakMinutes == null ? '-' : (breakMinutes >= 60 ? `${Math.floor(breakMinutes / 60)}h ${breakMinutes % 60}m` : `${breakMinutes}m`);
+      const totalStr = `${Number(r.total_hours || 0).toFixed(1)}h`;
+      const overtimeStr = `${Number(r.overtime_hours || 0).toFixed(1)}h`;
+      const statusLabel = ((r.status || 'present') === 'present' ? 'Present' : (r.status || '') === 'late' ? 'Late' : (r.status || '') === 'absent' ? 'Absent' : (r.status || '').replace('_', ' '));
+      return {
+        id: r.id,
+        name: staff?.name || '—',
+        position: staff?.position || '—',
+        timeIn: formatTime(r.time_in),
+        timeOut: formatTime(r.time_out),
+        breakTime: breakStr,
+        totalHours: totalStr,
+        status: statusLabel,
+        overtime: overtimeStr,
+        location: staff?.department || '—'
+      };
+    });
+  }, [dailyRecords, staffById]);
+
+  const onExport = () => {
+    const headers = ['Staff Member', 'Position', 'Time In', 'Time Out', 'Break', 'Total Hours', 'Overtime', 'Status', 'Department'];
+    const rows = tableRows.map(r => [r.name, r.position, r.timeIn, r.timeOut, r.breakTime, r.totalHours, r.overtime, r.status, r.location]);
+    const csv = [headers, ...rows].map(cols => cols.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `attendance_${selectedDate}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -142,12 +202,18 @@ const AttendanceTimesheet: React.FC = () => {
             <option value="weekly">Weekly View</option>
             <option value="monthly">Monthly View</option>
           </select>
-          <button className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
+          <button onClick={onExport} className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
             <Download className="w-4 h-4" />
             <span>Export Report</span>
           </button>
         </div>
       </div>
+
+      {error && (
+        <div className="bg-red-50 text-red-700 border border-red-200 rounded-lg px-4 py-3 mb-4">
+          {error}
+        </div>
+      )}
 
       {/* Summary Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
@@ -198,20 +264,17 @@ const AttendanceTimesheet: React.FC = () => {
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
             >
               <option value="all">All Staff</option>
-              <option value="maria">Maria Santos</option>
-              <option value="juan">Juan Dela Cruz</option>
-              <option value="ana">Ana Rodriguez</option>
-              <option value="carlos">Carlos Martinez</option>
+              {staffOptions.map(s => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
             </select>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Department</label>
-            <select className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent">
-              <option value="all">All Departments</option>
-              <option value="operations">Operations</option>
-              <option value="sales">Sales</option>
-              <option value="veterinary">Veterinary</option>
-              <option value="warehouse">Warehouse</option>
+            <select value={selectedDepartment} onChange={(e) => setSelectedDepartment(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent">
+              {departmentOptions.map(dep => (
+                <option key={dep} value={dep}>{dep === 'all' ? 'All Departments' : dep}</option>
+              ))}
             </select>
           </div>
           <div className="flex items-end">
@@ -251,11 +314,11 @@ const AttendanceTimesheet: React.FC = () => {
                 </div>
               </div>
               <div className="text-right">
-                <span className="text-sm font-medium text-gray-900">{day.present}/{day.total}</span>
+                <span className="text-sm font-medium text-gray-900">{day.total ? `${day.present}/${day.total}` : `${day.present}`}</span>
                 <div className="w-32 bg-gray-200 rounded-full h-2 mt-1">
                   <div 
                     className="bg-green-500 h-2 rounded-full"
-                    style={{ width: `${(day.present / day.total) * 100}%` }}
+                    style={{ width: `${day.total ? (day.present / day.total) * 100 : 0}%` }}
                   ></div>
                 </div>
               </div>
@@ -284,7 +347,14 @@ const AttendanceTimesheet: React.FC = () => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {attendanceData.map((record) => (
+              {loading && (
+                <tr>
+                  <td className="px-6 py-4" colSpan={8}>
+                    <div className="h-12 bg-gray-100 rounded animate-pulse"></div>
+                  </td>
+                </tr>
+              )}
+              {!loading && tableRows.map((record) => (
                 <tr key={record.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center">

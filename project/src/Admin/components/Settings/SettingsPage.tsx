@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { 
   Settings, User, Lock, Bell, Mail, Shield, Database, Download, Upload, 
-  Key, Eye, EyeOff, Save, RefreshCw, Globe, Palette, Monitor, 
-  Smartphone, Clock, MapPin, Phone, Building, Users, AlertTriangle
+  Key, Eye, EyeOff, Save, RefreshCw, Monitor, 
+  Smartphone, MapPin, Phone, Building, Users
 } from 'lucide-react';
+import { supabase } from '../../../lib/supabase';
 
 const SettingsPage: React.FC = () => {
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
@@ -11,47 +12,38 @@ const SettingsPage: React.FC = () => {
   const [selectedTheme, setSelectedTheme] = useState('light');
   const [selectedLanguage, setSelectedLanguage] = useState('en');
   const [selectedTimezone, setSelectedTimezone] = useState('Asia/Manila');
-  const [expandedRequest, setExpandedRequest] = useState<number | null>(null);
-  const [tempPasswords, setTempPasswords] = useState<{ [key: number]: string }>({});
+  const [expandedRequest, setExpandedRequest] = useState<string | null>(null);
+  const [tempPasswords, setTempPasswords] = useState<{ [key: string]: string }>({});
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const passwordResetRequests = [
-    {
-      id: 1,
-      employeeName: 'Maria Santos',
-      email: 'maria.santos@agrivet.com',
-      position: 'Store Manager',
-      dateRequested: '2024-01-15',
-      status: 'Pending',
-      reason: 'Forgot password'
-    },
-    {
-      id: 2,
-      employeeName: 'Juan Dela Cruz',
-      email: 'juan.delacruz@agrivet.com',
-      position: 'Veterinarian',
-      dateRequested: '2024-01-14',
-      status: 'Pending',
-      reason: 'Account locked'
-    },
-    {
-      id: 3,
-      employeeName: 'Ana Rodriguez',
-      email: 'ana.rodriguez@agrivet.com',
-      position: 'Sales Associate',
-      dateRequested: '2024-01-13',
-      status: 'Approved',
-      reason: 'Security update'
-    },
-    {
-      id: 4,
-      employeeName: 'Carlos Martinez',
-      email: 'carlos.martinez@agrivet.com',
-      position: 'Inventory Clerk',
-      dateRequested: '2024-01-12',
-      status: 'Approved',
-      reason: 'Forgot password'
-    }
-  ];
+  // App settings state
+  const [appName, setAppName] = useState('AGRIVET Admin Dashboard');
+  const [companyName, setCompanyName] = useState('AGRIVET Supply Co.');
+  const [contactEmail, setContactEmail] = useState('admin@agrivet.com');
+  const [supportPhone, setSupportPhone] = useState('+63 2 8123 4567');
+  const [currency, setCurrency] = useState('PHP');
+  const [autoSave, setAutoSave] = useState(true);
+  const [showTooltips, setShowTooltips] = useState(true);
+  const [compactView, setCompactView] = useState(false);
+  const [itemsPerPage, setItemsPerPage] = useState(25);
+  const [dateFormat, setDateFormat] = useState('YYYY-MM-DD');
+  const [numberFormat, setNumberFormat] = useState('1,234.56');
+  const [notificationPrefs, setNotificationPrefs] = useState<{ id: string; enabled: boolean }[]>([
+    { id: 'email_sales', enabled: true },
+    { id: 'email_inventory', enabled: true },
+    { id: 'email_staff', enabled: false },
+    { id: 'email_reports', enabled: true },
+    { id: 'sms_critical', enabled: true },
+    { id: 'push_mobile', enabled: false },
+  ]);
+
+  // Branches and password reset requests
+  const [branches, setBranches] = useState<any[]>([]);
+  const [showAddBranch, setShowAddBranch] = useState(false);
+  const [newBranch, setNewBranch] = useState({ name: '', address: '', city: '', phone: '', manager_name: '', is_active: true });
+  const [resetRequests, setResetRequests] = useState<any[]>([]);
+  const [staffById, setStaffById] = useState<Map<string, { name: string; position: string; email: string }>>(new Map());
 
   const settingsSections = [
     {
@@ -87,21 +79,162 @@ const SettingsPage: React.FC = () => {
     { label: 'System Status', value: 'Operational' }
   ];
 
-  const notificationSettings = [
-    { id: 'email_sales', label: 'Sales Notifications', description: 'Get notified about new sales and transactions', enabled: true },
-    { id: 'email_inventory', label: 'Inventory Alerts', description: 'Low stock and out of stock notifications', enabled: true },
-    { id: 'email_staff', label: 'Staff Updates', description: 'Staff attendance and leave request notifications', enabled: false },
-    { id: 'email_reports', label: 'Report Generation', description: 'Automated report completion notifications', enabled: true },
-    { id: 'sms_critical', label: 'Critical SMS Alerts', description: 'Emergency and critical system alerts via SMS', enabled: true },
-    { id: 'push_mobile', label: 'Mobile Push Notifications', description: 'Push notifications to mobile devices', enabled: false }
-  ];
+  const notificationCatalogue = useMemo(() => ([
+    { id: 'email_sales', label: 'Sales Notifications', description: 'Get notified about new sales and transactions' },
+    { id: 'email_inventory', label: 'Inventory Alerts', description: 'Low stock and out of stock notifications' },
+    { id: 'email_staff', label: 'Staff Updates', description: 'Staff attendance and leave request notifications' },
+    { id: 'email_reports', label: 'Report Generation', description: 'Automated report completion notifications' },
+    { id: 'sms_critical', label: 'Critical SMS Alerts', description: 'Emergency and critical system alerts via SMS' },
+    { id: 'push_mobile', label: 'Mobile Push Notifications', description: 'Push notifications to mobile devices' }
+  ]), []);
 
-  const branchSettings = [
-    { name: 'Main Branch - Quezon City', address: '123 Commonwealth Ave, Quezon City', phone: '+63 2 8123 4567', status: 'Active' },
-    { name: 'Branch 2 - Makati', address: '456 Ayala Ave, Makati City', phone: '+63 2 8234 5678', status: 'Active' },
-    { name: 'Branch 3 - Cebu', address: '789 Colon St, Cebu City', phone: '+63 32 234 5678', status: 'Active' },
-    { name: 'Branch 4 - Davao', address: '321 Roxas Ave, Davao City', phone: '+63 82 234 5678', status: 'Inactive' }
-  ];
+  const toggleNotification = (id: string) => {
+    setNotificationPrefs(prev => {
+      const map = new Map(prev.map(p => [p.id, p.enabled] as [string, boolean]));
+      map.set(id, !map.get(id));
+      return Array.from(map.entries()).map(([nid, enabled]) => ({ id: nid, enabled }));
+    });
+  };
+
+  useEffect(() => {
+    const loadAll = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        // settings
+        const { data: settingsRows } = await supabase.from('app_settings').select('*').limit(1);
+        const s = (settingsRows && settingsRows[0]) || null;
+        if (s) {
+          setAppName(s.app_name || appName);
+          setCompanyName(s.company_name || companyName);
+          setContactEmail(s.contact_email || contactEmail);
+          setSupportPhone(s.support_phone || supportPhone);
+          setSelectedTheme(s.theme || selectedTheme);
+          setSelectedLanguage(s.language || selectedLanguage);
+          setSelectedTimezone(s.timezone || selectedTimezone);
+          setCurrency(s.currency || currency);
+          setAutoSave(Boolean(s.auto_save));
+          setShowTooltips(Boolean(s.show_tooltips));
+          setCompactView(Boolean(s.compact_view));
+          setItemsPerPage(Number(s.items_per_page || itemsPerPage));
+          setDateFormat(s.date_format || dateFormat);
+          setNumberFormat(s.number_format || numberFormat);
+          if (s.notification_prefs) setNotificationPrefs(s.notification_prefs);
+        }
+
+        // branches
+        const { data: branchRows } = await supabase.from('branches').select('id, name, address, city, phone, manager_name, is_active');
+        setBranches(branchRows || []);
+
+        // reset requests
+        const { data: reqRows } = await supabase
+          .from('password_reset_requests')
+          .select('id, staff_id, email, reason, status, requested_at, processed_at')
+          .order('requested_at', { ascending: false });
+        setResetRequests(reqRows || []);
+        const staffIds = Array.from(new Set((reqRows || []).map(r => r.staff_id).filter(Boolean)));
+        if (staffIds.length) {
+          const { data: staffRows } = await supabase.from('staff').select('id, first_name, last_name, email, position').in('id', staffIds as string[]);
+          const map = new Map<string, { name: string; position: string; email: string }>();
+          (staffRows || []).forEach(st => map.set(st.id, { name: `${st.first_name || ''} ${st.last_name || ''}`.trim(), position: st.position || '', email: st.email || '' }));
+          setStaffById(map);
+        } else {
+          setStaffById(new Map());
+        }
+      } catch (e) {
+        console.error('Load settings failed', e);
+        setError('Failed to load settings');
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const onSaveAll = async () => {
+    try {
+      setLoading(true);
+      const payload: any = {
+        app_name: appName,
+        company_name: companyName,
+        contact_email: contactEmail,
+        support_phone: supportPhone,
+        theme: selectedTheme,
+        language: selectedLanguage,
+        timezone: selectedTimezone,
+        currency,
+        auto_save: autoSave,
+        show_tooltips: showTooltips,
+        compact_view: compactView,
+        items_per_page: itemsPerPage,
+        date_format: dateFormat,
+        number_format: numberFormat,
+        notification_prefs: notificationPrefs,
+        updated_at: new Date().toISOString(),
+      };
+      const { data: existing } = await supabase.from('app_settings').select('id').limit(1);
+      if (existing && existing.length) {
+        const { error: err } = await supabase.from('app_settings').update(payload).eq('id', existing[0].id);
+        if (err) throw err;
+      } else {
+        const { error: err } = await supabase.from('app_settings').insert(payload);
+        if (err) throw err;
+      }
+      alert('Settings saved');
+    } catch (e) {
+      console.error('Save settings failed', e);
+      alert('Failed to save settings');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const onApproveReset = async (id: string) => {
+    try {
+      const { error: err } = await supabase
+        .from('password_reset_requests')
+        .update({ status: 'approved', processed_at: new Date().toISOString() })
+        .eq('id', id);
+      if (err) throw err;
+      setResetRequests(prev => prev.map(r => r.id === id ? { ...r, status: 'approved', processed_at: new Date().toISOString() } : r));
+      setExpandedRequest(null);
+    } catch (e) {
+      console.error('Approve reset failed', e);
+      alert('Failed to approve reset request');
+    }
+  };
+
+  const onAddBranch = async () => {
+    try {
+      if (!newBranch.name || !newBranch.address || !newBranch.city) {
+        alert('Please fill name, address and city');
+        return;
+      }
+      const { error: err } = await supabase.from('branches').insert(newBranch as any);
+      if (err) throw err;
+      const { data } = await supabase.from('branches').select('id, name, address, city, phone, manager_name, is_active');
+      setBranches(data || []);
+      setShowAddBranch(false);
+      setNewBranch({ name: '', address: '', city: '', phone: '', manager_name: '', is_active: true });
+    } catch (e) {
+      console.error('Add branch failed', e);
+      alert('Failed to add branch');
+    }
+  };
+
+  const exportBranches = () => {
+    const headers = ['Name', 'Address', 'City', 'Phone', 'Manager', 'Status'];
+    const rows = (branches || []).map(b => [b.name, b.address, b.city, b.phone, b.manager_name, b.is_active ? 'Active' : 'Inactive']);
+    const csv = [headers, ...rows].map(cols => cols.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'branches.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="p-6 space-y-6">
@@ -110,7 +243,7 @@ const SettingsPage: React.FC = () => {
           <h2 className="text-2xl font-bold text-gray-800">Settings</h2>
           <p className="text-gray-600 mt-1">Manage system preferences and configuration</p>
         </div>
-        <button className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
+        <button onClick={onSaveAll} className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors" disabled={loading}>
           <Save className="w-4 h-4" />
           <span>Save All Changes</span>
         </button>
@@ -142,6 +275,10 @@ const SettingsPage: React.FC = () => {
           <h3 className="text-lg font-semibold text-gray-800">General Settings</h3>
         </div>
 
+        {error && (
+          <div className="mb-4 bg-red-50 text-red-700 border border-red-200 rounded-lg px-4 py-3">{error}</div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="space-y-4">
             <div>
@@ -149,7 +286,8 @@ const SettingsPage: React.FC = () => {
               <input
                 type="text"
                 id="appName"
-                defaultValue="AGRIVET Admin Dashboard"
+                value={appName}
+                onChange={(e) => setAppName(e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
               />
             </div>
@@ -158,7 +296,8 @@ const SettingsPage: React.FC = () => {
               <input
                 type="text"
                 id="companyName"
-                defaultValue="AGRIVET Supply Co."
+                value={companyName}
+                onChange={(e) => setCompanyName(e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
               />
             </div>
@@ -167,7 +306,8 @@ const SettingsPage: React.FC = () => {
               <input
                 type="email"
                 id="contactEmail"
-                defaultValue="admin@agrivet.com"
+                value={contactEmail}
+                onChange={(e) => setContactEmail(e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
               />
             </div>
@@ -176,7 +316,8 @@ const SettingsPage: React.FC = () => {
               <input
                 type="tel"
                 id="supportPhone"
-                defaultValue="+63 2 8123 4567"
+                value={supportPhone}
+                onChange={(e) => setSupportPhone(e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
               />
             </div>
@@ -226,6 +367,8 @@ const SettingsPage: React.FC = () => {
               <label htmlFor="currency" className="block text-sm font-medium text-gray-700 mb-2">Default Currency</label>
               <select
                 id="currency"
+                value={currency}
+                onChange={(e) => setCurrency(e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
               >
                 <option value="PHP">Philippine Peso (₱)</option>
@@ -261,18 +404,18 @@ const SettingsPage: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
               <div className="bg-orange-50 rounded-lg p-4 text-center">
                 <p className="text-2xl font-bold text-orange-600">
-                  {passwordResetRequests.filter(req => req.status === 'Pending').length}
+                  {resetRequests.filter(req => (req.status || 'pending').toLowerCase() === 'pending').length}
                 </p>
                 <p className="text-sm text-gray-600">Pending Requests</p>
               </div>
               <div className="bg-green-50 rounded-lg p-4 text-center">
                 <p className="text-2xl font-bold text-green-600">
-                  {passwordResetRequests.filter(req => req.status === 'Approved').length}
+                  {resetRequests.filter(req => (req.status || 'pending').toLowerCase() === 'approved').length}
                 </p>
                 <p className="text-sm text-gray-600">Approved Today</p>
               </div>
               <div className="bg-blue-50 rounded-lg p-4 text-center">
-                <p className="text-2xl font-bold text-blue-600">{passwordResetRequests.length}</p>
+                <p className="text-2xl font-bold text-blue-600">{resetRequests.length}</p>
                 <p className="text-sm text-gray-600">Total Requests</p>
               </div>
             </div>
@@ -290,7 +433,7 @@ const SettingsPage: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {passwordResetRequests.map((request) => (
+                  {resetRequests.map((request: any) => (
                     <React.Fragment key={request.id}>
                       <tr className="hover:bg-gray-50 transition-colors">
                         <td className="px-6 py-4 whitespace-nowrap">
@@ -299,31 +442,31 @@ const SettingsPage: React.FC = () => {
                               <User className="w-5 h-5 text-white" />
                             </div>
                             <div>
-                              <div className="text-sm font-medium text-gray-900">{request.employeeName}</div>
-                              <div className="text-sm text-gray-500">{request.position}</div>
+                              <div className="text-sm font-medium text-gray-900">{(staffById.get(request.staff_id)?.name) || '—'}</div>
+                              <div className="text-sm text-gray-500">{(staffById.get(request.staff_id)?.position) || '—'}</div>
                             </div>
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex items-center space-x-1">
                             <Mail className="w-4 h-4 text-gray-400" />
-                            <span className="text-sm text-gray-900">{request.email}</span>
+                            <span className="text-sm text-gray-900">{request.email || staffById.get(request.staff_id)?.email || '—'}</span>
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {request.dateRequested}
+                          {(request.requested_at || '').slice(0, 16).replace('T', ' ')}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                            request.status === 'Pending' 
+                            (request.status || 'pending').toLowerCase() === 'pending' 
                               ? 'bg-orange-100 text-orange-800' 
                               : 'bg-green-100 text-green-800'
                           }`}>
-                            {request.status}
+                            {(request.status || 'pending').charAt(0).toUpperCase() + (request.status || 'pending').slice(1)}
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                          {request.status === 'Pending' ? (
+                          {(request.status || 'pending').toLowerCase() === 'pending' ? (
                             <button
                               onClick={() => setExpandedRequest(expandedRequest === request.id ? null : request.id)}
                               className="flex items-center space-x-1 px-3 py-1 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
@@ -338,7 +481,7 @@ const SettingsPage: React.FC = () => {
                       </tr>
                       
                       {/* Expanded row for temporary password input */}
-                      {expandedRequest === request.id && request.status === 'Pending' && (
+                      {expandedRequest === request.id && (request.status || 'pending').toLowerCase() === 'pending' && (
                         <tr className="bg-green-50">
                           <td colSpan={5} className="px-6 py-4">
                             <div className="max-w-md">
@@ -379,14 +522,8 @@ const SettingsPage: React.FC = () => {
                                   </button>
                                   <button
                                     onClick={() => {
-                                      // Handle send logic here (UI only)
-                                      alert(`Temporary password sent to ${request.email}`);
-                                      setExpandedRequest(null);
-                                      setTempPasswords(prev => {
-                                        const newState = { ...prev };
-                                        delete newState[request.id];
-                                        return newState;
-                                      });
+                                      alert(`Temporary password sent to ${request.email || staffById.get(request.staff_id)?.email || 'user'}`);
+                                      onApproveReset(request.id);
                                     }}
                                     disabled={!tempPasswords[request.id]}
                                     className="flex items-center space-x-1 px-3 py-1 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed text-xs"
@@ -396,7 +533,7 @@ const SettingsPage: React.FC = () => {
                                   </button>
                                 </div>
                                 <p className="text-xs text-gray-500">
-                                  The temporary password will be sent to {request.email} and must be changed on first login.
+                                  The temporary password will be sent to {request.email || staffById.get(request.staff_id)?.email || 'user'} and must be changed on first login.
                                 </p>
                               </div>
                             </div>
@@ -409,7 +546,7 @@ const SettingsPage: React.FC = () => {
               </table>
             </div>
 
-            {passwordResetRequests.length === 0 && (
+            {resetRequests.length === 0 && (
               <div className="text-center py-8">
                 <Key className="w-12 h-12 text-gray-300 mx-auto mb-4" />
                 <p className="text-gray-500">No password reset requests at this time.</p>
@@ -508,15 +645,15 @@ const SettingsPage: React.FC = () => {
         </div>
 
         <div className="space-y-4">
-          {notificationSettings.map((setting) => (
+          {notificationCatalogue.map((setting) => (
             <div key={setting.id} className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
               <div className="flex-1">
                 <div className="flex items-center space-x-3">
                   <h4 className="text-sm font-medium text-gray-900">{setting.label}</h4>
                   <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                    setting.enabled ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                    (notificationPrefs.find(p => p.id === setting.id)?.enabled ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800')
                   }`}>
-                    {setting.enabled ? 'Enabled' : 'Disabled'}
+                    {notificationPrefs.find(p => p.id === setting.id)?.enabled ? 'Enabled' : 'Disabled'}
                   </span>
                 </div>
                 <p className="text-sm text-gray-600 mt-1">{setting.description}</p>
@@ -525,7 +662,8 @@ const SettingsPage: React.FC = () => {
                 <input
                   type="checkbox"
                   id={setting.id}
-                  defaultChecked={setting.enabled}
+                  checked={!!notificationPrefs.find(p => p.id === setting.id)?.enabled}
+                  onChange={() => toggleNotification(setting.id)}
                   className="h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300 rounded"
                 />
               </div>
@@ -543,22 +681,22 @@ const SettingsPage: React.FC = () => {
             </div>
             <h3 className="text-lg font-semibold text-gray-800">Branch Settings</h3>
           </div>
-          <button className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+          <button onClick={() => setShowAddBranch(true)} className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
             <Building className="w-4 h-4" />
             <span>Add Branch</span>
           </button>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {branchSettings.map((branch, index) => (
-            <div key={index} className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors">
+          {branches.map((branch: any) => (
+            <div key={branch.id} className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors">
               <div className="flex items-start justify-between mb-3">
                 <div className="flex-1">
                   <h4 className="text-sm font-medium text-gray-900">{branch.name}</h4>
                   <div className="space-y-1 mt-2">
                     <div className="flex items-center space-x-2 text-xs text-gray-600">
                       <MapPin className="w-3 h-3" />
-                      <span>{branch.address}</span>
+                      <span>{branch.address}, {branch.city}</span>
                     </div>
                     <div className="flex items-center space-x-2 text-xs text-gray-600">
                       <Phone className="w-3 h-3" />
@@ -567,9 +705,9 @@ const SettingsPage: React.FC = () => {
                   </div>
                 </div>
                 <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                  branch.status === 'Active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                  branch.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
                 }`}>
-                  {branch.status}
+                  {branch.is_active ? 'Active' : 'Inactive'}
                 </span>
               </div>
               <div className="flex items-center space-x-2">
@@ -585,7 +723,54 @@ const SettingsPage: React.FC = () => {
             </div>
           ))}
         </div>
+        <div className="mt-4">
+          <button onClick={exportBranches} className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+            <Download className="w-4 h-4" />
+            <span>Export Branches (CSV)</span>
+          </button>
+        </div>
       </div>
+
+      {showAddBranch && (
+        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-lg border border-gray-200 w-full max-w-xl p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h4 className="text-lg font-semibold text-gray-800">Add Branch</h4>
+              <button onClick={() => setShowAddBranch(false)} className="text-gray-500 hover:text-gray-700">✕</button>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                <input value={newBranch.name} onChange={(e) => setNewBranch(v => ({ ...v, name: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">City</label>
+                <input value={newBranch.city} onChange={(e) => setNewBranch(v => ({ ...v, city: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
+                <input value={newBranch.address} onChange={(e) => setNewBranch(v => ({ ...v, address: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                <input value={newBranch.phone} onChange={(e) => setNewBranch(v => ({ ...v, phone: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Manager</label>
+                <input value={newBranch.manager_name} onChange={(e) => setNewBranch(v => ({ ...v, manager_name: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" />
+              </div>
+              <div className="flex items-center space-x-2 md:col-span-2">
+                <input type="checkbox" checked={newBranch.is_active} onChange={(e) => setNewBranch(v => ({ ...v, is_active: e.target.checked }))} className="h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300 rounded" />
+                <span className="text-sm text-gray-700">Active</span>
+              </div>
+            </div>
+            <div className="flex items-center justify-end space-x-3 mt-6">
+              <button onClick={() => setShowAddBranch(false)} className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">Cancel</button>
+              <button onClick={onAddBranch} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">Add Branch</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Data Management */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
@@ -607,9 +792,9 @@ const SettingsPage: React.FC = () => {
                 Download a complete backup of your application data for analysis or migration purposes.
               </p>
               <div className="space-y-2">
-                <button className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                <button onClick={exportBranches} className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
                   <Download className="w-4 h-4" />
-                  <span>Export All Data (CSV)</span>
+                  <span>Export Branches (CSV)</span>
                 </button>
                 <button className="w-full flex items-center justify-center space-x-2 px-4 py-2 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors">
                   <Download className="w-4 h-4" />
@@ -687,7 +872,8 @@ const SettingsPage: React.FC = () => {
               </div>
               <input
                 type="checkbox"
-                defaultChecked
+                checked={autoSave}
+                onChange={(e) => setAutoSave(e.target.checked)}
                 className="h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300 rounded"
               />
             </div>
@@ -698,7 +884,8 @@ const SettingsPage: React.FC = () => {
               </div>
               <input
                 type="checkbox"
-                defaultChecked
+                checked={showTooltips}
+                onChange={(e) => setShowTooltips(e.target.checked)}
                 className="h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300 rounded"
               />
             </div>
@@ -709,6 +896,8 @@ const SettingsPage: React.FC = () => {
               </div>
               <input
                 type="checkbox"
+                checked={compactView}
+                onChange={(e) => setCompactView(e.target.checked)}
                 className="h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300 rounded"
               />
             </div>
@@ -719,6 +908,8 @@ const SettingsPage: React.FC = () => {
               <label htmlFor="itemsPerPage" className="block text-sm font-medium text-gray-700 mb-2">Items per Page</label>
               <select
                 id="itemsPerPage"
+                value={String(itemsPerPage)}
+                onChange={(e) => setItemsPerPage(Number(e.target.value))}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
               >
                 <option value="10">10 items</option>
@@ -731,6 +922,8 @@ const SettingsPage: React.FC = () => {
               <label htmlFor="dateFormat" className="block text-sm font-medium text-gray-700 mb-2">Date Format</label>
               <select
                 id="dateFormat"
+                value={dateFormat}
+                onChange={(e) => setDateFormat(e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
               >
                 <option value="MM/DD/YYYY">MM/DD/YYYY</option>
@@ -742,6 +935,8 @@ const SettingsPage: React.FC = () => {
               <label htmlFor="numberFormat" className="block text-sm font-medium text-gray-700 mb-2">Number Format</label>
               <select
                 id="numberFormat"
+                value={numberFormat}
+                onChange={(e) => setNumberFormat(e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
               >
                 <option value="1,234.56">1,234.56</option>

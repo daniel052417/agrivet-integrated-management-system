@@ -38,6 +38,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeSection, onSectionChange, onLog
       category: 'Inventory',
       children: [
         { id: 'all-products', label: 'All Products', icon: Archive, category: 'Inventory' },
+        { id: 'categories', label: 'Categories', icon: Package, category: 'Inventory' },
         { id: 'low-stock', label: 'Low Stock Alerts', icon: AlertTriangle, category: 'Inventory' },
       ]
     },

@@ -1,106 +1,169 @@
-import React, { useState } from 'react';
-import { Calendar, DollarSign, ShoppingCart, TrendingUp, TrendingDown, Users, Clock, Package, Eye } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Calendar, DollarSign, ShoppingCart, TrendingUp, Users, Clock, Package, Eye } from 'lucide-react';
+import { supabase } from '../../../lib/supabase';
 
 const DailySalesSummary: React.FC = () => {
-  const [selectedDate, setSelectedDate] = useState('2024-01-15');
+  const todayStr = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const [selectedDate, setSelectedDate] = useState(todayStr);
 
-  const dailyMetrics = [
-    {
-      title: 'Total Sales',
-      value: '₱47,265',
-      change: '+12.5%',
-      isPositive: true,
-      icon: DollarSign,
-      color: 'bg-green-600'
-    },
-    {
-      title: 'Total Orders',
-      value: '23',
-      change: '+8.7%',
-      isPositive: true,
-      icon: ShoppingCart,
-      color: 'bg-blue-600'
-    },
-    {
-      title: 'Customers Served',
-      value: '19',
-      change: '+15.2%',
-      isPositive: true,
-      icon: Users,
-      color: 'bg-purple-600'
-    },
-    {
-      title: 'Average Order',
-      value: '₱2,055',
-      change: '+3.8%',
-      isPositive: true,
-      icon: Package,
-      color: 'bg-orange-600'
-    }
-  ];
+  // dynamic metrics state
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+  const [totalSales, setTotalSales] = useState<number>(0);
+  const [totalOrders, setTotalOrders] = useState<number>(0);
+  const [customersServed, setCustomersServed] = useState<number>(0);
+  const [avgOrder, setAvgOrder] = useState<number>(0);
+  const [growthPct, setGrowthPct] = useState<number>(0);
 
-  const hourlyBreakdown = [
-    { hour: '08:00', sales: 2450, orders: 2, customers: 2 },
-    { hour: '09:00', sales: 4200, orders: 3, customers: 3 },
-    { hour: '10:00', sales: 6800, orders: 4, customers: 3 },
-    { hour: '11:00', sales: 5600, orders: 3, customers: 3 },
-    { hour: '12:00', sales: 3200, orders: 2, customers: 2 },
-    { hour: '13:00', sales: 7800, orders: 4, customers: 4 },
-    { hour: '14:00', sales: 8900, orders: 3, customers: 2 },
-    { hour: '15:00', sales: 4500, orders: 2, customers: 2 },
-    { hour: '16:00', sales: 3815, orders: 1, customers: 1 }
-  ];
+  const [hourlyBreakdown, setHourlyBreakdown] = useState<{ hour: string; sales: number; orders: number; customers: number; }[]>([]);
 
-  const topSellingToday = [
-    { product: 'Veterinary Antibiotics', quantity: 12, revenue: '₱8,400', percentage: 17.8 },
-    { product: 'Organic Fertilizer Premium', quantity: 8, revenue: '₱6,200', percentage: 13.1 },
-    { product: 'Fresh Mango Export Grade', quantity: 15, revenue: '₱5,850', percentage: 12.4 },
-    { product: 'Professional Pruning Tools', quantity: 3, revenue: '₱4,200', percentage: 8.9 },
-    { product: 'Animal Vitamin Complex', quantity: 9, revenue: '₱3,600', percentage: 7.6 }
-  ];
+  const [topSellingToday, setTopSellingToday] = useState<{ product: string; quantity: number; revenue: string; percentage: number; }[]>([]);
 
-  const todaysTransactions = [
-    {
-      time: '15:45',
-      customer: 'Maria Santos',
-      items: ['Veterinary Syringe', 'Antibiotics'],
-      total: 2450,
-      payment: 'Cash',
-      staff: 'Juan Dela Cruz'
-    },
-    {
-      time: '14:20',
-      customer: 'Pedro Martinez',
-      items: ['Organic Fertilizer', 'Seeds'],
-      total: 1850,
-      payment: 'Card',
-      staff: 'Ana Rodriguez'
-    },
-    {
-      time: '13:15',
-      customer: 'Carmen Lopez',
-      items: ['Fresh Mangoes', 'Pruning Tools'],
-      total: 3200,
-      payment: 'Transfer',
-      staff: 'Maria Santos'
-    },
-    {
-      time: '11:30',
-      customer: 'Roberto Garcia',
-      items: ['Animal Feed'],
-      total: 890,
-      payment: 'Cash',
-      staff: 'Juan Dela Cruz'
-    }
-  ];
+  const [todaysTransactions, setTodaysTransactions] = useState<{ time: string; customer: string; items: string[]; total: number; payment: string; staff: string; }[]>([]);
 
-  const paymentMethods = [
-    { method: 'Cash', amount: '₱28,450', percentage: 60.2, color: 'bg-green-500' },
-    { method: 'Credit Card', amount: '₱12,650', percentage: 26.8, color: 'bg-blue-500' },
-    { method: 'Bank Transfer', amount: '₱6,165', percentage: 13.0, color: 'bg-purple-500' }
-  ];
+  const [paymentMethods, setPaymentMethods] = useState<{ method: string; amount: string; percentage: number; color: string; }[]>([]);
 
-  const maxHourlySales = Math.max(...hourlyBreakdown.map(h => h.sales));
+  const maxHourlySales = useMemo(() => Math.max(0, ...hourlyBreakdown.map(h => h.sales)), [hourlyBreakdown]);
+  const peak = useMemo(() => {
+    const p = hourlyBreakdown.reduce((prev, cur) => (cur.sales > prev.sales ? cur : prev), { hour: '—', sales: 0, orders: 0, customers: 0 });
+    return p;
+  }, [hourlyBreakdown]);
+
+  // Fetch selected day data
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const start = new Date(`${selectedDate}T00:00:00.000Z`);
+        const end = new Date(start);
+        end.setDate(end.getDate() + 1);
+        const prevStart = new Date(start);
+        prevStart.setDate(prevStart.getDate() - 1);
+
+        const { data: txRows, error: txErr } = await supabase
+          .from('sales_transactions')
+          .select('id, customer_id, staff_id, transaction_date, total_amount, payment_method')
+          .gte('transaction_date', start.toISOString())
+          .lt('transaction_date', end.toISOString())
+          .order('transaction_date', { ascending: false }) as any;
+        if (txErr) throw txErr;
+        const transactions = (txRows as any[] | null) || [];
+
+        const txIds = Array.from(new Set(transactions.map(t => t.id)));
+        const customerIds = Array.from(new Set(transactions.map(t => t.customer_id).filter(Boolean)));
+        const staffIds = Array.from(new Set(transactions.map(t => t.staff_id).filter(Boolean)));
+
+        const [itemsRes, customersRes, staffRes, prevDayRes] = await Promise.all([
+          txIds.length ? supabase.from('transaction_items').select('transaction_id, product_id, quantity, unit_price, discount_amount, line_total').in('transaction_id', txIds) : Promise.resolve({ data: [], error: null }),
+          customerIds.length ? supabase.from('customers').select('id, first_name, last_name').in('id', customerIds as string[]) : Promise.resolve({ data: [], error: null }),
+          staffIds.length ? supabase.from('staff').select('id, first_name, last_name').in('id', staffIds as string[]) : Promise.resolve({ data: [], error: null }),
+          supabase.from('sales_transactions').select('total_amount').gte('transaction_date', prevStart.toISOString()).lt('transaction_date', start.toISOString()),
+        ]);
+
+        if ((itemsRes as any).error) throw (itemsRes as any).error;
+        if ((customersRes as any).error) throw (customersRes as any).error;
+        if ((staffRes as any).error) throw (staffRes as any).error;
+        if ((prevDayRes as any).error) throw (prevDayRes as any).error;
+
+        const items = ((itemsRes as any).data as any[]);
+        const productIds = Array.from(new Set(items.map(i => i.product_id)));
+        const productsRes = productIds.length ? await supabase.from('products').select('id, name').in('id', productIds as string[]) : { data: [], error: null } as any;
+        if ((productsRes as any).error) throw (productsRes as any).error;
+
+        const productNameById = new Map<string, string>();
+        (((productsRes as any).data as any[]) || []).forEach(p => productNameById.set(p.id, p.name));
+        const customerNameById = new Map<string, string>();
+        (((customersRes as any).data as any[]) || []).forEach(c => customerNameById.set(c.id, `${c.first_name || ''} ${c.last_name || ''}`.trim() || '—'));
+        const staffNameById = new Map<string, string>();
+        (((staffRes as any).data as any[]) || []).forEach(s => staffNameById.set(s.id, `${s.first_name || ''} ${s.last_name || ''}`.trim() || '—'));
+
+        const total = transactions.reduce((s, t) => s + Number(t.total_amount || 0), 0);
+        const orders = transactions.length;
+        const customers = new Set<string>();
+        transactions.forEach(t => { if (t.customer_id) customers.add(String(t.customer_id)); });
+        const avg = orders > 0 ? total / orders : 0;
+        const prevTotal = (((prevDayRes as any).data as any[]) || []).reduce((s, r) => s + Number(r.total_amount || 0), 0);
+        const growth = prevTotal > 0 ? ((total - prevTotal) / prevTotal) * 100 : 0;
+
+        setTotalSales(total);
+        setTotalOrders(orders);
+        setCustomersServed(customers.size);
+        setAvgOrder(avg);
+        setGrowthPct(growth);
+
+        const hourly = Array.from({ length: 24 }, (_, h) => ({ hour: `${String(h).padStart(2, '0')}:00`, sales: 0, orders: 0, customers: new Set<string>() as Set<string> }));
+        transactions.forEach(t => {
+          const d = new Date(t.transaction_date);
+          const h = d.getHours();
+          hourly[h].sales += Number(t.total_amount || 0);
+          hourly[h].orders += 1;
+          if (t.customer_id) hourly[h].customers.add(String(t.customer_id));
+        });
+        setHourlyBreakdown(hourly.map(h => ({ hour: h.hour, sales: h.sales, orders: h.orders, customers: h.customers.size })));
+
+        const byProduct = new Map<string, { quantity: number; revenue: number }>();
+        items.forEach(i => {
+          const revenue = Number(i.line_total ?? (i.quantity * (i.unit_price || 0) - (i.discount_amount || 0)));
+          const prev = byProduct.get(i.product_id) || { quantity: 0, revenue: 0 };
+          prev.quantity += Number(i.quantity || 0);
+          prev.revenue += revenue;
+          byProduct.set(i.product_id, prev);
+        });
+        const top = Array.from(byProduct.entries())
+          .map(([productId, v]) => ({
+            product: productNameById.get(productId) || 'Unknown Product',
+            quantity: v.quantity,
+            revenue: `₱${Math.round(v.revenue).toLocaleString()}`,
+            percentage: total > 0 ? (v.revenue / total) * 100 : 0,
+          }))
+          .sort((a, b) => b.quantity - a.quantity)
+          .slice(0, 5);
+        setTopSellingToday(top);
+
+        const byMethod = new Map<string, number>();
+        transactions.forEach(t => {
+          const key = (t.payment_method || 'Other');
+          byMethod.set(key, (byMethod.get(key) || 0) + Number(t.total_amount || 0));
+        });
+        const COLORS = ['bg-green-500', 'bg-blue-500', 'bg-purple-500', 'bg-orange-500', 'bg-teal-500'];
+        const methods = Array.from(byMethod.entries())
+          .sort((a, b) => b[1] - a[1])
+          .map(([method, amount], idx) => ({ method, amount: `₱${Math.round(amount).toLocaleString()}`, percentage: total > 0 ? (amount / total) * 100 : 0, color: COLORS[idx % COLORS.length] }));
+        setPaymentMethods(methods);
+
+        const itemsByTx = new Map<string, string[]>();
+        items.forEach(i => {
+          const arr = itemsByTx.get(i.transaction_id) || [];
+          const name = productNameById.get(i.product_id) || 'Item';
+          if (!arr.includes(name)) arr.push(name);
+          itemsByTx.set(i.transaction_id, arr);
+        });
+        const txList = transactions.map(t => {
+          const d = new Date(t.transaction_date);
+          const hh = String(d.getHours()).padStart(2, '0');
+          const mm = String(d.getMinutes()).padStart(2, '0');
+          return {
+            time: `${hh}:${mm}`,
+            customer: t.customer_id ? (customerNameById.get(String(t.customer_id)) || 'Customer') : 'Walk-in',
+            items: itemsByTx.get(t.id) || [],
+            total: Number(t.total_amount || 0),
+            payment: t.payment_method || '—',
+            staff: t.staff_id ? (staffNameById.get(String(t.staff_id)) || '—') : '—',
+          };
+        });
+        setTodaysTransactions(txList);
+
+      } catch (e: any) {
+        console.error('Failed to load daily sales summary', e);
+        setError('Failed to load daily sales summary');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [selectedDate]);
 
   return (
     <div className="p-6 space-y-6">
@@ -125,43 +188,95 @@ const DailySalesSummary: React.FC = () => {
 
       {/* Daily Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {dailyMetrics.map((metric, index) => {
-          const Icon = metric.icon;
-          return (
-            <div key={index} className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-all duration-300 group">
+        {loading && (
+          <>
+            <div className="h-28 bg-gray-100 rounded-xl animate-pulse" />
+            <div className="h-28 bg-gray-100 rounded-xl animate-pulse" />
+            <div className="h-28 bg-gray-100 rounded-xl animate-pulse" />
+            <div className="h-28 bg-gray-100 rounded-xl animate-pulse" />
+          </>
+        )}
+        {!loading && !error && (
+        <>
+        {/* Total Sales */}
+        <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-all duration-300 group">
               <div className="flex items-start justify-between mb-4">
-                <div className={`w-12 h-12 ${metric.color.replace('bg-', 'bg-').replace('-600', '-50')} rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform duration-300`}>
-                  <Icon className={`w-6 h-6 ${metric.color.replace('bg-', 'text-')}`} />
+            <div className="w-12 h-12 bg-green-50 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+              <DollarSign className="w-6 h-6 text-green-600" />
                 </div>
                 <div className="flex items-center space-x-1">
-                  {metric.isPositive ? (
-                    <TrendingUp className={`w-4 h-4 ${metric.color.replace('bg-', 'text-')}`} />
-                  ) : (
-                    <TrendingDown className="w-4 h-4 text-red-500" />
-                  )}
-                  <span className={`text-sm font-semibold ${metric.isPositive ? metric.color.replace('bg-', 'text-') : 'text-red-500'}`}>
-                    {metric.change}
+              <TrendingUp className={`w-4 h-4 ${growthPct >= 0 ? 'text-green-600' : 'text-red-500 rotate-180'}`} />
+              <span className={`text-sm font-semibold ${growthPct >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                {`${growthPct >= 0 ? '+' : ''}${growthPct.toFixed(1)}%`}
                   </span>
                 </div>
               </div>
               <div>
-                <p className="text-gray-500 text-sm font-medium mb-1">{metric.title}</p>
-                <h3 className="text-2xl font-bold text-gray-900 tracking-tight">{metric.value}</h3>
+            <p className="text-gray-500 text-sm font-medium mb-1">Total Sales</p>
+            <h3 className="text-2xl font-bold text-gray-900 tracking-tight">₱{Math.round(totalSales).toLocaleString()}</h3>
                 <p className="text-gray-400 text-xs mt-1">vs yesterday</p>
               </div>
-              <div className={`w-full h-1 ${metric.color} rounded-full mt-4 opacity-20 group-hover:opacity-40 transition-opacity duration-300`}></div>
+          <div className="w-full h-1 bg-green-600 rounded-full mt-4 opacity-20 group-hover:opacity-40 transition-opacity duration-300"></div>
+        </div>
+        </>
+        )}
+        {/* Total Orders */}
+        <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-all duration-300 group">
+          <div className="flex items-start justify-between mb-4">
+            <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+              <ShoppingCart className="w-6 h-6 text-blue-600" />
             </div>
-          );
-        })}
+          </div>
+          <div>
+            <p className="text-gray-500 text-sm font-medium mb-1">Total Orders</p>
+            <h3 className="text-2xl font-bold text-gray-900 tracking-tight">{totalOrders.toLocaleString()}</h3>
+          </div>
+          <div className="w-full h-1 bg-blue-600 rounded-full mt-4 opacity-20 group-hover:opacity-40 transition-opacity duration-300"></div>
+        </div>
+        {/* Customers Served */}
+        <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-all duration-300 group">
+          <div className="flex items-start justify-between mb-4">
+            <div className="w-12 h-12 bg-purple-50 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+              <Users className="w-6 h-6 text-purple-600" />
+            </div>
+          </div>
+          <div>
+            <p className="text-gray-500 text-sm font-medium mb-1">Customers Served</p>
+            <h3 className="text-2xl font-bold text-gray-900 tracking-tight">{customersServed.toLocaleString()}</h3>
+          </div>
+          <div className="w-full h-1 bg-purple-600 rounded-full mt-4 opacity-20 group-hover:opacity-40 transition-opacity duration-300"></div>
+        </div>
+        {/* Average Order */}
+        <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-all duration-300 group">
+          <div className="flex items-start justify-between mb-4">
+            <div className="w-12 h-12 bg-orange-50 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+              <Package className="w-6 h-6 text-orange-600" />
+            </div>
+          </div>
+          <div>
+            <p className="text-gray-500 text-sm font-medium mb-1">Average Order</p>
+            <h3 className="text-2xl font-bold text-gray-900 tracking-tight">₱{Math.round(avgOrder).toLocaleString()}</h3>
+          </div>
+          <div className="w-full h-1 bg-orange-600 rounded-full mt-4 opacity-20 group-hover:opacity-40 transition-opacity duration-300"></div>
+        </div>
       </div>
 
       {/* Hourly Breakdown */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
         <div className="flex items-center justify-between mb-6">
           <h3 className="text-lg font-semibold text-gray-800">Hourly Sales Breakdown</h3>
-          <div className="text-sm text-gray-600">Peak: 14:00 (₱8,900)</div>
+          <div className="text-sm text-gray-600">Peak: {peak.hour} (₱{Math.round(peak.sales).toLocaleString()})</div>
         </div>
 
+        {loading ? (
+          <div className="space-y-3">
+            <div className="h-8 bg-gray-100 rounded animate-pulse" />
+            <div className="h-8 bg-gray-100 rounded animate-pulse" />
+            <div className="h-8 bg-gray-100 rounded animate-pulse" />
+          </div>
+        ) : error ? (
+          <div className="text-sm text-red-600">{error}</div>
+        ) : (
         <div className="space-y-3">
           {hourlyBreakdown.map((hour, index) => (
             <div key={index} className="flex items-center space-x-4">
@@ -184,6 +299,7 @@ const DailySalesSummary: React.FC = () => {
             </div>
           ))}
         </div>
+        )}
       </div>
 
       {/* Top Selling Products and Payment Methods */}
@@ -195,6 +311,15 @@ const DailySalesSummary: React.FC = () => {
             <Package className="w-5 h-5 text-gray-400" />
           </div>
 
+          {loading ? (
+            <div className="space-y-3">
+              <div className="h-10 bg-gray-100 rounded animate-pulse" />
+              <div className="h-10 bg-gray-100 rounded animate-pulse" />
+              <div className="h-10 bg-gray-100 rounded animate-pulse" />
+            </div>
+          ) : error ? (
+            <div className="text-sm text-red-600">{error}</div>
+          ) : (
           <div className="space-y-4">
             {topSellingToday.map((product, index) => (
               <div key={index} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
@@ -209,11 +334,12 @@ const DailySalesSummary: React.FC = () => {
                 </div>
                 <div className="text-right">
                   <p className="text-sm font-bold text-gray-900">{product.revenue}</p>
-                  <p className="text-xs text-gray-500">{product.percentage}% of sales</p>
+                  <p className="text-xs text-gray-500">{product.percentage.toFixed(1)}% of sales</p>
                 </div>
               </div>
             ))}
           </div>
+          )}
         </div>
 
         {/* Payment Methods */}
@@ -223,6 +349,15 @@ const DailySalesSummary: React.FC = () => {
             <DollarSign className="w-5 h-5 text-gray-400" />
           </div>
 
+          {loading ? (
+            <div className="space-y-3">
+              <div className="h-8 bg-gray-100 rounded animate-pulse" />
+              <div className="h-8 bg-gray-100 rounded animate-pulse" />
+              <div className="h-8 bg-gray-100 rounded animate-pulse" />
+            </div>
+          ) : error ? (
+            <div className="text-sm text-red-600">{error}</div>
+          ) : (
           <div className="space-y-4">
             {paymentMethods.map((payment, index) => (
               <div key={index} className="space-y-2">
@@ -245,11 +380,12 @@ const DailySalesSummary: React.FC = () => {
               </div>
             ))}
           </div>
+          )}
 
           <div className="mt-6 pt-4 border-t border-gray-200">
             <div className="text-center">
               <p className="text-sm text-gray-600">Total Collected</p>
-              <p className="text-2xl font-bold text-gray-900">₱47,265</p>
+              <p className="text-2xl font-bold text-gray-900">₱{Math.round(totalSales).toLocaleString()}</p>
             </div>
           </div>
         </div>
@@ -264,6 +400,15 @@ const DailySalesSummary: React.FC = () => {
           </span>
         </div>
 
+        {loading ? (
+          <div className="space-y-3">
+            <div className="h-16 bg-gray-100 rounded animate-pulse" />
+            <div className="h-16 bg-gray-100 rounded animate-pulse" />
+            <div className="h-16 bg-gray-100 rounded animate-pulse" />
+          </div>
+        ) : error ? (
+          <div className="text-sm text-red-600">{error}</div>
+        ) : (
         <div className="space-y-4">
           {todaysTransactions.map((transaction, index) => (
             <div key={index} className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
@@ -289,6 +434,7 @@ const DailySalesSummary: React.FC = () => {
             </div>
           ))}
         </div>
+        )}
       </div>
 
       {/* Daily Summary */}
@@ -297,18 +443,18 @@ const DailySalesSummary: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="text-center p-4 bg-green-50 rounded-lg">
             <TrendingUp className="w-8 h-8 text-green-600 mx-auto mb-2" />
-            <p className="text-2xl font-bold text-green-600">+12.5%</p>
+            <p className="text-2xl font-bold text-green-600">{`${growthPct >= 0 ? '+' : ''}${growthPct.toFixed(1)}%`}</p>
             <p className="text-sm text-gray-600">vs Yesterday</p>
           </div>
           <div className="text-center p-4 bg-blue-50 rounded-lg">
             <Clock className="w-8 h-8 text-blue-600 mx-auto mb-2" />
-            <p className="text-2xl font-bold text-blue-600">14:00</p>
+            <p className="text-2xl font-bold text-blue-600">{peak.hour}</p>
             <p className="text-sm text-gray-600">Peak Hour</p>
           </div>
           <div className="text-center p-4 bg-purple-50 rounded-lg">
             <Users className="w-8 h-8 text-purple-600 mx-auto mb-2" />
-            <p className="text-2xl font-bold text-purple-600">82.6%</p>
-            <p className="text-sm text-gray-600">Customer Return Rate</p>
+            <p className="text-2xl font-bold text-purple-600">{customersServed.toLocaleString()}</p>
+            <p className="text-sm text-gray-600">Customers Served</p>
           </div>
         </div>
       </div>

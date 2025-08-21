@@ -1,112 +1,199 @@
-import React, { useState } from 'react';
-import { Search, Filter, Download, TrendingUp, TrendingDown, Package, BarChart3, Eye, Calendar } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Search, Filter, Download, TrendingUp, TrendingDown, Package, BarChart3, Eye } from 'lucide-react';
+import { supabase } from '../../../lib/supabase';
 
 const ProductSalesReport: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedPeriod, setSelectedPeriod] = useState('this-month');
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const productSalesData = [
-    {
-      id: 1,
-      name: 'Veterinary Antibiotics Premium',
-      category: 'Medicines',
-      sku: 'VET-ANT-001',
-      unitsSold: 456,
-      revenue: 285400,
-      profit: 128430,
-      margin: 45.0,
-      growth: 22.1,
-      isPositive: true,
-      stock: 89,
-      avgPrice: 625.88
-    },
-    {
-      id: 2,
-      name: 'Organic Fertilizer Premium Grade',
-      category: 'Agriculture',
-      sku: 'AGR-FER-002',
-      unitsSold: 324,
-      revenue: 198750,
-      profit: 75525,
-      margin: 38.0,
-      growth: 18.5,
-      isPositive: true,
-      stock: 156,
-      avgPrice: 613.43
-    },
-    {
-      id: 3,
-      name: 'Fresh Mango Export Grade A',
-      category: 'Fruits',
-      sku: 'FRT-MNG-003',
-      unitsSold: 289,
-      revenue: 167200,
-      profit: 86944,
-      margin: 52.0,
-      growth: 15.3,
-      isPositive: true,
-      stock: 45,
-      avgPrice: 578.55
-    },
-    {
-      id: 4,
-      name: 'Professional Pruning Tools Set',
-      category: 'Tools',
-      sku: 'TLS-PRN-004',
-      unitsSold: 198,
-      revenue: 134890,
-      profit: 56654,
-      margin: 42.0,
-      growth: 12.7,
-      isPositive: true,
-      stock: 23,
-      avgPrice: 681.26
-    },
-    {
-      id: 5,
-      name: 'Animal Vitamin Complex B12',
-      category: 'Medicines',
-      sku: 'VET-VIT-005',
-      unitsSold: 234,
-      revenue: 98650,
-      profit: 47352,
-      margin: 48.0,
-      growth: 9.8,
-      isPositive: true,
-      stock: 67,
-      avgPrice: 421.58
-    },
-    {
-      id: 6,
-      name: 'Organic Tomato Seeds Premium',
-      category: 'Agriculture',
-      sku: 'AGR-SED-006',
-      unitsSold: 567,
-      revenue: 85050,
-      profit: 29767,
-      margin: 35.0,
-      growth: -3.2,
-      isPositive: false,
-      stock: 234,
-      avgPrice: 150.00
+  type ProductRow = { id: string; sku: string; name: string; category_id: string | null; unit_price: number; cost_price: number; stock_quantity: number };
+  type CategoryRow = { id: string; name: string };
+  type ItemRow = { product_id: string; quantity: number; unit_price: number; discount_amount: number | null; line_total: number | null; created_at: string };
+
+  type ProductMetric = {
+    id: string;
+    name: string;
+    categoryId: string | null;
+    category: string;
+    sku: string;
+    unitsSold: number;
+    revenue: number;
+    profit: number;
+    margin: number;
+    growth: number;
+    isPositive: boolean;
+    stock: number;
+    avgPrice: number;
+  };
+
+  const [categories, setCategories] = useState<CategoryRow[]>([]);
+  const [metrics, setMetrics] = useState<ProductMetric[]>([]);
+
+  function getPeriodRange(period: string): { start: Date; end: Date; prevStart: Date; prevEnd: Date } {
+    const now = new Date();
+    let start: Date;
+    let end: Date;
+    switch (period) {
+      case 'today':
+        start = new Date(now); start.setHours(0,0,0,0);
+        end = new Date(now); end.setHours(23,59,59,999);
+        break;
+      case 'this-week': {
+        const day = now.getDay();
+        const diffToMonday = (day === 0 ? 6 : day - 1);
+        start = new Date(now); start.setDate(now.getDate() - diffToMonday); start.setHours(0,0,0,0);
+        end = new Date(now); end.setHours(23,59,59,999);
+        break;
+      }
+      case 'last-month': {
+        start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        end = new Date(now.getFullYear(), now.getMonth(), 0); end.setHours(23,59,59,999);
+        break;
+      }
+      case 'this-year':
+        start = new Date(now.getFullYear(), 0, 1);
+        end = new Date(now.getFullYear(), 11, 31); end.setHours(23,59,59,999);
+        break;
+      case 'this-month':
+      default:
+        start = new Date(now.getFullYear(), now.getMonth(), 1);
+        end = new Date(now.getFullYear(), now.getMonth() + 1, 0); end.setHours(23,59,59,999);
+        break;
     }
-  ];
+    const lengthMs = end.getTime() - start.getTime() + 1;
+    const prevEnd = new Date(start.getTime() - 1);
+    const prevStart = new Date(prevEnd.getTime() - lengthMs + 1);
+    return { start, end, prevStart, prevEnd };
+  }
 
-  const categoryPerformance = [
-    { category: 'Medicines', revenue: 384050, units: 690, growth: 18.2, color: 'bg-red-500' },
-    { category: 'Agriculture', revenue: 283800, units: 891, growth: 12.8, color: 'bg-green-500' },
-    { category: 'Fruits', revenue: 167200, units: 289, growth: 15.3, color: 'bg-orange-500' },
-    { category: 'Tools', revenue: 134890, units: 198, growth: 12.7, color: 'bg-blue-500' }
-  ];
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const { start, end, prevStart, prevEnd } = getPeriodRange(selectedPeriod);
 
-  const topPerformers = productSalesData
-    .sort((a, b) => b.revenue - a.revenue)
-    .slice(0, 5);
+        const [prodRes, catRes, itemsCurRes, itemsPrevRes] = await Promise.all([
+          supabase.from('products').select('id, sku, name, category_id, unit_price, cost_price, stock_quantity'),
+          supabase.from('categories').select('id, name'),
+          supabase.from('transaction_items')
+            .select('product_id, quantity, unit_price, discount_amount, line_total, created_at')
+            .gte('created_at', start.toISOString())
+            .lt('created_at', new Date(end.getTime() + 1).toISOString()),
+          supabase.from('transaction_items')
+            .select('product_id, quantity, unit_price, discount_amount, line_total, created_at')
+            .gte('created_at', prevStart.toISOString())
+            .lt('created_at', new Date(prevEnd.getTime() + 1).toISOString()),
+        ]);
 
-  const totalRevenue = productSalesData.reduce((sum, product) => sum + product.revenue, 0);
-  const totalUnits = productSalesData.reduce((sum, product) => sum + product.unitsSold, 0);
-  const avgMargin = productSalesData.reduce((sum, product) => sum + product.margin, 0) / productSalesData.length;
+        if (prodRes.error) throw prodRes.error;
+        if (catRes.error) throw catRes.error;
+        if (itemsCurRes.error) throw itemsCurRes.error;
+        if (itemsPrevRes.error) throw itemsPrevRes.error;
+
+        const products = (prodRes.data as ProductRow[]) || [];
+        const cats = (catRes.data as CategoryRow[]) || [];
+        setCategories(cats);
+        const curItems = (itemsCurRes.data as ItemRow[]) || [];
+        const prevItems = (itemsPrevRes.data as ItemRow[]) || [];
+
+        const categoryIdToName = new Map<string, string>();
+        cats.forEach(c => categoryIdToName.set(c.id, c.name));
+
+        const curAgg = new Map<string, { units: number; revenue: number }>();
+        curItems.forEach(i => {
+          const revenue = Number(i.line_total ?? (i.quantity * (i.unit_price || 0) - (i.discount_amount || 0)));
+          const prev = curAgg.get(i.product_id) || { units: 0, revenue: 0 };
+          prev.units += Number(i.quantity || 0);
+          prev.revenue += revenue;
+          curAgg.set(i.product_id, prev);
+        });
+
+        const prevAgg = new Map<string, { revenue: number }>();
+        prevItems.forEach(i => {
+          const revenue = Number(i.line_total ?? (i.quantity * (i.unit_price || 0) - (i.discount_amount || 0)));
+          const prev = prevAgg.get(i.product_id) || { revenue: 0 };
+          prev.revenue += revenue;
+          prevAgg.set(i.product_id, prev);
+        });
+
+        const list: ProductMetric[] = products
+          .map(p => {
+            const cur = curAgg.get(p.id) || { units: 0, revenue: 0 };
+            const prev = prevAgg.get(p.id) || { revenue: 0 };
+            const revenue = cur.revenue;
+            const units = cur.units;
+            const cost = Number(p.cost_price || 0) * units;
+            const profit = revenue - cost;
+            const margin = revenue > 0 ? (profit / revenue) * 100 : 0;
+            const growth = prev.revenue > 0 ? ((revenue - prev.revenue) / prev.revenue) * 100 : 0;
+            return {
+              id: p.id,
+              name: p.name,
+              categoryId: p.category_id,
+              category: p.category_id ? (categoryIdToName.get(p.category_id) || 'Uncategorized') : 'Uncategorized',
+              sku: p.sku,
+              unitsSold: units,
+              revenue,
+              profit,
+              margin,
+              growth,
+              isPositive: growth >= 0,
+              stock: Number(p.stock_quantity || 0),
+              avgPrice: units > 0 ? revenue / units : 0,
+            };
+          })
+          .filter(m => m.unitsSold > 0 || m.revenue > 0)
+          .sort((a, b) => b.revenue - a.revenue);
+
+        setMetrics(list);
+      } catch (e: any) {
+        console.error('Failed to load product sales report', e);
+        setError('Failed to load product sales report');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [selectedPeriod]);
+
+  const categoryPerformance = useMemo(() => {
+    const COLORS = ['bg-red-500','bg-green-500','bg-orange-500','bg-blue-500','bg-purple-500','bg-teal-500'];
+    const byCat = new Map<string, { revenue: number; units: number }>();
+    metrics.forEach(m => {
+      const key = m.category || 'Uncategorized';
+      const prev = byCat.get(key) || { revenue: 0, units: 0 };
+      prev.revenue += m.revenue;
+      prev.units += m.unitsSold;
+      byCat.set(key, prev);
+    });
+    return Array.from(byCat.entries()).map(([category, v], idx) => ({
+      category,
+      revenue: v.revenue,
+      units: v.units,
+      growth: 0,
+      color: COLORS[idx % COLORS.length],
+    }));
+  }, [metrics]);
+
+  const filteredMetrics = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+    return metrics.filter(m => {
+      if (selectedCategory !== 'all' && m.categoryId !== selectedCategory) return false;
+      if (!term) return true;
+      return m.name.toLowerCase().includes(term) || m.sku.toLowerCase().includes(term) || m.category.toLowerCase().includes(term);
+    });
+  }, [metrics, searchTerm, selectedCategory]);
+
+  const topPerformers = useMemo(() => metrics.slice(0, 5), [metrics]);
+
+  const totalRevenue = filteredMetrics.reduce((sum, p) => sum + p.revenue, 0);
+  const totalUnits = filteredMetrics.reduce((sum, p) => sum + p.unitsSold, 0);
+  const avgMargin = filteredMetrics.length > 0 ? filteredMetrics.reduce((sum, p) => sum + p.margin, 0) / filteredMetrics.length : 0;
 
   return (
     <div className="p-6 space-y-6">
@@ -140,7 +227,7 @@ const ProductSalesReport: React.FC = () => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-600">Total Revenue</p>
-              <p className="text-2xl font-bold text-gray-900">₱{(totalRevenue / 1000).toFixed(0)}K</p>
+              <p className="text-2xl font-bold text-gray-900">₱{Math.round(totalRevenue).toLocaleString()}</p>
             </div>
             <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
               <BarChart3 className="w-6 h-6 text-green-600" />
@@ -176,7 +263,7 @@ const ProductSalesReport: React.FC = () => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-600">Products Tracked</p>
-              <p className="text-2xl font-bold text-gray-900">{productSalesData.length}</p>
+              <p className="text-2xl font-bold text-gray-900">{filteredMetrics.length}</p>
             </div>
             <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center">
               <Eye className="w-6 h-6 text-orange-600" />
@@ -202,7 +289,7 @@ const ProductSalesReport: React.FC = () => {
               <div className="space-y-2">
                 <div className="flex justify-between">
                   <span className="text-xs text-gray-500">Revenue</span>
-                  <span className="text-sm font-bold text-gray-900">₱{(category.revenue / 1000).toFixed(0)}K</span>
+                  <span className="text-sm font-bold text-gray-900">₱{Math.round(category.revenue).toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-xs text-gray-500">Units</span>
@@ -210,7 +297,7 @@ const ProductSalesReport: React.FC = () => {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-xs text-gray-500">Growth</span>
-                  <span className="text-sm text-green-600">+{category.growth}%</span>
+                  <span className="text-sm text-gray-600">{category.growth ? `${category.growth > 0 ? '+' : ''}${category.growth.toFixed(1)}%` : '—'}</span>
                 </div>
               </div>
             </div>
@@ -238,10 +325,9 @@ const ProductSalesReport: React.FC = () => {
             className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
           >
             <option value="all">All Categories</option>
-            <option value="medicines">Medicines</option>
-            <option value="agriculture">Agriculture</option>
-            <option value="fruits">Fruits</option>
-            <option value="tools">Tools & Equipment</option>
+            {categories.map(c => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
           </select>
 
           <button className="flex items-center justify-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
@@ -287,7 +373,23 @@ const ProductSalesReport: React.FC = () => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {productSalesData.map((product) => (
+              {loading && (
+                <tr>
+                  <td className="px-6 py-4" colSpan={9}>
+                    <div className="space-y-2">
+                      <div className="h-6 bg-gray-100 rounded animate-pulse" />
+                      <div className="h-6 bg-gray-100 rounded animate-pulse" />
+                      <div className="h-6 bg-gray-100 rounded animate-pulse" />
+                    </div>
+                  </td>
+                </tr>
+              )}
+              {error && !loading && (
+                <tr>
+                  <td className="px-6 py-4 text-sm text-red-600" colSpan={9}>{error}</td>
+                </tr>
+              )}
+              {!loading && !error && filteredMetrics.map((product) => (
                 <tr key={product.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div>
@@ -304,10 +406,10 @@ const ProductSalesReport: React.FC = () => {
                     {product.unitsSold.toLocaleString()}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">
-                    ₱{product.revenue.toLocaleString()}
+                    ₱{Math.round(product.revenue).toLocaleString()}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    ₱{product.profit.toLocaleString()}
+                    ₱{Math.round(product.profit).toLocaleString()}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {product.margin.toFixed(1)}%
@@ -320,7 +422,7 @@ const ProductSalesReport: React.FC = () => {
                         <TrendingDown className="w-3 h-3 text-red-600" />
                       )}
                       <span className={`text-sm ${product.isPositive ? 'text-green-600' : 'text-red-600'}`}>
-                        {product.isPositive ? '+' : ''}{product.growth}%
+                        {product.isPositive ? '+' : ''}{product.growth.toFixed(1)}%
                       </span>
                     </div>
                   </td>
@@ -336,6 +438,11 @@ const ProductSalesReport: React.FC = () => {
                   </td>
                 </tr>
               ))}
+              {!loading && !error && filteredMetrics.length === 0 && (
+                <tr>
+                  <td className="px-6 py-6 text-sm text-gray-500" colSpan={9}>No products found</td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -355,11 +462,11 @@ const ProductSalesReport: React.FC = () => {
                 #{index + 1}
               </div>
               <h4 className="text-sm font-medium text-gray-900 mb-1 truncate">{product.name}</h4>
-              <p className="text-lg font-bold text-gray-900">₱{(product.revenue / 1000).toFixed(0)}K</p>
+              <p className="text-lg font-bold text-gray-900">₱{Math.round(product.revenue).toLocaleString()}</p>
               <p className="text-xs text-gray-500">{product.unitsSold} units</p>
               <div className="flex items-center justify-center space-x-1 mt-2">
                 <TrendingUp className="w-3 h-3 text-green-600" />
-                <span className="text-xs text-green-600">+{product.growth}%</span>
+                <span className="text-xs text-green-600">+{product.growth.toFixed(1)}%</span>
               </div>
             </div>
           ))}
