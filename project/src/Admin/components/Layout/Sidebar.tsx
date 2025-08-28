@@ -4,7 +4,7 @@ import {
   Users, FileText, Settings, Bell, Shield, MessageSquare,
   Megaphone, Gift, Calendar, DollarSign,
   Archive, Warehouse, ChevronDown,
-  Menu, X, LogOut
+  Menu, X, LogOut, UserCheck, Key
 } from 'lucide-react';// at top of Sidebar.tsx
 import logo from '../../../assets/logo.png';
 interface SidebarProps {
@@ -66,6 +66,19 @@ const Sidebar: React.FC<SidebarProps> = ({ activeSection, onSectionChange, onLog
         { id: 'attendance', label: 'Attendance & Timesheet', icon: Calendar, category: 'Staff' },
         { id: 'roles', label: 'Roles & Permissions', icon: Shield, category: 'Staff' },
         { id: 'leave', label: 'Leave Request', icon: Calendar, category: 'Staff' },
+      ]
+    },
+    
+    { 
+      id: 'user-management', 
+      label: 'User Management', 
+      icon: UserCheck, 
+      category: 'Users',
+      children: [
+        { id: 'active-users', label: 'Active Users', icon: UserCheck, category: 'Users' },
+        { id: 'user-accounts', label: 'User Accounts', icon: Users, category: 'Users' },
+        { id: 'user-permissions', label: 'User Permissions', icon: Key, category: 'Users' },
+        { id: 'user-activity', label: 'User Activity', icon: BarChart3, category: 'Users' }
       ]
     },
     
@@ -169,6 +182,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeSection, onSectionChange, onLog
     { name: 'Inventory', items: menuItems.filter(item => item.category === 'Inventory') },
     { name: 'Sales', items: menuItems.filter(item => item.category === 'Sales') },
     { name: 'Staff', items: menuItems.filter(item => item.category === 'Staff') },
+    { name: 'Users', items: menuItems.filter(item => item.category === 'Users') },
     { name: 'Marketing', items: menuItems.filter(item => item.category === 'Marketing') },
     { name: 'Reports', items: menuItems.filter(item => item.category === 'Reports') },
     { name: 'Other', items: menuItems.filter(item => item.category === 'Other') },
