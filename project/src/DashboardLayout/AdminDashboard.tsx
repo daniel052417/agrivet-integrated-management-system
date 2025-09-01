@@ -28,6 +28,14 @@ import ReportsAnalytics from '../Admin/components/Reports/ReportsAnalytics';
 import SettingsPage from '../Admin/components/Settings/SettingsPage';
 import LowStockAlerts from '../Admin/components/Inventory/LowStockAlerts';
 import Categories from '../Admin/components/Inventory/Categories';
+import ActiveUsers from '../Admin/components/Users/ActiveUsers';
+import UserAccounts from '../Admin/components/Users/UserAccounts';
+import UserActivity from '../Admin/components/Users/UserActivity';
+import UserPermissions from '../Admin/components/Users/UserPermissions';
+import HRDashboard from '../Admin/components/HR/HRDashboard';
+import EnhancedEmployeeProfiles from '../Admin/components/HR/EnhancedEmployeeProfiles';
+import PayrollCompensation from '../Admin/components/HR/PayrollCompensation';
+import PerformanceManagement from '../Admin/components/HR/PerformanceManagement';
 import { UserProfile } from '../lib/supabase';
 interface AdminDashboardProps {
   user: UserProfile;
@@ -67,14 +75,48 @@ function AdminDashboard({user, onLogout}: AdminDashboardProps) {
         return <InventoryManagement />;
       case 'low-stock':
         return <LowStockAlerts />;
+      
+      // Staff & User Management Section
+      case 'staff-user-management':
+        return <StaffManagement />;
+      case 'staff-accounts':
+        return <StaffManagement />;
+      case 'user-accounts':
+        return <UserAccounts />;
+      case 'client-accounts':
+        return (
+          <div className="p-6">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
+              <h2 className="text-2xl font-bold text-gray-800 mb-4">Client Accounts</h2>
+              <p className="text-gray-600">Manage client accounts and information</p>
+              <div className="mt-4 inline-flex items-center px-4 py-2 bg-blue-100 text-blue-800 rounded-lg">
+                <span className="text-sm">📋 Client Management</span>
+              </div>
+            </div>
+          </div>
+        );
+      case 'roles-permissions':
+        return <RolesPermissions />;
+      case 'activity-logs':
+        return (
+          <div className="p-6">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
+              <h2 className="text-2xl font-bold text-gray-800 mb-4">Activity Logs</h2>
+              <p className="text-gray-600">Track sign-ins, actions, and session activity</p>
+              <div className="mt-4 inline-flex items-center px-4 py-2 bg-green-100 text-green-800 rounded-lg">
+                <span className="text-sm">📊 Activity Monitoring</span>
+              </div>
+            </div>
+          </div>
+        );
+      
+      // Legacy staff management routes (for backward compatibility)
       case 'staff':
       case 'staff-management':
       case 'add-staff':
         return <StaffManagement />;
       case 'attendance':
         return <AttendanceTimesheet />;
-      case 'roles':
-        return <RolesPermissions />;
       case 'leave':
         return <LeaveRequest />;
       case 'promotions':
@@ -93,6 +135,66 @@ function AdminDashboard({user, onLogout}: AdminDashboardProps) {
         return <EventCenter />;
       case 'settings':
         return <SettingsPage />;
+      
+      // HR Section (Simplified)
+      case 'hr':
+        return <HRDashboard />;
+      case 'employee-directory':
+        return <EnhancedEmployeeProfiles />;
+      case 'attendance-leave':
+        return (
+          <div className="p-6">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
+              <h2 className="text-2xl font-bold text-gray-800 mb-4">🕒 Attendance & Leave Management</h2>
+              <p className="text-gray-600">Track attendance and manage leave requests</p>
+              <div className="mt-4 inline-flex items-center px-4 py-2 bg-green-100 text-green-800 rounded-lg">
+                <span className="text-sm">⏰ Time Tracking</span>
+              </div>
+            </div>
+          </div>
+        );
+      case 'payroll':
+        return <PayrollCompensation />;
+      case 'performance-evaluation':
+        return <PerformanceManagement />;
+      
+      // Legacy HR routes (for backward compatibility)
+      case 'hr-dashboard':
+        return <HRDashboard />;
+      case 'employees':
+        return <StaffManagement />;
+      case 'performance':
+        return (
+          <div className="p-6">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
+              <h2 className="text-2xl font-bold text-gray-800 mb-4">Performance Management</h2>
+              <p className="text-gray-600">Coming soon - Performance tracking and reviews</p>
+              <div className="mt-4 inline-flex items-center px-4 py-2 bg-yellow-100 text-yellow-800 rounded-lg">
+                <span className="text-sm">🚧 Under Development</span>
+              </div>
+            </div>
+          </div>
+        );
+      case 'training':
+        return (
+          <div className="p-6">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
+              <h2 className="text-2xl font-bold text-gray-800 mb-4">Training & Development</h2>
+              <p className="text-gray-600">Coming soon - Learning management system</p>
+              <div className="mt-4 inline-flex items-center px-4 py-2 bg-yellow-100 text-yellow-800 rounded-lg">
+                <span className="text-sm">🚧 Under Development</span>
+              </div>
+            </div>
+          </div>
+        );
+      case 'active-users':
+        return <ActiveUsers />;
+      case 'user-accounts':
+        return <UserAccounts />;
+      case 'user-activity':
+        return <UserActivity />;
+      case 'user-permissions':
+        return <UserPermissions />;
       default:
         return (
           <div className="p-6">

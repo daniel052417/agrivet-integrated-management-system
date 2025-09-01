@@ -27,8 +27,156 @@ export interface UserProfile {
 
 // Database types
 export interface Database {
-  public: {
-    Tables: {
+   public: {
+     Tables: {
+      users: {
+        Row: {
+          user_id: number;
+          username: string;
+          password_hash: string;
+          email: string;
+          first_name: string | null;
+          last_name: string | null;
+          phone_number: string | null;
+          is_active: boolean;
+          last_login_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+      };
+      roles: {
+        Row: {
+          role_id: number;
+          role_name: string;
+          description: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+      };
+      user_roles: {
+        Row: {
+          user_id: number;
+          role_id: number;
+          assigned_at: string;
+        };
+      };
+      permissions: {
+        Row: {
+          permission_id: number;
+          permission_name: string;
+          description: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+      };
+      role_permissions: {
+        Row: {
+          role_id: number;
+          permission_id: number;
+          granted_at: string;
+        };
+      };
+      departments: {
+        Row: {
+          department_id: number;
+          department_name: string;
+          description: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+      };
+      job_titles: {
+        Row: {
+          job_title_id: number;
+          title_name: string;
+          description: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+      };
+      employees: {
+        Row: {
+          employee_id: number;
+          employee_code: string;
+          hire_date: string;
+          termination_date: string | null;
+          job_title_id: number;
+          department_id: number;
+          manager_employee_id: number | null;
+          salary: number | null;
+          date_of_birth: string | null;
+          address: string | null;
+          city: string | null;
+          state: string | null;
+          zip_code: string | null;
+          emergency_contact_name: string | null;
+          emergency_contact_phone: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+      };
+      time_off_requests: {
+        Row: {
+          request_id: number;
+          employee_id: number;
+          request_type: string;
+          start_date: string;
+          end_date: string;
+          status: string;
+          reason: string | null;
+          approved_by_employee_id: number | null;
+          requested_at: string;
+          approved_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+      };
+      performance_reviews: {
+        Row: {
+          review_id: number;
+          employee_id: number;
+          reviewer_employee_id: number;
+          review_date: string;
+          overall_rating: number | null;
+          comments: string | null;
+          goals_set: string | null;
+          goals_achieved: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+      };
+      benefits: {
+        Row: {
+          benefit_id: number;
+          benefit_name: string;
+          description: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+      };
+      employee_benefits: {
+        Row: {
+          employee_id: number;
+          benefit_id: number;
+          enrollment_date: string;
+          status: string;
+          created_at: string;
+          updated_at: string;
+        };
+      };
+      hr_documents: {
+        Row: {
+          document_id: number;
+          employee_id: number | null;
+          document_type: string;
+          file_path: string;
+          file_name: string;
+          uploaded_by_user_id: number;
+          uploaded_at: string;
+          created_at: string;
+          updated_at: string;
+        };
+      };
       categories: {
         Row: {
           id: string;
@@ -40,17 +188,68 @@ export interface Database {
           updated_at: string;
         };
       };
+      product_categories: {
+        Row: {
+          category_id: number;
+          category_name: string;
+          description: string | null;
+          parent_category_id: number | null;
+          created_at: string;
+          updated_at: string;
+        };
+      };
+      products: {
+        Row: {
+          product_id: number;
+          product_name: string;
+          sku: string;
+          description: string | null;
+          category_id: number;
+          unit_of_measure: string;
+          price: number;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+      };
+      locations: {
+        Row: {
+          location_id: number;
+          location_name: string;
+          address: string | null;
+          city: string | null;
+          state: string | null;
+          zip_code: string | null;
+          phone_number: string | null;
+          email: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+      };
+      inventory: {
+        Row: {
+          inventory_id: number;
+          product_id: number;
+          location_id: number;
+          quantity_on_hand: number;
+          reorder_point: number | null;
+          last_restock_date: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+      };
       suppliers: {
         Row: {
-          id: string;
-          name: string;
-          contact_person: string;
-          email: string;
-          phone: string;
-          address: string;
-          city: string;
-          country: string;
-          payment_terms: string;
+          supplier_id: number;
+          supplier_name: string;
+          contact_person: string | null;
+          email: string | null;
+          phone_number: string | null;
+          address: string | null;
+          city: string | null;
+          state: string | null;
+          zip_code: string | null;
+          payment_terms: string | null;
           is_active: boolean;
           created_at: string;
           updated_at: string;
@@ -88,47 +287,6 @@ export interface Database {
           updated_at: string;
         };
       };
-      products: {
-        Row: {
-          id: string;
-          sku: string;
-          name: string;
-          description: string;
-          category_id: string;
-          supplier_id: string;
-          unit_price: number;
-          cost_price: number;
-          stock_quantity: number;
-          minimum_stock: number;
-          maximum_stock: number;
-          unit_of_measure: string;
-          barcode: string;
-          expiry_date: string | null;
-          is_active: boolean;
-          created_at: string;
-          updated_at: string;
-        };
-      };
-      customers: {
-        Row: {
-          id: string;
-          customer_code: string;
-          first_name: string;
-          last_name: string;
-          email: string;
-          phone: string;
-          address: string;
-          city: string;
-          customer_type: string;
-          date_of_birth: string | null;
-          registration_date: string;
-          is_active: boolean;
-          total_spent: number;
-          last_purchase_date: string | null;
-          created_at: string;
-          updated_at: string;
-        };
-      };
       sales_transactions: {
         Row: {
           id: string;
@@ -148,7 +306,34 @@ export interface Database {
           updated_at: string;
         };
       };
-      transaction_items: {
+      sales_orders: {
+        Row: {
+          order_id: number;
+          customer_id: number;
+          order_date: string;
+          status: string;
+          total_amount: number;
+          shipping_address: string | null;
+          billing_address: string | null;
+          payment_status: string | null;
+          processed_by_user_id: number | null;
+          created_at: string;
+          updated_at: string;
+        };
+      };
+      order_items: {
+        Row: {
+          order_item_id: number;
+          order_id: number;
+          product_id: number;
+          quantity: number;
+          unit_price: number;
+          subtotal: number;
+          created_at: string;
+          updated_at: string;
+        };
+      };
+      sales_transaction_items: {
         Row: {
           id: string;
           transaction_id: string;
@@ -162,15 +347,261 @@ export interface Database {
       };
       inventory_movements: {
         Row: {
-          id: string;
-          product_id: string;
+          movement_id: number;
+          product_id: number;
+          from_location_id: number | null;
+          to_location_id: number | null;
           movement_type: string;
           quantity: number;
-          reference_type: string;
-          reference_id: string | null;
-          notes: string;
-          staff_id: string;
+          movement_date: string;
+          recorded_by_user_id: number;
+          related_transaction_id: string | null;
           created_at: string;
+          updated_at: string;
+        };
+      };
+      leads: {
+        Row: {
+          lead_id: number;
+          first_name: string | null;
+          last_name: string | null;
+          company_name: string | null;
+          email: string | null;
+          phone_number: string | null;
+          source: string | null;
+          status: string;
+          assigned_to_user_id: number | null;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+      };
+      marketing_campaigns: {
+        Row: {
+          campaign_id: number;
+          campaign_name: string;
+          start_date: string | null;
+          end_date: string | null;
+          budget: number | null;
+          status: string;
+          description: string | null;
+          created_by_user_id: number;
+          created_at: string;
+          updated_at: string;
+        };
+      };
+      campaign_leads: {
+        Row: {
+          campaign_id: number;
+          lead_id: number;
+          interaction_date: string;
+          interaction_type: string | null;
+          created_at: string;
+        };
+      };
+      accounts: {
+        Row: {
+          account_id: number;
+          account_name: string;
+          account_number: string;
+          account_type: string;
+          description: string | null;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+      };
+      accounting_transactions: {
+        Row: {
+          transaction_id: number;
+          transaction_date: string;
+          description: string | null;
+          transaction_type: string;
+          reference_number: string | null;
+          total_amount: number;
+          posted_by_user_id: number;
+          created_at: string;
+          updated_at: string;
+        };
+      };
+      accounting_transaction_items: {
+        Row: {
+          transaction_item_id: number;
+          transaction_id: number;
+          account_id: number;
+          debit_amount: number;
+          credit_amount: number;
+          memo: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+      };
+      invoices: {
+        Row: {
+          invoice_id: number;
+          customer_id: number;
+          invoice_date: string;
+          due_date: string;
+          total_amount: number;
+          amount_due: number;
+          status: string;
+          sales_order_id: number | null;
+          created_by_user_id: number;
+          created_at: string;
+          updated_at: string;
+        };
+      };
+      invoice_items: {
+        Row: {
+          invoice_item_id: number;
+          invoice_id: number;
+          product_id: number | null;
+          description: string;
+          quantity: number;
+          unit_price: number;
+          line_total: number;
+          created_at: string;
+          updated_at: string;
+        };
+      };
+      payments: {
+        Row: {
+          payment_id: number;
+          customer_id: number;
+          invoice_id: number | null;
+          payment_date: string;
+          amount: number;
+          payment_method: string;
+          transaction_reference: string | null;
+          recorded_by_user_id: number;
+          created_at: string;
+          updated_at: string;
+        };
+      };
+      expenses: {
+        Row: {
+          expense_id: number;
+          expense_date: string;
+          supplier_id: number | null;
+          description: string;
+          amount: number;
+          category: string;
+          receipt_url: string | null;
+          approved_by_user_id: number | null;
+          recorded_by_user_id: number;
+          status: string;
+          created_at: string;
+          updated_at: string;
+        };
+      };
+      purchase_orders: {
+        Row: {
+          purchase_order_id: number;
+          supplier_id: number;
+          order_date: string;
+          expected_delivery_date: string | null;
+          status: string;
+          total_amount: number;
+          created_by_user_id: number;
+          created_at: string;
+          updated_at: string;
+        };
+      };
+      purchase_order_items: {
+        Row: {
+          po_item_id: number;
+          purchase_order_id: number;
+          product_id: number;
+          quantity: number;
+          unit_cost: number;
+          line_total: number;
+          received_quantity: number;
+          created_at: string;
+          updated_at: string;
+        };
+      };
+      system_settings: {
+        Row: {
+          setting_id: number;
+          setting_key: string;
+          setting_value: string | null;
+          description: string | null;
+          data_type: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+      };
+      audit_logs: {
+        Row: {
+          log_id: number;
+          user_id: number | null;
+          action: string;
+          entity_type: string;
+          entity_id: string | null;
+          old_value: string | null;
+          new_value: string | null;
+          ip_address: string | null;
+          timestamp: string;
+        };
+      };
+      integrations: {
+        Row: {
+          integration_id: number;
+          integration_name: string;
+          description: string | null;
+          api_key: string | null;
+          secret_key: string | null;
+          webhook_url: string | null;
+          status: string;
+          created_by_user_id: number;
+          created_at: string;
+          updated_at: string;
+        };
+      };
+      pos_sessions: {
+        Row: {
+          session_id: number;
+          location_id: number;
+          opened_by_user_id: number;
+          opened_at: string;
+          closed_at: string | null;
+          starting_cash: number;
+          ending_cash: number | null;
+          status: string;
+          created_at: string;
+          updated_at: string;
+        };
+      };
+      pos_transactions: {
+        Row: {
+          pos_transaction_id: number;
+          pos_session_id: number;
+          sales_order_id: number;
+          transaction_type: string;
+          payment_method: string | null;
+          amount: number;
+          transaction_date: string;
+          created_at: string;
+          updated_at: string;
+        };
+      };
+      customers: {
+        Row: {
+          customer_id: number;
+          customer_type: string;
+          company_name: string | null;
+          contact_first_name: string | null;
+          contact_last_name: string | null;
+          email: string;
+          phone_number: string | null;
+          address: string | null;
+          city: string | null;
+          state: string | null;
+          zip_code: string | null;
+          credit_limit: number;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
         };
       };
       attendance_records: {
@@ -342,6 +773,6 @@ export interface Database {
           updated_at: string;
         };
       };
-    };
-  };
-}
+     };
+   };
+ }
