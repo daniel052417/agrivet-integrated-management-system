@@ -34,6 +34,8 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
             />
           </div>
 
+
+
           <button className="relative p-2 text-gray-600 hover:bg-gray-100 rounded-xl transition-colors">
             <Bell className="w-5 h-5" />
             <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white"></span>

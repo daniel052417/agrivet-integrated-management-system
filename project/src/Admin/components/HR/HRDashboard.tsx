@@ -1,12 +1,10 @@
 import React, { useState } from 'react';
 import { 
-  Users, Clock, Calendar, FileText, Shield, TrendingUp, 
-  UserPlus, Award, BookOpen, Settings, BarChart3, Bell,
-  CheckCircle, AlertCircle, Clock as ClockIcon, UserCheck,
-  ListTodo, Target, GraduationCap, Zap, DollarSign
+  Users, Calendar, FileText, TrendingUp, 
+  UserPlus, Award, BookOpen, BarChart3, Bell,
+  CheckCircle, AlertCircle, Clock as ClockIcon,
+  ListTodo, Zap, DollarSign
 } from 'lucide-react';
-import EnhancedEmployeeProfiles from './EnhancedEmployeeProfiles';
-import PerformanceManagement from './PerformanceManagement';
 import PayrollCompensation from './PayrollCompensation';
 
 interface HRMetrics {
@@ -190,11 +188,38 @@ const HRDashboard: React.FC = () => {
       case 'overview':
         return renderOverview();
       case 'employees':
-        return <EnhancedEmployeeProfiles />;
+        return (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
+            <Users className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+            <h2 className="text-2xl font-bold text-gray-800 mb-2">Employee Directory</h2>
+            <p className="text-gray-600">Employee directory functionality has been integrated into User Accounts</p>
+            <button className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+              Go to User Accounts
+            </button>
+          </div>
+        );
       case 'documents':
-        return <DocumentManagement />;
+        return (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
+            <FileText className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+            <h2 className="text-2xl font-bold text-gray-800 mb-2">Document Management</h2>
+            <p className="text-gray-600">Document management system coming soon</p>
+            <div className="mt-4 inline-flex items-center px-4 py-2 bg-yellow-100 text-yellow-800 rounded-lg">
+              <span className="text-sm">🚧 Under Development</span>
+            </div>
+          </div>
+        );
       case 'recruitment':
-        return <RecruitmentModule />;
+        return (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
+            <UserPlus className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+            <h2 className="text-2xl font-bold text-gray-800 mb-2">Recruitment Module</h2>
+            <p className="text-gray-600">Recruitment management system coming soon</p>
+            <div className="mt-4 inline-flex items-center px-4 py-2 bg-yellow-100 text-yellow-800 rounded-lg">
+              <span className="text-sm">🚧 Under Development</span>
+            </div>
+          </div>
+        );
       case 'attendance':
         return (
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
@@ -218,13 +243,49 @@ const HRDashboard: React.FC = () => {
           </div>
         );
       case 'performance':
-        return <PerformanceManagement />;
+        return (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
+            <Award className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+            <h2 className="text-2xl font-bold text-gray-800 mb-2">Performance Evaluation</h2>
+            <p className="text-gray-600">Performance evaluation functionality has been removed from the HR module</p>
+            <div className="mt-4 inline-flex items-center px-4 py-2 bg-yellow-100 text-yellow-800 rounded-lg">
+              <span className="text-sm">🚧 Component Removed</span>
+            </div>
+          </div>
+        );
       case 'training':
-        return <TrainingDevelopment />;
+        return (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
+            <BookOpen className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+            <h2 className="text-2xl font-bold text-gray-800 mb-2">Training & Development</h2>
+            <p className="text-gray-600">Training management system coming soon</p>
+            <div className="mt-4 inline-flex items-center px-4 py-2 bg-yellow-100 text-yellow-800 rounded-lg">
+              <span className="text-sm">🚧 Under Development</span>
+            </div>
+          </div>
+        );
       case 'analytics':
-        return <AdvancedAnalytics />;
+        return (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
+            <BarChart3 className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+            <h2 className="text-2xl font-bold text-gray-800 mb-2">Advanced Analytics</h2>
+            <p className="text-gray-600">Advanced analytics functionality coming soon</p>
+            <div className="mt-4 inline-flex items-center px-4 py-2 bg-yellow-100 text-yellow-800 rounded-lg">
+              <span className="text-sm">🚧 Under Development</span>
+            </div>
+          </div>
+        );
       case 'workflows':
-        return <WorkflowAutomation />;
+        return (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
+            <Zap className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+            <h2 className="text-2xl font-bold text-gray-800 mb-2">Workflow Automation</h2>
+            <p className="text-gray-600">Workflow automation functionality coming soon</p>
+            <div className="mt-4 inline-flex items-center px-4 py-2 bg-yellow-100 text-yellow-800 rounded-lg">
+              <span className="text-sm">🚧 Under Development</span>
+            </div>
+          </div>
+        );
       case 'payroll':
         return <PayrollCompensation />;
       case 'reports':
@@ -239,7 +300,16 @@ const HRDashboard: React.FC = () => {
           </div>
         );
       case 'development':
-        return <HRTodoList />;
+        return (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
+            <ListTodo className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+            <h2 className="text-2xl font-bold text-gray-800 mb-2">Development & Planning</h2>
+            <p className="text-gray-600">Development planning functionality coming soon</p>
+            <div className="mt-4 inline-flex items-center px-4 py-2 bg-yellow-100 text-yellow-800 rounded-lg">
+              <span className="text-sm">🚧 Under Development</span>
+            </div>
+          </div>
+        );
       default:
         return renderOverview();
     }

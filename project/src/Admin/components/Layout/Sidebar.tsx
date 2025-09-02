@@ -4,8 +4,8 @@ import {
   Users, FileText, Settings, Bell, Shield, MessageSquare,
   Megaphone, Gift, Calendar, DollarSign,
   Archive, Warehouse, ChevronDown,
-  Menu, X, LogOut, UserCheck, Key,
-  Clock, Award, BookOpen
+  Menu, X, LogOut, UserCheck,
+  Clock
 } from 'lucide-react';// at top of Sidebar.tsx
 import logo from '../../../assets/logo.png';
 interface SidebarProps {
@@ -61,8 +61,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeSection, onSectionChange, onLog
        label: 'Staff & User Management',
         icon: Users, category: 'Staff & Users',
          children: [ { id: 'user-accounts', label: 'User Accounts', icon: Users, category: 'Staff & Users' },
-                     { id: 'staff-accounts', label: ' Staff Accounts', icon: UserCheck, category: 'Staff & Users', indent: true },
-                     { id: 'client-accounts', label: ' Client Accounts', icon: Users, category: 'Staff & Users', indent: true },
+                     { id: 'add-staff', label: 'Add Staff', icon: UserCheck, category: 'Staff & Users' },
                      { id: 'roles-permissions', label: 'Roles & Permissions', icon: Shield, category: 'Staff & Users' },
                      { id: 'activity-logs', label: 'Activity Logs', icon: BarChart3, category: 'Staff & Users' }, ] 
     },
@@ -73,10 +72,11 @@ const Sidebar: React.FC<SidebarProps> = ({ activeSection, onSectionChange, onLog
       icon: Users, 
       category: 'HR',
       children: [
-        { id: 'employee-directory', label: 'Employee Directory', icon: Users, category: 'HR' },
-        { id: 'attendance-leave', label: 'Attendance & Leave Management', icon: Clock, category: 'HR' },
+        { id: 'hr-dashboard', label: 'HR Dashboard', icon: Users, category: 'HR' },
+        { id: 'attendance-dashboard', label: 'Attendance Dashboard', icon: Clock, category: 'HR' },
+        { id: 'leave-management', label: 'Leave Management', icon: Calendar, category: 'HR' },
+        { id: 'hr-analytics', label: 'HR Analytics', icon: BarChart3, category: 'HR' },
         { id: 'payroll', label: 'Payroll Management', icon: DollarSign, category: 'HR' },
-        { id: 'performance-evaluation', label: 'Performance Evaluation', icon: Award, category: 'HR' },
       ]
     },
     

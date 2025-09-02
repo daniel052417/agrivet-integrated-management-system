@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { Users, UserPlus, Database, Settings, Search, Filter, Download, SortAsc, SortDesc, MoreVertical, Edit, Eye, X, AlertCircle, Trash, CheckCircle, PauseCircle, Ban, Activity as ActivityIcon, Mail } from 'lucide-react';
+import { Users, UserPlus, Database, Settings, Search, Filter, Download, SortAsc, SortDesc, MoreVertical, Edit, Eye, X, AlertCircle, Trash, CheckCircle, PauseCircle, Ban, Activity as ActivityIcon, Mail, Phone, Calendar, Building } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
+import { staffManagementApi, Staff } from '../../../lib/staffApi';
 
 interface AccountRow {
   id: string;
@@ -11,6 +12,14 @@ interface AccountRow {
   branch: string;
   createdAt: string; // ISO
   lastLoginAt?: string; // ISO | undefined
+  // Staff-specific fields
+  phone?: string;
+  position?: string;
+  department?: string;
+  hireDate?: string;
+  employeeId?: string;
+  salary?: number;
+  accountType?: 'user' | 'staff';
 }
 
 interface AuditEntry {
@@ -132,6 +141,7 @@ const UserAccounts: React.FC = () => {
   const [query, setQuery] = useState('');
   const [role, setRole] = useState<'all' | AccountRow['role']>('all');
   const [status, setStatus] = useState<'all' | AccountRow['status']>('all');
+  const [accountType, setAccountType] = useState<'all' | 'user' | 'staff'>('all');
   const [sortKey, setSortKey] = useState<'createdAt' | 'lastLoginAt' | 'name'>('createdAt');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
@@ -146,6 +156,10 @@ const UserAccounts: React.FC = () => {
   const [pendingAction, setPendingAction] = useState<{ type: StatusAction; row: AccountRow } | null>(null);
 
   const [audit, setAudit] = useState<AuditEntry[]>([]);
+  
+  // Staff management state
+  const [staffRows, setStaffRows] = useState<Staff[]>([]);
+  const [branches, setBranches] = useState<Array<{ id: string; name: string }>>([]);
 
   useEffect(() => {
     let ignore = false;
@@ -153,14 +167,24 @@ const UserAccounts: React.FC = () => {
       try {
         setLoading(true);
         setLoadError(null);
-        const { data, error } = await supabase
+        
+        // Load user accounts from profiles
+        const { data: profilesData, error: profilesError } = await supabase
           .from('profiles')
           .select('id, email, first_name, last_name, role, is_active, last_login, created_at')
           .order('created_at', { ascending: false });
-        if (error) throw error;
-        if (!data) throw new Error('No data');
+        
+        // Load staff data
+        const [staffData, branchesData] = await Promise.all([
+          staffManagementApi.staff.getAllStaff(),
+          staffManagementApi.branches.getAllBranches()
+        ]);
+        
+        if (profilesError) throw profilesError;
         if (ignore) return;
-        const mapped: AccountRow[] = data.map((p: any) => ({
+        
+        // Map user profiles
+        const userAccounts: AccountRow[] = (profilesData || []).map((p: any) => ({
           id: p.id,
           name: [p.first_name, p.last_name].filter(Boolean).join(' ') || p.email,
           email: p.email,
@@ -169,8 +193,37 @@ const UserAccounts: React.FC = () => {
           branch: '',
           createdAt: p.created_at,
           lastLoginAt: p.last_login || undefined,
+          accountType: 'user' as const,
         }));
-        setRows(mapped);
+        
+        // Map staff data
+        const staffAccounts: AccountRow[] = staffData.map((s: Staff) => ({
+          id: s.id,
+          name: `${s.first_name || ''} ${s.last_name || ''}`.trim() || 'Unnamed',
+          email: s.email || '',
+          role: (s.role === 'admin' ? 'Admin' : s.role === 'manager' ? 'Manager' : 'Staff') as AccountRow['role'],
+          status: s.is_active ? 'active' : 'inactive',
+          branch: branchesData.find(b => b.id === s.branch_id)?.name || '',
+          createdAt: s.created_at,
+          lastLoginAt: undefined,
+          accountType: 'staff' as const,
+          phone: s.phone,
+          position: s.position,
+          department: s.department,
+          hireDate: s.hire_date,
+          employeeId: s.employee_id,
+          salary: s.salary,
+        }));
+        
+        // Combine and sort all accounts
+        const allAccounts = [...userAccounts, ...staffAccounts].sort((a, b) => 
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
+        
+        setRows(allAccounts);
+        setStaffRows(staffData);
+        setBranches(branchesData.map(b => ({ id: b.id, name: b.name })));
+        
       } catch (e) {
         console.warn('Falling back to mock accounts:', e);
         if (!ignore) setRows(MOCK_ACCOUNTS);
@@ -221,7 +274,8 @@ const UserAccounts: React.FC = () => {
       const matchesQuery = !q || row.name.toLowerCase().includes(q) || row.email.toLowerCase().includes(q);
       const matchesRole = role === 'all' || row.role === role;
       const matchesStatus = status === 'all' || row.status === status;
-      return matchesQuery && matchesRole && matchesStatus;
+      const matchesAccountType = accountType === 'all' || row.accountType === accountType;
+      return matchesQuery && matchesRole && matchesStatus && matchesAccountType;
     });
 
     r.sort((a, b) => {
@@ -235,7 +289,7 @@ const UserAccounts: React.FC = () => {
     });
 
     return r;
-  }, [rows, query, role, status, sortKey, sortDir]);
+  }, [rows, query, role, status, accountType, sortKey, sortDir]);
 
   const openCreate = () => {
     setForm(emptyForm);
@@ -411,22 +465,25 @@ const UserAccounts: React.FC = () => {
     }
   };
 
+
+
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">User Accounts</h1>
-          <p className="text-gray-600 mt-1">Manage user account creation, profiles, and account settings</p>
+          <h1 className="text-3xl font-bold text-gray-900">User & Staff Accounts</h1>
+          <p className="text-gray-600 mt-1">Manage user accounts, staff profiles, and account settings</p>
         </div>
         <div className="flex items-center gap-3">
           <button onClick={() => downloadCsv(filtered)} className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500">
             <Download className="w-4 h-4" />
             Export CSV
           </button>
+
           <button onClick={openCreate} className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500">
             <UserPlus className="w-4 h-4" />
-            Create Account
+            Create User
           </button>
         </div>
       </div>
@@ -457,6 +514,11 @@ const UserAccounts: React.FC = () => {
               <option value="suspended">Suspended</option>
               <option value="pending">Pending</option>
             </select>
+            <select value={accountType} onChange={(e) => setAccountType(e.target.value as any)} className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500">
+              <option value="all">All Types</option>
+              <option value="user">User Accounts</option>
+              <option value="staff">Staff Accounts</option>
+            </select>
             <div className="flex items-center gap-2">
               <select value={sortKey} onChange={(e) => setSortKey(e.target.value as any)} className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500">
                 <option value="createdAt">Sort by Created</option>
@@ -478,7 +540,9 @@ const UserAccounts: React.FC = () => {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Position</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Branch</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
@@ -500,7 +564,19 @@ const UserAccounts: React.FC = () => {
                       </div>
                     </div>
                   </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                      row.accountType === 'staff' 
+                        ? 'bg-blue-100 text-blue-800' 
+                        : 'bg-green-100 text-green-800'
+                    }`}>
+                      {row.accountType === 'staff' ? 'Staff' : 'User'}
+                    </span>
+                  </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{row.role}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {row.position || '-'}
+                  </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${statusBadge(row.status)}`}>
                       {row.status.charAt(0).toUpperCase() + row.status.slice(1)}
@@ -721,6 +797,8 @@ const UserAccounts: React.FC = () => {
           </div>
         </>
       )}
+
+
     </div>
   );
 };

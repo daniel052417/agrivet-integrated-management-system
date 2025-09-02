@@ -3,6 +3,7 @@ import { Loader2 } from 'lucide-react';
 import { supabase, UserProfile } from './lib/supabase';
 import LoginPage from '../src/Login/components/LoginPage';
 import AdminDashboard from '../src/DashboardLayout/AdminDashboard';
+import POSInterface from './POS/components/POSInterface';
 
 
 function App() {
@@ -128,25 +129,15 @@ function App() {
     );
   }
 
-  // Role-based dashboard rendering with admin priority
+  // Role-based dashboard rendering
   if (user) {
-    // Admin gets priority access to admin dashboard
-    if (user.role === 'admin') {
-      return <AdminDashboard user={user} onLogout={handleLogout} />;
+    // Cashiers go directly to POS system
+    if (user.role === 'cashier') {
+      return <POSInterface user={user} onLogout={handleLogout} />;
     }
     
-    // Other roles get their respective dashboards
-    // switch (user.role) {
-    //   case 'hr':
-    //     return <HRDashboard user={user} onLogout={handleLogout} />;
-    //   case 'marketing':
-    //     return <MarketingDashboard user={user} onLogout={handleLogout} />;
-    //   case 'cashier':
-    //     return <CashierDashboard user={user} onLogout={handleLogout} />;
-    //   default:
-    //     // For any other roles (manager, staff, user), show admin dashboard as fallback
-    //     return <AdminDashboard user={user} onLogout={handleLogout} />;
-    // }
+    // All other roles (admin, manager, staff, etc.) go to admin dashboard
+    return <AdminDashboard user={user} onLogout={handleLogout} />;
   }
 
   // Login form
