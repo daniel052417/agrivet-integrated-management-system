@@ -31,7 +31,7 @@ export interface Database {
      Tables: {
       users: {
         Row: {
-          user_id: number;
+          id: string;
           username: string;
           password_hash: string;
           email: string;
@@ -40,6 +40,7 @@ export interface Database {
           phone_number: string | null;
           is_active: boolean;
           last_login_at: string | null;
+          staff_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -58,15 +59,6 @@ export interface Database {
           user_id: number;
           role_id: number;
           assigned_at: string;
-        };
-      };
-      permissions: {
-        Row: {
-          permission_id: number;
-          permission_name: string;
-          description: string | null;
-          created_at: string;
-          updated_at: string;
         };
       };
       role_permissions: {
@@ -283,6 +275,59 @@ export interface Database {
           salary: number;
           is_active: boolean;
           role: string;
+          user_account_id: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+      };
+      staff_user_links: {
+        Row: {
+          id: string;
+          staff_id: string;
+          user_id: string;
+          link_status: 'active' | 'inactive' | 'transferred';
+          linked_at: string;
+          unlinked_at: string | null;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+      };
+      account_creation_workflow: {
+        Row: {
+          id: string;
+          staff_id: string;
+          workflow_status: 'pending' | 'in_progress' | 'completed' | 'failed';
+          account_creation_method: 'manual' | 'email_invite' | 'auto_create' | null;
+          email_invite_sent_at: string | null;
+          account_created_at: string | null;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+      };
+      user_account_audit: {
+        Row: {
+          id: string;
+          actor_email: string | null;
+          action: 'create' | 'update' | 'delete' | 'activate' | 'deactivate' | 'suspend' | 'link' | 'unlink' | 'transfer';
+          target_user_email: string;
+          target_user_id: string | null;
+          target_staff_id: string | null;
+          details: any;
+          created_at: string;
+        };
+      };
+      email_invitations: {
+        Row: {
+          id: string;
+          staff_id: string;
+          email: string;
+          invitation_token: string;
+          expires_at: string;
+          status: 'pending' | 'accepted' | 'expired' | 'cancelled';
+          accepted_at: string | null;
+          created_by: string | null;
           created_at: string;
           updated_at: string;
         };

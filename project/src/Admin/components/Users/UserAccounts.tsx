@@ -196,24 +196,27 @@ const UserAccounts: React.FC = () => {
           accountType: 'user' as const,
         }));
         
-        // Map staff data
-        const staffAccounts: AccountRow[] = staffData.map((s: Staff) => ({
-          id: s.id,
-          name: `${s.first_name || ''} ${s.last_name || ''}`.trim() || 'Unnamed',
-          email: s.email || '',
-          role: (s.role === 'admin' ? 'Admin' : s.role === 'manager' ? 'Manager' : 'Staff') as AccountRow['role'],
-          status: s.is_active ? 'active' : 'inactive',
-          branch: branchesData.find(b => b.id === s.branch_id)?.name || '',
-          createdAt: s.created_at,
-          lastLoginAt: undefined,
-          accountType: 'staff' as const,
-          phone: s.phone,
-          position: s.position,
-          department: s.department,
-          hireDate: s.hire_date,
-          employeeId: s.employee_id,
-          salary: s.salary,
-        }));
+        // Map staff data with user account information
+        const staffAccounts: AccountRow[] = staffData.map((s: Staff) => {
+          const linkedUser = userAccounts.find(u => u.id === s.user_account_id);
+          return {
+            id: s.id,
+            name: `${s.first_name || ''} ${s.last_name || ''}`.trim() || 'Unnamed',
+            email: s.email || '',
+            role: (s.role === 'admin' ? 'Admin' : s.role === 'manager' ? 'Manager' : 'Staff') as AccountRow['role'],
+            status: s.is_active ? 'active' : 'inactive',
+            branch: branchesData.find(b => b.id === s.branch_id)?.name || '',
+            createdAt: s.created_at,
+            lastLoginAt: linkedUser?.lastLoginAt,
+            accountType: 'staff' as const,
+            phone: s.phone,
+            position: s.position,
+            department: s.department,
+            hireDate: s.hire_date,
+            employeeId: s.employee_id,
+            salary: s.salary,
+          };
+        });
         
         // Combine and sort all accounts
         const allAccounts = [...userAccounts, ...staffAccounts].sort((a, b) => 

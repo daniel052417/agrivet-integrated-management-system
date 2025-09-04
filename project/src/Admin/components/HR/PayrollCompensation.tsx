@@ -5,237 +5,227 @@ import {
   FileText, 
   Gift, 
   TrendingUp, 
-  Calendar,
   Download,
   Edit,
   Plus,
   Search,
-  Filter,
-  Eye
+  Eye,
+  AlertCircle,
+  Clock,
+  Users
 } from 'lucide-react';
+import { 
+  payrollPeriodApi, 
+  payrollRecordsApi, 
+  taxRatesApi, 
+  payrollBenefitsApi, 
+  payrollReportsApi,
+  payrollUtils,
+  type PayrollPeriod,
+  type PayrollRecord,
+  type TaxRate,
+  type PayrollBenefit,
+  type PayrollSummary
+} from '../../../lib/payrollApi';
 
-// Interfaces for payroll data
-interface Employee {
-  id: string;
-  name: string;
-  position: string;
-  department: string;
-  baseSalary: number;
-  employmentType: 'full-time' | 'part-time' | 'contract';
-  joinDate: string;
-  taxId: string;
-}
-
-interface PayrollPeriod {
-  id: string;
-  month: number;
-  year: number;
+// Additional interfaces for UI state
+interface PayrollFormData {
+  periodName: string;
+  periodType: 'monthly' | 'bi-weekly' | 'weekly' | 'custom';
   startDate: string;
   endDate: string;
-  status: 'draft' | 'processing' | 'completed' | 'paid';
+  payDate: string;
 }
 
-interface PayrollRecord {
-  id: string;
-  employeeId: string;
-  periodId: string;
-  baseSalary: number;
-  overtime: number;
-  bonuses: number;
-  allowances: number;
-  deductions: number;
-  grossPay: number;
-  taxAmount: number;
-  netPay: number;
-  status: 'pending' | 'approved' | 'paid';
-  paymentDate?: string;
-}
-
-interface Benefit {
-  id: string;
-  name: string;
-  type: 'health' | 'dental' | 'vision' | 'retirement' | 'other';
-  cost: number;
-  employerContribution: number;
-  employeeContribution: number;
-  isActive: boolean;
-}
-
-interface TaxRate {
-  id: string;
-  name: string;
-  rate: number;
-  type: 'federal' | 'state' | 'local' | 'social_security' | 'medicare';
-  minAmount: number;
-  maxAmount: number;
-}
+// interface PayrollRecordFormData {
+//   staffId: string;
+//   baseSalary: number;
+//   regularHours: number;
+//   overtimeHours: number;
+//   bonuses: number;
+//   allowances: number;
+//   notes?: string;
+// }
 
 const PayrollCompensation: React.FC = () => {
   const [activeTab, setActiveTab] = useState('payroll');
-  const [employees] = useState<Employee[]>([
-    {
-      id: '1',
-      name: 'John Smith',
-      position: 'Software Engineer',
-      department: 'Engineering',
-      baseSalary: 75000,
-      employmentType: 'full-time',
-      joinDate: '2023-01-15',
-      taxId: '123-45-6789'
-    },
-    {
-      id: '2',
-      name: 'Sarah Johnson',
-      position: 'HR Manager',
-      department: 'Human Resources',
-      baseSalary: 65000,
-      employmentType: 'full-time',
-      joinDate: '2022-08-20',
-      taxId: '987-65-4321'
-    },
-    {
-      id: '3',
-      name: 'Mike Wilson',
-      position: 'Marketing Specialist',
-      department: 'Marketing',
-      baseSalary: 55000,
-      employmentType: 'full-time',
-      joinDate: '2023-03-10',
-      taxId: '456-78-9012'
-    }
-  ]);
-
-  const [payrollPeriods] = useState<PayrollPeriod[]>([
-    {
-      id: '1',
-      month: 12,
-      year: 2024,
-      startDate: '2024-12-01',
-      endDate: '2024-12-31',
-      status: 'draft'
-    },
-    {
-      id: '2',
-      month: 11,
-      year: 2024,
-      startDate: '2024-11-01',
-      endDate: '2024-11-30',
-      status: 'completed'
-    }
-  ]);
-
-  const [payrollRecords] = useState<PayrollRecord[]>([
-    {
-      id: '1',
-      employeeId: '1',
-      periodId: '1',
-      baseSalary: 75000,
-      overtime: 500,
-      bonuses: 2000,
-      allowances: 300,
-      deductions: 150,
-      grossPay: 77800,
-      taxAmount: 15560,
-      netPay: 62240,
-      status: 'pending'
-    },
-    {
-      id: '2',
-      employeeId: '2',
-      periodId: '1',
-      baseSalary: 65000,
-      overtime: 0,
-      bonuses: 1500,
-      allowances: 250,
-      deductions: 100,
-      grossPay: 66750,
-      taxAmount: 13350,
-      netPay: 53400,
-      status: 'pending'
-    }
-  ]);
-
-  const [benefits] = useState<Benefit[]>([
-    {
-      id: '1',
-      name: 'Health Insurance',
-      type: 'health',
-      cost: 800,
-      employerContribution: 600,
-      employeeContribution: 200,
-      isActive: true
-    },
-    {
-      id: '2',
-      name: 'Dental Insurance',
-      type: 'dental',
-      cost: 150,
-      employerContribution: 100,
-      employeeContribution: 50,
-      isActive: true
-    },
-    {
-      id: '3',
-      name: '401(k) Retirement',
-      type: 'retirement',
-      cost: 0,
-      employerContribution: 300,
-      employeeContribution: 0,
-      isActive: true
-    }
-  ]);
-
-  const [taxRates] = useState<TaxRate[]>([
-    {
-      id: '1',
-      name: 'Federal Income Tax',
-      rate: 22,
-      type: 'federal',
-      minAmount: 0,
-      maxAmount: 999999
-    },
-    {
-      id: '2',
-      name: 'Social Security',
-      rate: 6.2,
-      type: 'social_security',
-      minAmount: 0,
-      maxAmount: 160200
-    },
-    {
-      id: '3',
-      name: 'Medicare',
-      rate: 1.45,
-      type: 'medicare',
-      minAmount: 0,
-      maxAmount: 999999
-    }
-  ]);
-
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  
+  // State for data
+  const [payrollPeriods, setPayrollPeriods] = useState<PayrollPeriod[]>([]);
+  const [payrollRecords, setPayrollRecords] = useState<PayrollRecord[]>([]);
+  const [taxRates, setTaxRates] = useState<TaxRate[]>([]);
+  const [benefits, setBenefits] = useState<PayrollBenefit[]>([]);
+  const [payrollSummary, setPayrollSummary] = useState<PayrollSummary | null>(null);
+  
+  // UI State
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedPeriod, setSelectedPeriod] = useState('1');
+  const [selectedPeriod, setSelectedPeriod] = useState<string>('');
+  const [showNewPeriodForm, setShowNewPeriodForm] = useState(false);
+  
+  // Form data
+  const [periodFormData, setPeriodFormData] = useState<PayrollFormData>({
+    periodName: '',
+    periodType: 'monthly',
+    startDate: '',
+    endDate: '',
+    payDate: ''
+  });
 
-  // Calculate payroll summary
-  const calculatePayrollSummary = () => {
-    const currentPeriod = payrollRecords.filter(record => record.periodId === selectedPeriod);
-    const totalGross = currentPeriod.reduce((sum, record) => sum + record.grossPay, 0);
-    const totalTax = currentPeriod.reduce((sum, record) => sum + record.taxAmount, 0);
-    const totalNet = currentPeriod.reduce((sum, record) => sum + record.netPay, 0);
-    const totalBenefits = currentPeriod.reduce((sum, record) => sum + record.deductions, 0);
+  // Load data on component mount
+  useEffect(() => {
+    loadInitialData();
+  }, []);
 
-    return {
-      totalGross,
-      totalTax,
-      totalNet,
-      totalBenefits,
-      employeeCount: currentPeriod.length
-    };
+  // Load payroll records when period changes
+  useEffect(() => {
+    if (selectedPeriod) {
+      loadPayrollRecords(selectedPeriod);
+      loadPayrollSummary(selectedPeriod);
+    }
+  }, [selectedPeriod]);
+
+  // Data loading functions
+  const loadInitialData = async () => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const [periodsData, taxRatesData, benefitsData] = await Promise.all([
+        payrollPeriodApi.getAll(),
+        taxRatesApi.getAll(),
+        payrollBenefitsApi.getAll()
+      ]);
+      
+      setPayrollPeriods(periodsData);
+      setTaxRates(taxRatesData);
+      setBenefits(benefitsData);
+      
+      // Set first period as selected if available
+      if (periodsData.length > 0) {
+        setSelectedPeriod(periodsData[0].id);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load data');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const summary = calculatePayrollSummary();
+  const loadPayrollRecords = async (periodId: string) => {
+    try {
+      const records = await payrollRecordsApi.getByPeriod(periodId);
+      setPayrollRecords(records);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load payroll records');
+    }
+  };
+
+  const loadPayrollSummary = async (periodId: string) => {
+    try {
+      const summary = await payrollPeriodApi.getSummary(periodId);
+      setPayrollSummary(summary);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load payroll summary');
+    }
+  };
+
+  // Form handlers
+  const handleCreatePeriod = async () => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const validation = payrollUtils.validatePeriodDates(
+        periodFormData.startDate,
+        periodFormData.endDate,
+        periodFormData.payDate
+      );
+      
+      if (!validation.isValid) {
+        setError(validation.errors.join(', '));
+        return;
+      }
+      
+      const periodName = payrollUtils.generatePeriodName(
+        periodFormData.startDate,
+        periodFormData.endDate,
+        periodFormData.periodType
+      );
+      
+      const newPeriod = await payrollPeriodApi.create({
+        period_name: periodName,
+        period_type: periodFormData.periodType,
+        start_date: periodFormData.startDate,
+        end_date: periodFormData.endDate,
+        pay_date: periodFormData.payDate,
+        status: 'draft',
+        total_employees: 0,
+        total_gross_pay: 0,
+        total_tax_amount: 0,
+        total_net_pay: 0
+      });
+      
+      setPayrollPeriods(prev => [newPeriod, ...prev]);
+      setShowNewPeriodForm(false);
+      setPeriodFormData({
+        periodName: '',
+        periodType: 'monthly',
+        startDate: '',
+        endDate: '',
+        payDate: ''
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create payroll period');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleProcessPayroll = async (periodId: string) => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      await payrollPeriodApi.processPeriod(periodId);
+      await loadPayrollRecords(periodId);
+      await loadPayrollSummary(periodId);
+      await loadInitialData(); // Refresh periods list
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to process payroll');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGenerateReport = async (periodId: string, reportType: string) => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const period = payrollPeriods.find(p => p.id === periodId);
+      const reportName = `${period?.period_name} - ${reportType.replace('_', ' ').toUpperCase()}`;
+      
+      await payrollReportsApi.generateReport(periodId, reportType, reportName);
+      // In a real implementation, you would handle file download here
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to generate report');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const renderPayrollTab = () => (
     <div className="space-y-6">
+      {/* Error Display */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center gap-3">
+          <AlertCircle className="h-5 w-5 text-red-500" />
+          <p className="text-red-700">{error}</p>
+        </div>
+      )}
+
       {/* Payroll Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-white p-4 rounded-lg shadow border">
@@ -243,7 +233,7 @@ const PayrollCompensation: React.FC = () => {
             <div>
               <p className="text-sm text-gray-600">Total Gross Pay</p>
               <p className="text-2xl font-bold text-green-600">
-                ${summary.totalGross.toLocaleString()}
+                {payrollUtils.formatCurrency(payrollSummary?.total_gross_pay || 0)}
               </p>
             </div>
             <DollarSign className="h-8 w-8 text-green-500" />
@@ -255,7 +245,7 @@ const PayrollCompensation: React.FC = () => {
             <div>
               <p className="text-sm text-gray-600">Total Tax</p>
               <p className="text-2xl font-bold text-red-600">
-                ${summary.totalTax.toLocaleString()}
+                {payrollUtils.formatCurrency(payrollSummary?.total_tax_amount || 0)}
               </p>
             </div>
             <Calculator className="h-8 w-8 text-red-500" />
@@ -267,7 +257,7 @@ const PayrollCompensation: React.FC = () => {
             <div>
               <p className="text-sm text-gray-600">Total Net Pay</p>
               <p className="text-2xl font-bold text-blue-600">
-                ${summary.totalNet.toLocaleString()}
+                {payrollUtils.formatCurrency(payrollSummary?.total_net_pay || 0)}
               </p>
             </div>
             <TrendingUp className="h-8 w-8 text-blue-500" />
@@ -279,10 +269,10 @@ const PayrollCompensation: React.FC = () => {
             <div>
               <p className="text-sm text-gray-600">Employees</p>
               <p className="text-2xl font-bold text-purple-600">
-                {summary.employeeCount}
+                {payrollSummary?.total_employees || 0}
               </p>
             </div>
-            <Calendar className="h-8 w-8 text-purple-500" />
+            <Users className="h-8 w-8 text-purple-500" />
           </div>
         </div>
       </div>
@@ -291,7 +281,10 @@ const PayrollCompensation: React.FC = () => {
       <div className="bg-white p-4 rounded-lg shadow border">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold">Payroll Period</h3>
-          <button className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 flex items-center gap-2">
+          <button 
+            onClick={() => setShowNewPeriodForm(true)}
+            className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 flex items-center gap-2"
+          >
             <Plus className="h-4 w-4" />
             New Period
           </button>
@@ -301,13 +294,89 @@ const PayrollCompensation: React.FC = () => {
           value={selectedPeriod}
           onChange={(e) => setSelectedPeriod(e.target.value)}
           className="w-full p-2 border border-gray-300 rounded-lg"
+          disabled={loading}
         >
+          <option value="">Select a payroll period</option>
           {payrollPeriods.map(period => (
             <option key={period.id} value={period.id}>
-              {new Date(period.startDate).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })} - {period.status}
+              {period.period_name} - {period.status}
             </option>
           ))}
         </select>
+
+        {/* New Period Form */}
+        {showNewPeriodForm && (
+          <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+            <h4 className="text-md font-semibold mb-3">Create New Payroll Period</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Period Name</label>
+                <input
+                  type="text"
+                  value={periodFormData.periodName}
+                  onChange={(e) => setPeriodFormData(prev => ({ ...prev, periodName: e.target.value }))}
+                  className="w-full p-2 border border-gray-300 rounded-lg"
+                  placeholder="e.g., December 2024"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Period Type</label>
+                <select
+                  value={periodFormData.periodType}
+                  onChange={(e) => setPeriodFormData(prev => ({ ...prev, periodType: e.target.value as any }))}
+                  className="w-full p-2 border border-gray-300 rounded-lg"
+                >
+                  <option value="monthly">Monthly</option>
+                  <option value="bi-weekly">Bi-weekly</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+                <input
+                  type="date"
+                  value={periodFormData.startDate}
+                  onChange={(e) => setPeriodFormData(prev => ({ ...prev, startDate: e.target.value }))}
+                  className="w-full p-2 border border-gray-300 rounded-lg"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+                <input
+                  type="date"
+                  value={periodFormData.endDate}
+                  onChange={(e) => setPeriodFormData(prev => ({ ...prev, endDate: e.target.value }))}
+                  className="w-full p-2 border border-gray-300 rounded-lg"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Pay Date</label>
+                <input
+                  type="date"
+                  value={periodFormData.payDate}
+                  onChange={(e) => setPeriodFormData(prev => ({ ...prev, payDate: e.target.value }))}
+                  className="w-full p-2 border border-gray-300 rounded-lg"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 mt-4">
+              <button
+                onClick={handleCreatePeriod}
+                disabled={loading}
+                className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 disabled:opacity-50"
+              >
+                {loading ? 'Creating...' : 'Create Period'}
+              </button>
+              <button
+                onClick={() => setShowNewPeriodForm(false)}
+                className="bg-gray-500 text-white px-4 py-2 rounded-lg hover:bg-gray-600"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Payroll Records Table */}
@@ -326,7 +395,21 @@ const PayrollCompensation: React.FC = () => {
                   className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg w-64"
                 />
               </div>
-              <button className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 flex items-center gap-2">
+              {selectedPeriod && (
+                <button
+                  onClick={() => handleProcessPayroll(selectedPeriod)}
+                  disabled={loading}
+                  className="bg-orange-500 text-white px-4 py-2 rounded-lg hover:bg-orange-600 disabled:opacity-50 flex items-center gap-2"
+                >
+                  <Calculator className="h-4 w-4" />
+                  {loading ? 'Processing...' : 'Process Payroll'}
+                </button>
+              )}
+              <button 
+                onClick={() => selectedPeriod && handleGenerateReport(selectedPeriod, 'summary')}
+                disabled={!selectedPeriod || loading}
+                className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 disabled:opacity-50 flex items-center gap-2"
+              >
                 <Download className="h-4 w-4" />
                 Export
               </button>
@@ -335,69 +418,86 @@ const PayrollCompensation: React.FC = () => {
         </div>
         
         <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Employee</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Base Salary</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Overtime</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Bonuses</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Gross Pay</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Tax</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Net Pay</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Status</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {payrollRecords
-                .filter(record => {
-                  const employee = employees.find(emp => emp.id === record.employeeId);
-                  return employee?.name.toLowerCase().includes(searchTerm.toLowerCase());
-                })
-                .map(record => {
-                  const employee = employees.find(emp => emp.id === record.employeeId);
-                  return (
+          {loading ? (
+            <div className="p-8 text-center">
+              <Clock className="h-8 w-8 text-gray-400 mx-auto mb-2 animate-spin" />
+              <p className="text-gray-500">Loading payroll records...</p>
+            </div>
+          ) : payrollRecords.length === 0 ? (
+            <div className="p-8 text-center">
+              <Users className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+              <p className="text-gray-500">No payroll records found for this period</p>
+              {selectedPeriod && (
+                <button
+                  onClick={() => handleProcessPayroll(selectedPeriod)}
+                  className="mt-2 bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600"
+                >
+                  Process Payroll
+                </button>
+              )}
+            </div>
+          ) : (
+            <table className="w-full">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Employee</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Base Salary</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Overtime</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Bonuses</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Gross Pay</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Tax</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Net Pay</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Status</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {payrollRecords
+                  .filter(record => 
+                    record.employee_name.toLowerCase().includes(searchTerm.toLowerCase())
+                  )
+                  .map(record => (
                     <tr key={record.id} className="hover:bg-gray-50">
                       <td className="px-4 py-3">
                         <div>
-                          <p className="font-medium text-gray-900">{employee?.name}</p>
-                          <p className="text-sm text-gray-500">{employee?.position}</p>
+                          <p className="font-medium text-gray-900">{record.employee_name}</p>
+                          <p className="text-sm text-gray-500">{record.position} - {record.department}</p>
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-gray-900">${record.baseSalary.toLocaleString()}</td>
-                      <td className="px-4 py-3 text-gray-900">${record.overtime.toLocaleString()}</td>
-                      <td className="px-4 py-3 text-gray-900">${record.bonuses.toLocaleString()}</td>
-                      <td className="px-4 py-3 text-gray-900 font-medium">${record.grossPay.toLocaleString()}</td>
-                      <td className="px-4 py-3 text-red-600">${record.taxAmount.toLocaleString()}</td>
-                      <td className="px-4 py-3 text-green-600 font-bold">${record.netPay.toLocaleString()}</td>
+                      <td className="px-4 py-3 text-gray-900">{payrollUtils.formatCurrency(record.base_salary)}</td>
+                      <td className="px-4 py-3 text-gray-900">{payrollUtils.formatCurrency(record.overtime_pay)}</td>
+                      <td className="px-4 py-3 text-gray-900">{payrollUtils.formatCurrency(record.bonuses)}</td>
+                      <td className="px-4 py-3 text-gray-900 font-medium">{payrollUtils.formatCurrency(record.gross_pay)}</td>
+                      <td className="px-4 py-3 text-red-600">{payrollUtils.formatCurrency(record.tax_amount)}</td>
+                      <td className="px-4 py-3 text-green-600 font-bold">{payrollUtils.formatCurrency(record.net_pay)}</td>
                       <td className="px-4 py-3">
                         <span className={`px-2 py-1 text-xs rounded-full ${
                           record.status === 'paid' ? 'bg-green-100 text-green-800' :
                           record.status === 'approved' ? 'bg-blue-100 text-blue-800' :
-                          'bg-yellow-100 text-yellow-800'
+                          record.status === 'reviewed' ? 'bg-yellow-100 text-yellow-800' :
+                          'bg-gray-100 text-gray-800'
                         }`}>
                           {record.status.charAt(0).toUpperCase() + record.status.slice(1)}
                         </span>
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
-                          <button className="text-blue-600 hover:text-blue-800">
+                          <button className="text-blue-600 hover:text-blue-800" title="View Details">
                             <Eye className="h-4 w-4" />
                           </button>
-                          <button className="text-green-600 hover:text-green-800">
+                          <button className="text-green-600 hover:text-green-800" title="Download Pay Stub">
                             <Download className="h-4 w-4" />
                           </button>
-                          <button className="text-gray-600 hover:text-gray-800">
+                          <button className="text-gray-600 hover:text-gray-800" title="Edit Record">
                             <Edit className="h-4 w-4" />
                           </button>
                         </div>
                       </td>
                     </tr>
-                  );
-                })}
-            </tbody>
-          </table>
+                  ))}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
     </div>
@@ -412,7 +512,7 @@ const PayrollCompensation: React.FC = () => {
             <div>
               <p className="text-sm text-gray-600">Total Benefits Cost</p>
               <p className="text-2xl font-bold text-purple-600">
-                ${benefits.reduce((sum, benefit) => sum + benefit.cost, 0).toLocaleString()}
+                {payrollUtils.formatCurrency(benefits.reduce((sum, benefit) => sum + benefit.cost_value, 0))}
               </p>
             </div>
             <Gift className="h-8 w-8 text-purple-500" />
@@ -424,7 +524,7 @@ const PayrollCompensation: React.FC = () => {
             <div>
               <p className="text-sm text-gray-600">Employer Contribution</p>
               <p className="text-2xl font-bold text-green-600">
-                ${benefits.reduce((sum, benefit) => sum + benefit.employerContribution, 0).toLocaleString()}
+                {payrollUtils.formatCurrency(benefits.reduce((sum, benefit) => sum + benefit.employer_contribution, 0))}
               </p>
             </div>
             <TrendingUp className="h-8 w-8 text-green-500" />
@@ -436,7 +536,7 @@ const PayrollCompensation: React.FC = () => {
             <div>
               <p className="text-sm text-gray-600">Active Benefits</p>
               <p className="text-2xl font-bold text-blue-600">
-                {benefits.filter(benefit => benefit.isActive).length}
+                {benefits.filter(benefit => benefit.is_active).length}
               </p>
             </div>
             <Gift className="h-8 w-8 text-blue-500" />
@@ -449,7 +549,10 @@ const PayrollCompensation: React.FC = () => {
         <div className="p-4 border-b">
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-semibold">Benefits Management</h3>
-            <button className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 flex items-center gap-2">
+            <button 
+              onClick={() => {/* TODO: Implement add benefit form */}}
+              className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 flex items-center gap-2"
+            >
               <Plus className="h-4 w-4" />
               Add Benefit
             </button>
@@ -457,51 +560,63 @@ const PayrollCompensation: React.FC = () => {
         </div>
         
         <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Benefit Name</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Type</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Total Cost</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Employer Cost</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Employee Cost</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Status</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {benefits.map(benefit => (
-                <tr key={benefit.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium text-gray-900">{benefit.name}</td>
-                  <td className="px-4 py-3">
-                    <span className="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-800">
-                      {benefit.type.charAt(0).toUpperCase() + benefit.type.slice(1)}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-gray-900">${benefit.cost.toLocaleString()}</td>
-                  <td className="px-4 py-3 text-green-600">${benefit.employerContribution.toLocaleString()}</td>
-                  <td className="px-4 py-3 text-gray-600">${benefit.employeeContribution.toLocaleString()}</td>
-                  <td className="px-4 py-3">
-                    <span className={`px-2 py-1 text-xs rounded-full ${
-                      benefit.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                    }`}>
-                      {benefit.isActive ? 'Active' : 'Inactive'}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <button className="text-blue-600 hover:text-blue-800">
-                        <Edit className="h-4 w-4" />
-                      </button>
-                      <button className="text-gray-600 hover:text-gray-800">
-                        <Eye className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </td>
+          {loading ? (
+            <div className="p-8 text-center">
+              <Clock className="h-8 w-8 text-gray-400 mx-auto mb-2 animate-spin" />
+              <p className="text-gray-500">Loading benefits...</p>
+            </div>
+          ) : benefits.length === 0 ? (
+            <div className="p-8 text-center">
+              <Gift className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+              <p className="text-gray-500">No benefits configured</p>
+            </div>
+          ) : (
+            <table className="w-full">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Benefit Name</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Type</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Total Cost</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Employer Cost</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Employee Cost</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Status</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {benefits.map(benefit => (
+                  <tr key={benefit.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 font-medium text-gray-900">{benefit.benefit_name}</td>
+                    <td className="px-4 py-3">
+                      <span className="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-800">
+                        {benefit.benefit_type.replace('_', ' ').charAt(0).toUpperCase() + benefit.benefit_type.replace('_', ' ').slice(1)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-gray-900">{payrollUtils.formatCurrency(benefit.cost_value)}</td>
+                    <td className="px-4 py-3 text-green-600">{payrollUtils.formatCurrency(benefit.employer_contribution)}</td>
+                    <td className="px-4 py-3 text-gray-600">{payrollUtils.formatCurrency(benefit.employee_contribution)}</td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-1 text-xs rounded-full ${
+                        benefit.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                      }`}>
+                        {benefit.is_active ? 'Active' : 'Inactive'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <button className="text-blue-600 hover:text-blue-800" title="Edit Benefit">
+                          <Edit className="h-4 w-4" />
+                        </button>
+                        <button className="text-gray-600 hover:text-gray-800" title="View Details">
+                          <Eye className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
     </div>
@@ -514,9 +629,9 @@ const PayrollCompensation: React.FC = () => {
         <div className="bg-white p-4 rounded-lg shadow border">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-600">Federal Tax Rate</p>
+              <p className="text-sm text-gray-600">Withholding Tax</p>
               <p className="text-2xl font-bold text-red-600">
-                {taxRates.find(rate => rate.type === 'federal')?.rate}%
+                {taxRates.find(rate => rate.tax_type === 'withholding')?.rate_value || 0}%
               </p>
             </div>
             <Calculator className="h-8 w-8 text-red-500" />
@@ -526,9 +641,9 @@ const PayrollCompensation: React.FC = () => {
         <div className="bg-white p-4 rounded-lg shadow border">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-600">Social Security</p>
+              <p className="text-sm text-gray-600">SSS Contribution</p>
               <p className="text-2xl font-bold text-blue-600">
-                {taxRates.find(rate => rate.type === 'social_security')?.rate}%
+                {taxRates.find(rate => rate.tax_type === 'sss')?.rate_value || 0}%
               </p>
             </div>
             <Calculator className="h-8 w-8 text-blue-500" />
@@ -538,9 +653,9 @@ const PayrollCompensation: React.FC = () => {
         <div className="bg-white p-4 rounded-lg shadow border">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-600">Medicare</p>
+              <p className="text-sm text-gray-600">PhilHealth</p>
               <p className="text-2xl font-bold text-green-600">
-                {taxRates.find(rate => rate.type === 'medicare')?.rate}%
+                {taxRates.find(rate => rate.tax_type === 'philhealth')?.rate_value || 0}%
               </p>
             </div>
             <Calculator className="h-8 w-8 text-green-500" />
@@ -550,9 +665,9 @@ const PayrollCompensation: React.FC = () => {
         <div className="bg-white p-4 rounded-lg shadow border">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-600">Total Tax Rate</p>
+              <p className="text-sm text-gray-600">Pag-IBIG</p>
               <p className="text-2xl font-bold text-purple-600">
-                {taxRates.reduce((sum, rate) => sum + rate.rate, 0).toFixed(2)}%
+                ₱{taxRates.find(rate => rate.tax_type === 'pagibig')?.rate_value || 0}
               </p>
             </div>
             <Calculator className="h-8 w-8 text-purple-500" />
@@ -565,7 +680,10 @@ const PayrollCompensation: React.FC = () => {
         <div className="p-4 border-b">
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-semibold">Tax Rates Configuration</h3>
-            <button className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 flex items-center gap-2">
+            <button 
+              onClick={() => {/* TODO: Implement add tax rate form */}}
+              className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 flex items-center gap-2"
+            >
               <Plus className="h-4 w-4" />
               Add Tax Rate
             </button>
@@ -573,45 +691,69 @@ const PayrollCompensation: React.FC = () => {
         </div>
         
         <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Tax Name</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Type</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Rate (%)</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Min Amount</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Max Amount</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {taxRates.map(taxRate => (
-                <tr key={taxRate.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium text-gray-900">{taxRate.name}</td>
-                  <td className="px-4 py-3">
-                    <span className="px-2 py-1 text-xs rounded-full bg-purple-100 text-purple-800">
-                      {taxRate.type.replace('_', ' ').charAt(0).toUpperCase() + taxRate.type.replace('_', ' ').slice(1)}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-gray-900 font-medium">{taxRate.rate}%</td>
-                  <td className="px-4 py-3 text-gray-600">${taxRate.minAmount.toLocaleString()}</td>
-                  <td className="px-4 py-3 text-gray-600">
-                    {taxRate.maxAmount === 999999 ? 'Unlimited' : `$${taxRate.maxAmount.toLocaleString()}`}
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <button className="text-blue-600 hover:text-blue-800">
-                        <Edit className="h-4 w-4" />
-                      </button>
-                      <button className="text-gray-600 hover:text-gray-800">
-                        <Eye className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </td>
+          {loading ? (
+            <div className="p-8 text-center">
+              <Clock className="h-8 w-8 text-gray-400 mx-auto mb-2 animate-spin" />
+              <p className="text-gray-500">Loading tax rates...</p>
+            </div>
+          ) : taxRates.length === 0 ? (
+            <div className="p-8 text-center">
+              <Calculator className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+              <p className="text-gray-500">No tax rates configured</p>
+            </div>
+          ) : (
+            <table className="w-full">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Tax Name</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Type</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Rate</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Min Amount</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Max Amount</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Status</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {taxRates.map(taxRate => (
+                  <tr key={taxRate.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 font-medium text-gray-900">{taxRate.tax_name}</td>
+                    <td className="px-4 py-3">
+                      <span className="px-2 py-1 text-xs rounded-full bg-purple-100 text-purple-800">
+                        {taxRate.tax_type.replace('_', ' ').charAt(0).toUpperCase() + taxRate.tax_type.replace('_', ' ').slice(1)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-gray-900 font-medium">
+                      {taxRate.rate_type === 'percentage' ? `${taxRate.rate_value}%` : 
+                       taxRate.rate_type === 'fixed' ? `₱${taxRate.rate_value}` : 
+                       'Bracket'}
+                    </td>
+                    <td className="px-4 py-3 text-gray-600">{payrollUtils.formatCurrency(taxRate.min_amount)}</td>
+                    <td className="px-4 py-3 text-gray-600">
+                      {taxRate.max_amount ? payrollUtils.formatCurrency(taxRate.max_amount) : 'Unlimited'}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-1 text-xs rounded-full ${
+                        taxRate.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                      }`}>
+                        {taxRate.is_active ? 'Active' : 'Inactive'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <button className="text-blue-600 hover:text-blue-800" title="Edit Tax Rate">
+                          <Edit className="h-4 w-4" />
+                        </button>
+                        <button className="text-gray-600 hover:text-gray-800" title="View Details">
+                          <Eye className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
     </div>
@@ -624,19 +766,35 @@ const PayrollCompensation: React.FC = () => {
         <div className="bg-white p-6 rounded-lg shadow border">
           <h3 className="text-lg font-semibold mb-4">Payroll Reports</h3>
           <div className="space-y-3">
-            <button className="w-full bg-blue-500 text-white px-4 py-3 rounded-lg hover:bg-blue-600 flex items-center justify-between">
+            <button 
+              onClick={() => selectedPeriod && handleGenerateReport(selectedPeriod, 'summary')}
+              disabled={!selectedPeriod || loading}
+              className="w-full bg-blue-500 text-white px-4 py-3 rounded-lg hover:bg-blue-600 disabled:opacity-50 flex items-center justify-between"
+            >
               <span>Monthly Payroll Summary</span>
               <Download className="h-4 w-4" />
             </button>
-            <button className="w-full bg-green-500 text-white px-4 py-3 rounded-lg hover:bg-green-600 flex items-center justify-between">
+            <button 
+              onClick={() => selectedPeriod && handleGenerateReport(selectedPeriod, 'pay_stubs')}
+              disabled={!selectedPeriod || loading}
+              className="w-full bg-green-500 text-white px-4 py-3 rounded-lg hover:bg-green-600 disabled:opacity-50 flex items-center justify-between"
+            >
               <span>Employee Pay Stubs</span>
               <Download className="h-4 w-4" />
             </button>
-            <button className="w-full bg-purple-500 text-white px-4 py-3 rounded-lg hover:bg-purple-600 flex items-center justify-between">
+            <button 
+              onClick={() => selectedPeriod && handleGenerateReport(selectedPeriod, 'tax_report')}
+              disabled={!selectedPeriod || loading}
+              className="w-full bg-purple-500 text-white px-4 py-3 rounded-lg hover:bg-purple-600 disabled:opacity-50 flex items-center justify-between"
+            >
               <span>Tax Reports</span>
               <Download className="h-4 w-4" />
             </button>
-            <button className="w-full bg-orange-500 text-white px-4 py-3 rounded-lg hover:bg-orange-600 flex items-center justify-between">
+            <button 
+              onClick={() => selectedPeriod && handleGenerateReport(selectedPeriod, 'benefits_report')}
+              disabled={!selectedPeriod || loading}
+              className="w-full bg-orange-500 text-white px-4 py-3 rounded-lg hover:bg-orange-600 disabled:opacity-50 flex items-center justify-between"
+            >
               <span>Benefits Summary</span>
               <Download className="h-4 w-4" />
             </button>
@@ -646,19 +804,35 @@ const PayrollCompensation: React.FC = () => {
         <div className="bg-white p-6 rounded-lg shadow border">
           <h3 className="text-lg font-semibold mb-4">Quick Actions</h3>
           <div className="space-y-3">
-            <button className="w-full bg-indigo-500 text-white px-4 py-3 rounded-lg hover:bg-indigo-600 flex items-center justify-between">
-              <span>Process Payroll</span>
+            <button 
+              onClick={() => selectedPeriod && handleProcessPayroll(selectedPeriod)}
+              disabled={!selectedPeriod || loading}
+              className="w-full bg-indigo-500 text-white px-4 py-3 rounded-lg hover:bg-indigo-600 disabled:opacity-50 flex items-center justify-between"
+            >
+              <span>{loading ? 'Processing...' : 'Process Payroll'}</span>
               <Calculator className="h-4 w-4" />
             </button>
-            <button className="w-full bg-teal-500 text-white px-4 py-3 rounded-lg hover:bg-teal-600 flex items-center justify-between">
-              <span>Generate Pay Stubs</span>
+            <button 
+              onClick={() => selectedPeriod && handleGenerateReport(selectedPeriod, 'detailed')}
+              disabled={!selectedPeriod || loading}
+              className="w-full bg-teal-500 text-white px-4 py-3 rounded-lg hover:bg-teal-600 disabled:opacity-50 flex items-center justify-between"
+            >
+              <span>Generate Detailed Report</span>
               <FileText className="h-4 w-4" />
             </button>
-            <button className="w-full bg-pink-500 text-white px-4 py-3 rounded-lg hover:bg-pink-600 flex items-center justify-between">
+            <button 
+              onClick={() => selectedPeriod && handleGenerateReport(selectedPeriod, 'tax_report')}
+              disabled={!selectedPeriod || loading}
+              className="w-full bg-pink-500 text-white px-4 py-3 rounded-lg hover:bg-pink-600 disabled:opacity-50 flex items-center justify-between"
+            >
               <span>Tax Calculations</span>
               <Calculator className="h-4 w-4" />
             </button>
-            <button className="w-full bg-yellow-500 text-white px-4 py-3 rounded-lg hover:bg-yellow-600 flex items-center justify-between">
+            <button 
+              onClick={() => selectedPeriod && handleGenerateReport(selectedPeriod, 'benefits_report')}
+              disabled={!selectedPeriod || loading}
+              className="w-full bg-yellow-500 text-white px-4 py-3 rounded-lg hover:bg-yellow-600 disabled:opacity-50 flex items-center justify-between"
+            >
               <span>Benefits Audit</span>
               <Gift className="h-4 w-4" />
             </button>
@@ -725,13 +899,29 @@ const PayrollCompensation: React.FC = () => {
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Payroll & Compensation</h1>
             <p className="text-gray-600">Manage employee payroll, benefits, and tax calculations</p>
+            {loading && (
+              <div className="flex items-center gap-2 mt-2">
+                <Clock className="h-4 w-4 text-blue-500 animate-spin" />
+                <span className="text-sm text-blue-600">Loading...</span>
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-3">
-            <button className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 flex items-center gap-2">
-              <Calculator className="h-4 w-4" />
-              Process Payroll
-            </button>
-            <button className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 flex items-center gap-2">
+            {selectedPeriod && (
+              <button 
+                onClick={() => handleProcessPayroll(selectedPeriod)}
+                disabled={loading}
+                className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 disabled:opacity-50 flex items-center gap-2"
+              >
+                <Calculator className="h-4 w-4" />
+                {loading ? 'Processing...' : 'Process Payroll'}
+              </button>
+            )}
+            <button 
+              onClick={() => selectedPeriod && handleGenerateReport(selectedPeriod, 'summary')}
+              disabled={!selectedPeriod || loading}
+              className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 disabled:opacity-50 flex items-center gap-2"
+            >
               <FileText className="h-4 w-4" />
               Generate Reports
             </button>
