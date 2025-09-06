@@ -12,11 +12,11 @@ import InventoryManagement from '../Admin/components/Inventory/InventoryManageme
 import AttendanceTimesheet from '../Admin/components/Staff/AttendanceTimesheet';
 import RolesPermissions from '../Admin/components/Staff/RolesPermissions';
 import LeaveRequest from '../Admin/components/Staff/LeaveRequest';
-import PromotionsDiscounts from '../Admin/components/Marketing/PromotionsDiscounts';
-import Announcements from '../Admin/components/Marketing/Announcements';
-import ReferralsVenueAds from '../Admin/components/Marketing/ReferralsVenueAds';
+import MarketingDashboard from '../Admin/components/Marketing/MarketingDashboard';
+import CampaignManagement from '../Admin/components/Marketing/CampaignManagement';
+import TemplateManagement from '../Admin/components/Marketing/TemplateManagement';
+import CampaignAnalytics from '../Admin/components/Marketing/CampaignAnalytics';
 import ClientNotifications from '../Admin/components/Marketing/ClientNotifications';
-import LoyaltyRewards from '../Admin/components/Marketing/LoyaltyRewards';
 import EventCenter from '../Admin/components/Reports/EventCenter';
 import ReportsAnalytics from '../Admin/components/Reports/ReportsAnalytics';
 import SettingsPage from '../Admin/components/Settings/SettingsPage';
@@ -39,7 +39,7 @@ interface AdminDashboardProps {
 }
 
 
-function AdminDashboard({user, onLogout}: AdminDashboardProps) {
+function AdminDashboard({onLogout}: AdminDashboardProps) {
   const [activeSection, setActiveSection] = useState('overview');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
@@ -92,16 +92,17 @@ function AdminDashboard({user, onLogout}: AdminDashboardProps) {
         return <AttendanceTimesheet />;
       case 'leave':
         return <LeaveRequest />;
-      case 'promotions':
-        return <PromotionsDiscounts />;
-      case 'announcements':
-        return <Announcements />;
-      case 'referrals':
-        return <ReferralsVenueAds />;
+      case 'marketing':
+      case 'marketing-dashboard':
+        return <MarketingDashboard />;
+      case 'campaigns':
+        return <CampaignManagement />;
+      case 'templates':
+        return <TemplateManagement />;
+      case 'analytics':
+        return <CampaignAnalytics />;
       case 'notifications':
         return <ClientNotifications />;
-      case 'loyalty':
-        return <LoyaltyRewards />;
       case 'reports':
         return <ReportsAnalytics />;
       case 'event-center':

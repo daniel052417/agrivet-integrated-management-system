@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { 
   Home, BarChart3, Package, TrendingUp, AlertTriangle, ShoppingCart, 
   Users, FileText, Settings, Bell, Shield, MessageSquare,
-  Megaphone, Gift, Calendar, DollarSign,
+  Megaphone, Calendar, DollarSign,
   Archive, Warehouse, ChevronDown,
   Menu, X, LogOut, UserCheck,
   Clock
@@ -86,11 +86,11 @@ const Sidebar: React.FC<SidebarProps> = ({ activeSection, onSectionChange, onLog
       icon: Megaphone, 
       category: 'Marketing',
       children: [
-        { id: 'promotions', label: 'Promotions & Discounts', icon: Gift, category: 'Marketing' },
-        { id: 'announcements', label: 'Announcements', icon: Bell, category: 'Marketing' },
-        { id: 'referrals', label: 'Referrals & Venue Ads', icon: Megaphone, category: 'Marketing' },
+        { id: 'marketing-dashboard', label: 'Marketing Dashboard', icon: BarChart3, category: 'Marketing' },
+        { id: 'campaigns', label: 'Campaign Management', icon: Megaphone, category: 'Marketing' },
+        { id: 'templates', label: 'Template Management', icon: Settings, category: 'Marketing' },
+        { id: 'analytics', label: 'Campaign Analytics', icon: TrendingUp, category: 'Marketing' },
         { id: 'notifications', label: 'Client Notifications', icon: Bell, category: 'Marketing' },
-        { id: 'loyalty', label: 'Loyalty & Rewards Program', icon: Gift, category: 'Marketing' },
       ]
     },
     

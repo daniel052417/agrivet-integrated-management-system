@@ -163,3 +163,6 @@ COMMENT ON POLICY "Admins can create user accounts" ON users IS 'Allows admins a
 COMMENT ON POLICY "Admins can manage staff" ON staff IS 'Allows admins, managers, and HR to manage staff records';
 COMMENT ON POLICY "Admins can manage staff links" ON staff_user_links IS 'Allows admins, managers, and HR to manage staff-user account links';
 
+
+
+

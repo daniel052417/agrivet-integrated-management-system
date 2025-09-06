@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Edit, Trash2, Eye, Megaphone, Calendar, Users, Send, Clock, Target, Filter, Download, Bell, MessageSquare } from 'lucide-react';
+import { Plus, Edit, Trash2, Eye, Megaphone, Calendar, Users, Send, Clock, Target, Filter, Download, Bell, MessageSquare, BarChart3 } from 'lucide-react';
 
 const Announcements: React.FC = () => {
   const [selectedTab, setSelectedTab] = useState('published');
@@ -393,6 +393,10 @@ const Announcements: React.FC = () => {
           <button className="flex items-center justify-center space-x-2 p-4 border-2 border-dashed border-gray-300 rounded-lg hover:border-orange-500 hover:bg-orange-50 transition-colors">
             <Target className="w-5 h-5 text-gray-600" />
             <span className="text-sm font-medium text-gray-700">Targeted Message</span>
+          </button>
+          <button className="flex items-center justify-center space-x-2 p-4 border-2 border-dashed border-gray-300 rounded-lg hover:border-purple-500 hover:bg-purple-50 transition-colors">
+            <BarChart3 className="w-5 h-5 text-gray-600" />
+            <span className="text-sm font-medium text-gray-700">Campaign Management</span>
           </button>
         </div>
       </div>

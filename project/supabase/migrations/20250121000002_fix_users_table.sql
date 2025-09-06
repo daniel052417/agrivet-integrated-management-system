@@ -202,3 +202,6 @@ COMMENT ON COLUMN users.username IS 'Username for login - must be unique';
 COMMENT ON COLUMN users.role IS 'User role (admin, manager, staff, user, etc.)';
 COMMENT ON COLUMN users.staff_id IS 'Reference to linked staff record';
 
+
+
+
