@@ -18,7 +18,7 @@ type PermissionTriple = { view: boolean; edit: boolean; delete: boolean };
 type RolePermissions = Record<string, PermissionTriple>;
 
 type RoleDefinition = {
-  role_id: number;
+  id: string; // UUID
   role_name: string;
   description: string | null;
   created_at: string;
@@ -406,7 +406,7 @@ const RolesPermissions: React.FC = () => {
         const { error } = await supabase
           .from('role_permissions')
           .insert({
-            role_id: roleDef.role_id.toString(),
+            role_id: roleDef.id,
             role_name: selectedRole,
             module: moduleId,
             can_view: field === 'view' ? newValue : false,

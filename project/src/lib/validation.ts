@@ -1,5 +1,6 @@
 // Enhanced Validation and Security Utilities
 import { CreateStaffData, CreateUserData, CreateStaffWithAccountData } from './staffApi';
+import { canManageUser } from './roleHierarchy';
 
 export interface ValidationResult {
   isValid: boolean;
@@ -306,36 +307,12 @@ export class SecurityService {
 
   // Check if user can perform action
   static canPerformAction(userRole: string, action: string, targetRole?: string): boolean {
-    const roleHierarchy = {
-      admin: 4,
-      manager: 3,
-      hr: 2,
-      marketing: 2,
-      inventory: 2,
-      cashier: 1,
-      staff: 1,
-      user: 0
-    };
-
-    const userLevel = roleHierarchy[userRole.toLowerCase() as keyof typeof roleHierarchy] || 0;
-    const targetLevel = targetRole ? roleHierarchy[targetRole.toLowerCase() as keyof typeof roleHierarchy] || 0 : 0;
-
-    // Admins can do everything
-    if (userRole.toLowerCase() === 'admin') {
-      return true;
+    // Use the new role hierarchy system
+    if (!targetRole) {
+      return true; // No target role means general permission check
     }
 
-    // Users can only manage users at their level or below
-    switch (action) {
-      case 'create':
-      case 'update':
-      case 'delete':
-        return userLevel > targetLevel;
-      case 'view':
-        return userLevel >= targetLevel;
-      default:
-        return false;
-    }
+    return canManageUser(userRole, targetRole, action as 'create' | 'update' | 'delete' | 'view');
   }
 }
 
@@ -373,6 +350,13 @@ export class RateLimitService {
     this.attempts.delete(identifier);
   }
 }
+
+
+
+
+
+
+
 
 
 

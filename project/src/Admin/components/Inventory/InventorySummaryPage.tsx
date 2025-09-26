@@ -13,14 +13,14 @@ const InventorySummaryPage: React.FC = () => {
   // legacy static metrics removed
 
   type CategoryRow = { id: string; name: string };
-  type ProductRow = { id: string; name: string; supplier_id: string | null; category_id: string | null; stock_quantity: number; unit_price: number; cost_price: number | null; minimum_stock: number | null; updated_at: string | null };
+  // Removed unused type definitions
+  type SupplierRow = { id: string; name: string };
   type CategorySummary = { category: string; totalItems: number; totalValue: number; inStock: number; lowStock: number; outOfStock: number; avgValue: number; color: string; trend?: string };
-  // const [categoryRows, setCategoryRows] = useState<CategoryRow[]>([]);
+  
   const [categorySummary, setCategorySummary] = useState<CategorySummary[]>([]);
   const COLORS = ['bg-red-500','bg-green-500','bg-orange-500','bg-blue-500','bg-yellow-500','bg-purple-500'];
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  // legacy static breakdown removed
 
   type LowItem = { name: string; category: string; current: number; minimum: number; supplier: string; lastUpdate: string; urgency: 'high'|'medium'|'low' };
   const [lowStockItems, setLowStockItems] = useState<LowItem[]>([]);
@@ -42,27 +42,69 @@ const InventorySummaryPage: React.FC = () => {
       setLoading(true);
       setError(null);
       try {
-        const [{ data: products, error: pErr }, { data: categories, error: cErr }, { data: suppliers, error: sErr }] = await Promise.all([
-          supabase.from('products').select('id, name, category_id, supplier_id, stock_quantity, unit_price, cost_price, minimum_stock, updated_at'),
-          supabase.from('categories').select('id, name'),
+        // Load inventory data with product and variant information
+        const { data: inventoryData, error: invErr } = await supabase
+          .from('inventory')
+          .select(`
+            id,
+            quantity_on_hand,
+            quantity_available,
+            reorder_level,
+            max_stock_level,
+            product_variants!inner(
+              id,
+              name,
+              sku,
+              variant_type,
+              variant_value,
+              price,
+              cost,
+              products!inner(
+                id,
+                name,
+                sku,
+                category_id,
+                supplier_id,
+                unit_of_measure,
+                is_active,
+                updated_at
+              )
+            )
+          `)
+          .eq('product_variants.products.is_active', true);
+
+        if (invErr) throw invErr;
+
+        // Load categories and suppliers
+        const [{ data: categories, error: cErr }, { data: suppliers, error: sErr }] = await Promise.all([
+          supabase.from('categories').select('id, name').eq('is_active', true),
           supabase.from('suppliers').select('id, name'),
         ]);
-        if (pErr) throw pErr; if (cErr) throw cErr; if (sErr) throw sErr;
+        if (cErr) throw cErr; if (sErr) throw sErr;
 
         const categoryIdToName = new Map<string, string>();
         (categories as CategoryRow[] | null)?.forEach(c => categoryIdToName.set(c.id, c.name));
         const supplierIdToName = new Map<string, string>();
-        (suppliers as any[] | null)?.forEach(s => supplierIdToName.set(s.id, s.name));
+        (suppliers as SupplierRow[] | null)?.forEach(s => supplierIdToName.set(s.id, s.name));
 
-        const productRows = (products as ProductRow[] | null) || [];
+        // No need for separate variant query since it's already joined
 
-        const totalValue = productRows.reduce((sum, p) => sum + Number(p.stock_quantity || 0) * Number((p.cost_price ?? p.unit_price) || 0), 0);
-        const totalProducts = productRows.length;
-        const lowCount = productRows.filter(p => {
-          const qty = Number(p.stock_quantity || 0); const min = Number(p.minimum_stock || 0);
-          return min > 0 && qty > 0 && qty <= min;
+        const inventoryRows = (inventoryData as any[] | null) || [];
+
+        // Calculate metrics
+        const totalValue = inventoryRows.reduce((sum, inv) => {
+          const qty = Number(inv.quantity_on_hand || 0);
+          const cost = Number(inv.product_variants.cost || inv.product_variants.price || 0);
+          return sum + qty * cost;
+        }, 0);
+
+        const totalProducts = inventoryRows.length;
+        const lowCount = inventoryRows.filter(inv => {
+          const qty = Number(inv.quantity_on_hand || 0);
+          const reorder = Number(inv.reorder_level || 0);
+          return reorder > 0 && qty > 0 && qty <= reorder;
         }).length;
-        const outCount = productRows.filter(p => Number(p.stock_quantity || 0) === 0).length;
+        const outCount = inventoryRows.filter(inv => Number(inv.quantity_on_hand || 0) === 0).length;
         setMetrics([
           { title: 'Total Inventory Value', value: currency.format(totalValue), period: 'Current Stock', color: 'bg-blue-600' },
           { title: 'Total Products', value: totalProducts.toLocaleString(), period: 'Active Items', color: 'bg-green-600' },
@@ -71,16 +113,16 @@ const InventorySummaryPage: React.FC = () => {
         ]);
 
         const byCat = new Map<string, { totalItems: number; totalValue: number; inStock: number; lowStock: number; outOfStock: number }>();
-        productRows.forEach(p => {
-          const cat = p.category_id || 'uncategorized';
-          const qty = Number(p.stock_quantity || 0);
-          const price = Number((p.cost_price ?? p.unit_price) || 0);
-          const min = Number(p.minimum_stock || 0);
+        inventoryRows.forEach(inv => {
+          const cat = inv.product_variants.products.category_id || 'uncategorized';
+          const qty = Number(inv.quantity_on_hand || 0);
+          const cost = Number(inv.product_variants.cost || inv.product_variants.price || 0);
+          const reorder = Number(inv.reorder_level || 0);
           const agg = byCat.get(cat) || { totalItems: 0, totalValue: 0, inStock: 0, lowStock: 0, outOfStock: 0 };
           agg.totalItems += qty;
-          agg.totalValue += qty * price;
+          agg.totalValue += qty * cost;
           if (qty === 0) agg.outOfStock += 1; else agg.inStock += qty;
-          if (min > 0 && qty > 0 && qty <= min) agg.lowStock += 1;
+          if (reorder > 0 && qty > 0 && qty <= reorder) agg.lowStock += 1;
           byCat.set(cat, agg);
         });
         const catList: any[] = Array.from(byCat.entries()).map(([catId, agg], idx) => ({
@@ -95,22 +137,24 @@ const InventorySummaryPage: React.FC = () => {
         })).sort((a,b)=> b.totalValue - a.totalValue);
         setCategorySummary(catList as any);
 
-        const lowItems: LowItem[] = productRows
-          .filter(p => {
-            const qty = Number(p.stock_quantity || 0); const min = Number(p.minimum_stock || 0);
-            return min > 0 && qty > 0 && qty <= min;
+        const lowItems: LowItem[] = inventoryRows
+          .filter(inv => {
+            const qty = Number(inv.quantity_on_hand || 0);
+            const reorder = Number(inv.reorder_level || 0);
+            return reorder > 0 && qty > 0 && qty <= reorder;
           })
-          .map(p => {
-            const qty = Number(p.stock_quantity || 0); const min = Number(p.minimum_stock || 0);
-            const ratio = min > 0 ? qty / min : 1;
+          .map(inv => {
+            const qty = Number(inv.quantity_on_hand || 0);
+            const reorder = Number(inv.reorder_level || 0);
+            const ratio = reorder > 0 ? qty / reorder : 1;
             const urgency: LowItem['urgency'] = ratio <= 0.25 ? 'high' : ratio <= 0.5 ? 'medium' : 'low';
             return {
-              name: (p as any).name,
-              category: categoryIdToName.get(p.category_id || '') || 'Uncategorized',
+              name: inv.product_variants.products.name,
+              category: categoryIdToName.get(inv.product_variants.products.category_id || '') || 'Uncategorized',
               current: qty,
-              minimum: min,
-              supplier: supplierIdToName.get((p as any).supplier_id || '') || '—',
-              lastUpdate: p.updated_at || '',
+              minimum: reorder,
+              supplier: supplierIdToName.get(inv.product_variants.products.supplier_id || '') || '—',
+              lastUpdate: inv.product_variants.products.updated_at || '',
               urgency,
             };
           })
@@ -118,13 +162,17 @@ const InventorySummaryPage: React.FC = () => {
           .slice(0,5);
         setLowStockItems(lowItems);
 
-        const topItems: TopItem[] = productRows
-          .map(p => ({
-            name: (p as any).name,
-            value: Number(p.stock_quantity || 0) * Number((p.cost_price ?? p.unit_price) || 0),
-            quantity: Number(p.stock_quantity || 0),
-            category: categoryIdToName.get(p.category_id || '') || 'Uncategorized',
-          }))
+        const topItems: TopItem[] = inventoryRows
+          .map(inv => {
+            const qty = Number(inv.quantity_on_hand || 0);
+            const cost = Number(inv.product_variants.cost || inv.product_variants.price || 0);
+            return {
+              name: inv.product_variants.products.name,
+              value: qty * cost,
+              quantity: qty,
+              category: categoryIdToName.get(inv.product_variants.products.category_id || '') || 'Uncategorized',
+            };
+          })
           .sort((a,b) => b.value - a.value)
           .slice(0,5);
         setTopValueItems(topItems);

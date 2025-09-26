@@ -1,0 +1,5519 @@
+SET statement_timeout = 0;
+SET lock_timeout = 0;
+SET idle_in_transaction_session_timeout = 0;
+SET client_encoding = 'UTF8';
+SET standard_conforming_strings = on;
+SELECT pg_catalog.set_config('search_path', '', false);
+SET check_function_bodies = false;
+SET xmloption = content;
+SET client_min_messages = warning;
+SET row_security = off;
+
+
+COMMENT ON SCHEMA "public" IS 'standard public schema';
+
+
+
+CREATE EXTENSION IF NOT EXISTS "pg_graphql" WITH SCHEMA "graphql";
+
+
+
+
+
+
+CREATE EXTENSION IF NOT EXISTS "pg_stat_statements" WITH SCHEMA "extensions";
+
+
+
+
+
+
+CREATE EXTENSION IF NOT EXISTS "pgcrypto" WITH SCHEMA "extensions";
+
+
+
+
+
+
+CREATE EXTENSION IF NOT EXISTS "supabase_vault" WITH SCHEMA "vault";
+
+
+
+
+
+
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA "extensions";
+
+
+
+
+
+
+CREATE OR REPLACE FUNCTION "public"."calculate_payroll_record"("p_staff_id" "uuid", "p_period_id" "uuid", "p_base_salary" numeric, "p_regular_hours" numeric DEFAULT 0, "p_overtime_hours" numeric DEFAULT 0, "p_bonuses" numeric DEFAULT 0, "p_allowances" numeric DEFAULT 0) RETURNS TABLE("gross_pay" numeric, "tax_amount" numeric, "sss_contribution" numeric, "philhealth_contribution" numeric, "pagibig_contribution" numeric, "benefits_deduction" numeric, "total_deductions" numeric, "net_pay" numeric)
+    LANGUAGE "plpgsql"
+    AS $$
+DECLARE
+    v_hourly_rate DECIMAL;
+    v_overtime_pay DECIMAL;
+    v_gross_pay DECIMAL;
+    v_tax_amount DECIMAL;
+    v_sss_contribution DECIMAL;
+    v_philhealth_contribution DECIMAL;
+    v_pagibig_contribution DECIMAL;
+    v_benefits_deduction DECIMAL;
+    v_total_deductions DECIMAL;
+    v_net_pay DECIMAL;
+BEGIN
+    -- Calculate hourly rate (assuming 8 hours per day, 22 working days per month)
+    v_hourly_rate := p_base_salary / (8 * 22);
+
+    -- Calculate overtime pay
+    v_overtime_pay := p_overtime_hours * v_hourly_rate * 1.5;
+
+    -- Calculate gross pay
+    v_gross_pay := p_base_salary + v_overtime_pay + p_bonuses + p_allowances;
+
+    -- Calculate SSS contribution (11% of salary, max 25000)
+    v_sss_contribution := LEAST(p_base_salary * 0.11, 25000 * 0.11);
+
+    -- Calculate PhilHealth contribution (5% of salary, max 100000)
+    v_philhealth_contribution := LEAST(p_base_salary * 0.05, 100000 * 0.05);
+
+    -- Calculate Pag-IBIG contribution (fixed 100)
+    v_pagibig_contribution := 100.00;
+
+    -- Calculate benefits deduction (sum of employee contributions)
+    SELECT COALESCE(SUM(employee_contribution), 0)
+    INTO v_benefits_deduction
+    FROM employee_payroll_benefits epb
+    JOIN payroll_benefits pb ON epb.benefit_id = pb.id
+    WHERE epb.staff_id = p_staff_id AND epb.status = 'active' AND pb.is_active = true;
+
+    -- Calculate withholding tax (simplified - 20% of gross pay above 250000 annually)
+    -- For monthly: if gross pay > 20833.33 (250000/12), tax = (gross_pay - 20833.33) * 0.20
+    IF v_gross_pay > 20833.33 THEN
+        v_tax_amount := (v_gross_pay - 20833.33) * 0.20;
+    ELSE
+        v_tax_amount := 0;
+    END IF;
+
+    -- Calculate total deductions
+    v_total_deductions := v_tax_amount + v_sss_contribution + v_philhealth_contribution + v_pagibig_contribution + v_benefits_deduction;
+
+    -- Calculate net pay
+    v_net_pay := v_gross_pay - v_total_deductions;
+
+    RETURN QUERY SELECT
+        v_gross_pay,
+        v_tax_amount,
+        v_sss_contribution,
+        v_philhealth_contribution,
+        v_pagibig_contribution,
+        v_benefits_deduction,
+        v_total_deductions,
+        v_net_pay;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."calculate_payroll_record"("p_staff_id" "uuid", "p_period_id" "uuid", "p_base_salary" numeric, "p_regular_hours" numeric, "p_overtime_hours" numeric, "p_bonuses" numeric, "p_allowances" numeric) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."create_staff_user_link"("p_staff_id" "uuid", "p_user_id" "uuid", "p_created_by" "uuid" DEFAULT NULL::"uuid") RETURNS "uuid"
+    LANGUAGE "plpgsql"
+    AS $$
+DECLARE
+  link_id UUID;
+BEGIN
+  -- Insert the link
+  INSERT INTO staff_user_links (staff_id, user_id, created_by)
+  VALUES (p_staff_id, p_user_id, p_created_by)
+  RETURNING id INTO link_id;
+
+  -- Update staff table
+  UPDATE staff SET user_account_id = p_user_id WHERE id = p_staff_id;
+
+  -- Update users table
+  UPDATE users SET staff_id = p_staff_id WHERE id = p_user_id;
+
+  RETURN link_id;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."create_staff_user_link"("p_staff_id" "uuid", "p_user_id" "uuid", "p_created_by" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."generate_integration_alert"("p_alert_type" "text", "p_severity" "text", "p_title" "text", "p_message" "text", "p_metadata" "jsonb" DEFAULT '{}'::"jsonb") RETURNS "uuid"
+    LANGUAGE "plpgsql"
+    AS $$
+DECLARE
+  alert_id uuid;
+BEGIN
+  INSERT INTO integration_alerts (
+    alert_type,
+    severity,
+    title,
+    message,
+    metadata
+  ) VALUES (
+    p_alert_type,
+    p_severity,
+    p_title,
+    p_message,
+    p_metadata
+  ) RETURNING id INTO alert_id;
+
+  RETURN alert_id;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."generate_integration_alert"("p_alert_type" "text", "p_severity" "text", "p_title" "text", "p_message" "text", "p_metadata" "jsonb") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."generate_invitation_token"() RETURNS "text"
+    LANGUAGE "plpgsql"
+    AS $$
+BEGIN
+    RETURN encode(gen_random_bytes(32), 'base64url');
+END;
+$$;
+
+
+ALTER FUNCTION "public"."generate_invitation_token"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."get_user_accessible_components"("user_uuid" "uuid") RETURNS TABLE("id" "uuid", "component_path" character varying, "display_name" character varying, "description" "text", "category" character varying, "required_permission" character varying, "is_active" boolean, "is_visible" boolean, "is_enabled" boolean, "upgrade_message" "text")
+    LANGUAGE "plpgsql"
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT DISTINCT
+        ca.id,
+        ca.component_path,
+        ca.display_name,
+        ca.description,
+        ca.category,
+        ca.required_permission,
+        ca.is_active,
+        ca.is_visible,
+        ca.is_enabled,
+        ca.upgrade_message
+    FROM component_access ca
+    LEFT JOIN permissions p ON ca.required_permission = p.name
+    LEFT JOIN role_permissions rp ON p.id = rp.permission_id
+    LEFT JOIN user_roles ur ON rp.role_id = ur.role_id
+    WHERE ca.is_active = true
+    AND ca.is_visible = true
+    AND (
+        ca.required_permission IS NULL
+        OR (
+            ur.user_id = user_uuid
+            AND ur.is_active = true
+            AND rp.is_granted = true
+        )
+    );
+END;
+$$;
+
+
+ALTER FUNCTION "public"."get_user_accessible_components"("user_uuid" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."get_user_permissions"("user_uuid" "uuid") RETURNS TABLE("id" "uuid", "name" character varying, "description" "text", "resource" character varying, "action" character varying, "component" character varying, "category" character varying, "is_system" boolean, "created_at" timestamp with time zone, "updated_at" timestamp with time zone)
+    LANGUAGE "plpgsql"
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT DISTINCT
+        p.id,
+        p.name,
+        p.description,
+        p.resource,
+        p.action,
+        p.component,
+        p.category,
+        p.is_system,
+        p.created_at,
+        p.updated_at
+    FROM permissions p
+    JOIN role_permissions rp ON p.id = rp.permission_id
+    JOIN user_roles ur ON rp.role_id = ur.role_id
+    WHERE ur.user_id = user_uuid
+    AND ur.is_active = true
+    AND rp.is_granted = true
+    AND p.is_visible = true;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."get_user_permissions"("user_uuid" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."handle_new_user"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    AS $$
+BEGIN
+  INSERT INTO public.users (id, email, first_name, last_name)
+  VALUES (
+    new.id,
+    new.email,
+    COALESCE(new.raw_user_meta_data->>'first_name', ''),
+    COALESCE(new.raw_user_meta_data->>'last_name', '')
+  );
+  RETURN new;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."handle_new_user"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."process_payroll_period"("p_period_id" "uuid") RETURNS boolean
+    LANGUAGE "plpgsql"
+    AS $$
+DECLARE
+    v_period payroll_periods%ROWTYPE;
+    v_staff staff%ROWTYPE;
+    v_calculations RECORD;
+    v_total_gross DECIMAL := 0;
+    v_total_tax DECIMAL := 0;
+    v_total_net DECIMAL := 0;
+    v_employee_count INTEGER := 0;
+BEGIN
+    -- Get period information
+    SELECT * INTO v_period FROM payroll_periods WHERE id = p_period_id;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Payroll period not found';
+    END IF;
+
+    IF v_period.status != 'draft' THEN
+        RAISE EXCEPTION 'Payroll period is not in draft status';
+    END IF;
+
+    -- Process each active staff member
+    FOR v_staff IN
+        SELECT * FROM staff WHERE is_active = true
+    LOOP
+        -- Calculate payroll for this staff member
+        SELECT * INTO v_calculations
+        FROM calculate_payroll_record(
+            v_staff.id,
+            p_period_id,
+            COALESCE(v_staff.salary, 0),
+            176, -- 22 days * 8 hours
+            0,   -- overtime hours
+            0,   -- bonuses
+            0    -- allowances
+        );
+
+        -- Insert or update payroll record
+        INSERT INTO payroll_records (
+            period_id, staff_id, employee_id, employee_name, position, department,
+            base_salary, regular_hours, overtime_hours, overtime_pay,
+            bonuses, allowances, gross_pay, tax_amount,
+            sss_contribution, philhealth_contribution, pagibig_contribution,
+            benefits_deduction, total_deductions, net_pay, status
+        ) VALUES (
+            p_period_id, v_staff.id, v_staff.employee_id,
+            CONCAT(v_staff.first_name, ' ', v_staff.last_name),
+            v_staff.position, v_staff.department,
+            COALESCE(v_staff.salary, 0), 176, 0, 0,
+            0, 0, v_calculations.gross_pay, v_calculations.tax_amount,
+            v_calculations.sss_contribution, v_calculations.philhealth_contribution,
+            v_calculations.pagibig_contribution, v_calculations.benefits_deduction,
+            v_calculations.total_deductions, v_calculations.net_pay, 'pending'
+        )
+        ON CONFLICT (period_id, staff_id)
+        DO UPDATE SET
+            base_salary = EXCLUDED.base_salary,
+            gross_pay = EXCLUDED.gross_pay,
+            tax_amount = EXCLUDED.tax_amount,
+            sss_contribution = EXCLUDED.sss_contribution,
+            philhealth_contribution = EXCLUDED.philhealth_contribution,
+            pagibig_contribution = EXCLUDED.pagibig_contribution,
+            benefits_deduction = EXCLUDED.benefits_deduction,
+            total_deductions = EXCLUDED.total_deductions,
+            net_pay = EXCLUDED.net_pay,
+            updated_at = now();
+
+        -- Accumulate totals
+        v_total_gross := v_total_gross + v_calculations.gross_pay;
+        v_total_tax := v_total_tax + v_calculations.tax_amount;
+        v_total_net := v_total_net + v_calculations.net_pay;
+        v_employee_count := v_employee_count + 1;
+    END LOOP;
+
+    -- Update period totals
+    UPDATE payroll_periods
+    SET
+        total_employees = v_employee_count,
+        total_gross_pay = v_total_gross,
+        total_tax_amount = v_total_tax,
+        total_net_pay = v_total_net,
+        status = 'processing',
+        processed_at = now(),
+        updated_at = now()
+    WHERE id = p_period_id;
+
+    RETURN TRUE;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."process_payroll_period"("p_period_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."track_order_status_change"() RETURNS "trigger"
+    LANGUAGE "plpgsql"
+    AS $$
+BEGIN
+  -- Only track if status actually changed
+  IF OLD.status IS DISTINCT FROM NEW.status THEN
+    INSERT INTO order_status_history (
+      integration_order_id,
+      kiosk_order_id,
+      pos_order_id,
+      previous_status,
+      new_status,
+      change_reason,
+      metadata
+    ) VALUES (
+      NEW.id,
+      NEW.kiosk_order_id,
+      NEW.pos_order_id,
+      OLD.status,
+      NEW.status,
+      CASE
+        WHEN NEW.status = 'PROCESSING' THEN 'Order processing started'
+        WHEN NEW.status = 'COMPLETED' THEN 'Order successfully processed to POS'
+        WHEN NEW.status = 'FAILED' THEN 'Order processing failed'
+        WHEN NEW.status = 'RETRYING' THEN 'Order marked for retry'
+        ELSE 'Status updated'
+      END,
+      jsonb_build_object(
+        'retry_count', NEW.retry_count,
+        'last_error', NEW.last_error,
+        'processing_time_ms',
+        CASE
+          WHEN NEW.processing_completed_at IS NOT NULL AND NEW.processing_started_at IS NOT NULL
+          THEN EXTRACT(EPOCH FROM (NEW.processing_completed_at - NEW.processing_started_at)) * 1000
+          ELSE NULL
+        END
+      )
+    );
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."track_order_status_change"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."unlink_staff_user"("p_staff_id" "uuid", "p_user_id" "uuid") RETURNS "void"
+    LANGUAGE "plpgsql"
+    AS $$
+BEGIN
+  -- Update link status
+  UPDATE staff_user_links
+  SET link_status = 'inactive', unlinked_at = now()
+  WHERE staff_id = p_staff_id AND user_id = p_user_id;
+
+  -- Clear references
+  UPDATE staff SET user_account_id = NULL WHERE id = p_staff_id;
+  UPDATE users SET staff_id = NULL WHERE id = p_user_id;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."unlink_staff_user"("p_staff_id" "uuid", "p_user_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."update_payroll_updated_at_column"() RETURNS "trigger"
+    LANGUAGE "plpgsql"
+    AS $$
+BEGIN
+    NEW.updated_at = now();
+    RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."update_payroll_updated_at_column"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."update_updated_at_column"() RETURNS "trigger"
+    LANGUAGE "plpgsql"
+    AS $$
+BEGIN
+    NEW.updated_at = now();
+    RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."update_updated_at_column"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."user_has_permission"("user_uuid" "uuid", "permission_name" character varying) RETURNS boolean
+    LANGUAGE "plpgsql"
+    AS $$
+BEGIN
+    RETURN EXISTS (
+        SELECT 1
+        FROM permissions p
+        JOIN role_permissions rp ON p.id = rp.permission_id
+        JOIN user_roles ur ON rp.role_id = ur.role_id
+        WHERE ur.user_id = user_uuid
+        AND ur.is_active = true
+        AND rp.is_granted = true
+        AND p.name = permission_name
+        AND p.is_visible = true
+    );
+END;
+$$;
+
+
+ALTER FUNCTION "public"."user_has_permission"("user_uuid" "uuid", "permission_name" character varying) OWNER TO "postgres";
+
+SET default_tablespace = '';
+
+SET default_table_access_method = "heap";
+
+
+CREATE TABLE IF NOT EXISTS "public"."account_creation_workflow" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "staff_id" "uuid",
+    "workflow_status" character varying(20) DEFAULT 'pending'::character varying,
+    "account_creation_method" character varying(20),
+    "email_invite_sent_at" timestamp with time zone,
+    "account_created_at" timestamp with time zone,
+    "created_by" "uuid",
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"(),
+    CONSTRAINT "account_creation_workflow_account_creation_method_check" CHECK ((("account_creation_method")::"text" = ANY ((ARRAY['manual'::character varying, 'email_invite'::character varying, 'auto_create'::character varying])::"text"[]))),
+    CONSTRAINT "account_creation_workflow_workflow_status_check" CHECK ((("workflow_status")::"text" = ANY ((ARRAY['pending'::character varying, 'in_progress'::character varying, 'completed'::character varying, 'failed'::character varying])::"text"[])))
+);
+
+
+ALTER TABLE "public"."account_creation_workflow" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."account_creation_workflow" IS 'Tracks the process of creating user accounts for staff members';
+
+
+
+COMMENT ON COLUMN "public"."account_creation_workflow"."workflow_status" IS 'Current status of the account creation process';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."accounts" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "account_number" "text" NOT NULL,
+    "account_name" "text" NOT NULL,
+    "account_type" "text" NOT NULL,
+    "account_subtype" "text",
+    "parent_account_id" "uuid",
+    "description" "text",
+    "is_active" boolean DEFAULT true,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "accounts_account_type_check" CHECK (("account_type" = ANY (ARRAY['asset'::"text", 'liability'::"text", 'equity'::"text", 'revenue'::"text", 'expense'::"text"])))
+);
+
+
+ALTER TABLE "public"."accounts" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."app_settings" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "app_name" "text" DEFAULT 'AGRIVET Admin Dashboard'::"text",
+    "company_name" "text" DEFAULT 'AGRIVET Supply Co.'::"text",
+    "contact_email" "text" DEFAULT 'admin@agrivet.com'::"text",
+    "support_phone" "text" DEFAULT ''::"text",
+    "theme" "text" DEFAULT 'light'::"text",
+    "language" "text" DEFAULT 'en'::"text",
+    "timezone" "text" DEFAULT 'Asia/Manila'::"text",
+    "currency" "text" DEFAULT 'PHP'::"text",
+    "auto_save" boolean DEFAULT true,
+    "show_tooltips" boolean DEFAULT true,
+    "compact_view" boolean DEFAULT false,
+    "items_per_page" integer DEFAULT 25,
+    "date_format" "text" DEFAULT 'YYYY-MM-DD'::"text",
+    "number_format" "text" DEFAULT '1,234.56'::"text",
+    "notification_prefs" "jsonb" DEFAULT '[]'::"jsonb",
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"(),
+    CONSTRAINT "app_settings_theme_check" CHECK (("theme" = ANY (ARRAY['light'::"text", 'dark'::"text", 'auto'::"text"])))
+);
+
+
+ALTER TABLE "public"."app_settings" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."attendance_records" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "staff_id" "uuid",
+    "attendance_date" "date" NOT NULL,
+    "time_in" time without time zone,
+    "time_out" time without time zone,
+    "break_start" time without time zone,
+    "break_end" time without time zone,
+    "total_hours" numeric(4,2) DEFAULT 0,
+    "overtime_hours" numeric(4,2) DEFAULT 0,
+    "status" "text" DEFAULT 'present'::"text",
+    "notes" "text" DEFAULT ''::"text",
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    CONSTRAINT "attendance_records_status_check" CHECK (("status" = ANY (ARRAY['present'::"text", 'absent'::"text", 'late'::"text", 'half_day'::"text", 'on_leave'::"text"])))
+);
+
+
+ALTER TABLE "public"."attendance_records" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."audit_logs" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "user_id" "uuid",
+    "action" character varying(100) NOT NULL,
+    "entity_type" character varying(50) NOT NULL,
+    "entity_id" "uuid",
+    "old_values" "jsonb",
+    "new_values" "jsonb",
+    "ip_address" "inet",
+    "user_agent" "text",
+    "created_at" timestamp with time zone DEFAULT "now"()
+);
+
+
+ALTER TABLE "public"."audit_logs" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."benefits" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "benefit_name" "text" NOT NULL,
+    "description" "text",
+    "benefit_type" "text" NOT NULL,
+    "cost_employee" numeric(10,2) DEFAULT 0,
+    "cost_employer" numeric(10,2) DEFAULT 0,
+    "is_active" boolean DEFAULT true,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "benefits_benefit_type_check" CHECK (("benefit_type" = ANY (ARRAY['health'::"text", 'dental'::"text", 'vision'::"text", 'retirement'::"text", 'life_insurance'::"text", 'disability'::"text", 'other'::"text"])))
+);
+
+
+ALTER TABLE "public"."benefits" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."branches" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "name" "text" NOT NULL,
+    "address" "text" NOT NULL,
+    "city" "text" NOT NULL,
+    "phone" "text" DEFAULT ''::"text",
+    "manager_name" "text" DEFAULT ''::"text",
+    "is_active" boolean DEFAULT true,
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"()
+);
+
+
+ALTER TABLE "public"."branches" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."campaign_analytics" (
+    "id" "uuid" DEFAULT "extensions"."uuid_generate_v4"() NOT NULL,
+    "campaign_id" "uuid",
+    "event_type" character varying(50) NOT NULL,
+    "event_data" "jsonb",
+    "user_agent" "text",
+    "ip_address" "inet",
+    "referrer" "text",
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    CONSTRAINT "campaign_analytics_event_type_check" CHECK ((("event_type")::"text" = ANY ((ARRAY['view'::character varying, 'click'::character varying, 'conversion'::character varying, 'impression'::character varying])::"text"[])))
+);
+
+
+ALTER TABLE "public"."campaign_analytics" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."campaign_schedules" (
+    "id" "uuid" DEFAULT "extensions"."uuid_generate_v4"() NOT NULL,
+    "campaign_id" "uuid",
+    "schedule_type" character varying(50) NOT NULL,
+    "start_date" timestamp with time zone,
+    "end_date" timestamp with time zone,
+    "recurrence_pattern" "jsonb",
+    "timezone" character varying(50) DEFAULT 'UTC'::character varying,
+    "is_active" boolean DEFAULT true,
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"(),
+    CONSTRAINT "campaign_schedules_schedule_type_check" CHECK ((("schedule_type")::"text" = ANY ((ARRAY['immediate'::character varying, 'scheduled'::character varying, 'recurring'::character varying])::"text"[])))
+);
+
+
+ALTER TABLE "public"."campaign_schedules" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."campaign_templates" (
+    "id" "uuid" DEFAULT "extensions"."uuid_generate_v4"() NOT NULL,
+    "template_name" character varying(100) NOT NULL,
+    "template_type" character varying(50) NOT NULL,
+    "description" "text",
+    "default_styles" "jsonb",
+    "required_fields" "jsonb",
+    "is_active" boolean DEFAULT true,
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"(),
+    "created_by" "uuid",
+    CONSTRAINT "campaign_templates_template_type_check" CHECK ((("template_type")::"text" = ANY ((ARRAY['hero_banner'::character varying, 'promo_card'::character varying, 'popup'::character varying])::"text"[])))
+);
+
+
+ALTER TABLE "public"."campaign_templates" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."categories" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "name" "text" NOT NULL,
+    "description" "text" DEFAULT ''::"text",
+    "parent_id" "uuid",
+    "is_active" boolean DEFAULT true,
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"()
+);
+
+
+ALTER TABLE "public"."categories" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."client_notifications" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "title" character varying(255) NOT NULL,
+    "message" "text" NOT NULL,
+    "notification_type" character varying(50) NOT NULL,
+    "channel" character varying(50) NOT NULL,
+    "status" character varying(20) DEFAULT 'draft'::character varying,
+    "priority" character varying(10) DEFAULT 'medium'::character varying,
+    "scheduled_at" timestamp with time zone,
+    "sent_at" timestamp with time zone,
+    "delivered_at" timestamp with time zone,
+    "opened_at" timestamp with time zone,
+    "clicked_at" timestamp with time zone,
+    "target_audience" "text"[] DEFAULT '{}'::"text"[],
+    "target_devices" "text"[] DEFAULT '{}'::"text"[],
+    "html_content" "text",
+    "attachments" "jsonb" DEFAULT '[]'::"jsonb",
+    "created_by" "uuid",
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"(),
+    CONSTRAINT "client_notifications_notification_type_check" CHECK ((("notification_type")::"text" = ANY ((ARRAY['email'::character varying, 'push'::character varying, 'in_app'::character varying])::"text"[]))),
+    CONSTRAINT "client_notifications_priority_check" CHECK ((("priority")::"text" = ANY ((ARRAY['low'::character varying, 'medium'::character varying, 'high'::character varying, 'urgent'::character varying])::"text"[]))),
+    CONSTRAINT "client_notifications_status_check" CHECK ((("status")::"text" = ANY ((ARRAY['draft'::character varying, 'scheduled'::character varying, 'sent'::character varying, 'delivered'::character varying, 'failed'::character varying])::"text"[])))
+);
+
+
+ALTER TABLE "public"."client_notifications" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."component_access" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "component_path" character varying(200) NOT NULL,
+    "display_name" character varying(255) NOT NULL,
+    "description" "text",
+    "category" character varying(20) DEFAULT 'standard'::character varying,
+    "required_permission" character varying(100),
+    "required_role" character varying(50),
+    "is_active" boolean DEFAULT true,
+    "is_visible" boolean DEFAULT true,
+    "is_enabled" boolean DEFAULT true,
+    "upgrade_message" "text",
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"(),
+    CONSTRAINT "component_access_category_check" CHECK ((("category")::"text" = ANY ((ARRAY['sensitive'::character varying, 'upgradeable'::character varying, 'standard'::character varying])::"text"[])))
+);
+
+
+ALTER TABLE "public"."component_access" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."customers" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "customer_code" "text" NOT NULL,
+    "first_name" "text" NOT NULL,
+    "last_name" "text" NOT NULL,
+    "email" "text" DEFAULT ''::"text",
+    "phone" "text" DEFAULT ''::"text",
+    "address" "text" DEFAULT ''::"text",
+    "city" "text" DEFAULT ''::"text",
+    "customer_type" "text" DEFAULT 'individual'::"text",
+    "date_of_birth" "date",
+    "registration_date" "date" DEFAULT CURRENT_DATE,
+    "is_active" boolean DEFAULT true,
+    "total_spent" numeric(12,2) DEFAULT 0,
+    "last_purchase_date" "date",
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"(),
+    "company_name" "text",
+    "credit_limit" numeric(12,2) DEFAULT 0,
+    "payment_terms" "text" DEFAULT '30 days'::"text",
+    "assigned_staff_id" "uuid",
+    CONSTRAINT "customers_customer_type_check" CHECK (("customer_type" = ANY (ARRAY['individual'::"text", 'business'::"text", 'veterinarian'::"text", 'farmer'::"text"])))
+);
+
+
+ALTER TABLE "public"."customers" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."departments" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "name" "text" NOT NULL,
+    "description" "text",
+    "manager_staff_id" "uuid",
+    "is_active" boolean DEFAULT true,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+
+ALTER TABLE "public"."departments" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."email_invitations" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "staff_id" "uuid",
+    "email" character varying(255) NOT NULL,
+    "invitation_token" character varying(255) NOT NULL,
+    "expires_at" timestamp with time zone NOT NULL,
+    "status" character varying(20) DEFAULT 'pending'::character varying,
+    "accepted_at" timestamp with time zone,
+    "created_by" "uuid",
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"(),
+    CONSTRAINT "email_invitations_status_check" CHECK ((("status")::"text" = ANY ((ARRAY['pending'::character varying, 'accepted'::character varying, 'expired'::character varying, 'cancelled'::character varying])::"text"[])))
+);
+
+
+ALTER TABLE "public"."email_invitations" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."email_invitations" IS 'Stores email invitations for account creation';
+
+
+
+COMMENT ON COLUMN "public"."email_invitations"."invitation_token" IS 'Unique token for email invitation verification';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."employee_benefits" (
+    "staff_id" "uuid" NOT NULL,
+    "benefit_id" "uuid" NOT NULL,
+    "enrollment_date" "date" NOT NULL,
+    "effective_date" "date" NOT NULL,
+    "termination_date" "date",
+    "status" "text" DEFAULT 'enrolled'::"text",
+    "employee_contribution" numeric(10,2) DEFAULT 0,
+    "employer_contribution" numeric(10,2) DEFAULT 0,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "employee_benefits_status_check" CHECK (("status" = ANY (ARRAY['enrolled'::"text", 'active'::"text", 'inactive'::"text", 'cancelled'::"text", 'pending'::"text"])))
+);
+
+
+ALTER TABLE "public"."employee_benefits" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."employee_payroll_benefits" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "staff_id" "uuid",
+    "benefit_id" "uuid",
+    "enrollment_date" "date" NOT NULL,
+    "status" character varying(20) DEFAULT 'active'::character varying,
+    "custom_contribution" numeric(10,2),
+    "notes" "text",
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"(),
+    CONSTRAINT "employee_payroll_benefits_status_check" CHECK ((("status")::"text" = ANY ((ARRAY['active'::character varying, 'inactive'::character varying, 'suspended'::character varying])::"text"[])))
+);
+
+
+ALTER TABLE "public"."employee_payroll_benefits" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."employee_payroll_benefits" IS 'Employee-specific benefit enrollments';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."expenses" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "expense_number" "text" NOT NULL,
+    "expense_date" "date" NOT NULL,
+    "supplier_id" "uuid",
+    "description" "text" NOT NULL,
+    "amount" numeric(12,2) NOT NULL,
+    "category" "text" NOT NULL,
+    "account_id" "uuid",
+    "receipt_url" "text",
+    "receipt_file_name" "text",
+    "approved_by_user_id" "uuid",
+    "recorded_by_user_id" "uuid" NOT NULL,
+    "status" "text" DEFAULT 'pending'::"text",
+    "is_reimbursable" boolean DEFAULT false,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "expenses_amount_check" CHECK (("amount" > (0)::numeric)),
+    CONSTRAINT "expenses_status_check" CHECK (("status" = ANY (ARRAY['pending'::"text", 'approved'::"text", 'rejected'::"text", 'paid'::"text", 'reimbursed'::"text"])))
+);
+
+
+ALTER TABLE "public"."expenses" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."gl_transaction_items" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "transaction_id" "uuid" NOT NULL,
+    "account_id" "uuid" NOT NULL,
+    "debit_amount" numeric(12,2) DEFAULT 0,
+    "credit_amount" numeric(12,2) DEFAULT 0,
+    "memo" "text",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "chk_debit_or_credit" CHECK ((("debit_amount" > (0)::numeric) OR ("credit_amount" > (0)::numeric))),
+    CONSTRAINT "chk_not_both_debit_credit" CHECK ((NOT (("debit_amount" > (0)::numeric) AND ("credit_amount" > (0)::numeric)))),
+    CONSTRAINT "gl_transaction_items_credit_amount_check" CHECK (("credit_amount" >= (0)::numeric)),
+    CONSTRAINT "gl_transaction_items_debit_amount_check" CHECK (("debit_amount" >= (0)::numeric))
+);
+
+
+ALTER TABLE "public"."gl_transaction_items" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."gl_transactions" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "transaction_number" "text" NOT NULL,
+    "transaction_date" "date" NOT NULL,
+    "description" "text",
+    "transaction_type" "text" NOT NULL,
+    "reference_number" "text",
+    "total_amount" numeric(12,2) NOT NULL,
+    "posted_by_user_id" "uuid" NOT NULL,
+    "approved_by_user_id" "uuid",
+    "status" "text" DEFAULT 'draft'::"text",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "gl_transactions_status_check" CHECK (("status" = ANY (ARRAY['draft'::"text", 'posted'::"text", 'approved'::"text", 'reversed'::"text"]))),
+    CONSTRAINT "gl_transactions_transaction_type_check" CHECK (("transaction_type" = ANY (ARRAY['journal_entry'::"text", 'invoice_payment'::"text", 'expense_payment'::"text", 'purchase_payment'::"text", 'salary_payment'::"text", 'adjustment'::"text"])))
+);
+
+
+ALTER TABLE "public"."gl_transactions" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."hr_documents" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "staff_id" "uuid",
+    "document_type" "text" NOT NULL,
+    "file_path" "text" NOT NULL,
+    "file_name" "text" NOT NULL,
+    "file_size" integer,
+    "mime_type" "text",
+    "uploaded_by_user_id" "uuid" NOT NULL,
+    "uploaded_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "is_confidential" boolean DEFAULT false,
+    "retention_date" "date",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "hr_documents_document_type_check" CHECK (("document_type" = ANY (ARRAY['contract'::"text", 'resume'::"text", 'id_copy'::"text", 'certificate'::"text", 'performance_review'::"text", 'disciplinary'::"text", 'other'::"text"])))
+);
+
+
+ALTER TABLE "public"."hr_documents" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."inquiries" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "inquiry_number" "text" NOT NULL,
+    "name" "text" NOT NULL,
+    "email" "text",
+    "phone" "text",
+    "company_name" "text",
+    "subject" "text",
+    "message" "text" NOT NULL,
+    "inquiry_type" "text" DEFAULT 'general'::"text",
+    "source" "text" DEFAULT 'website'::"text",
+    "status" "text" DEFAULT 'new'::"text",
+    "priority" "text" DEFAULT 'medium'::"text",
+    "assigned_to_staff_id" "uuid",
+    "resolved_at" timestamp with time zone,
+    "resolution_notes" "text",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "inquiries_inquiry_type_check" CHECK (("inquiry_type" = ANY (ARRAY['general'::"text", 'product'::"text", 'service'::"text", 'complaint'::"text", 'suggestion'::"text", 'quote_request'::"text"]))),
+    CONSTRAINT "inquiries_priority_check" CHECK (("priority" = ANY (ARRAY['low'::"text", 'medium'::"text", 'high'::"text", 'urgent'::"text"]))),
+    CONSTRAINT "inquiries_source_check" CHECK (("source" = ANY (ARRAY['website'::"text", 'kiosk'::"text", 'phone'::"text", 'email'::"text", 'walk_in'::"text"]))),
+    CONSTRAINT "inquiries_status_check" CHECK (("status" = ANY (ARRAY['new'::"text", 'assigned'::"text", 'in_progress'::"text", 'resolved'::"text", 'closed'::"text", 'archived'::"text"])))
+);
+
+
+ALTER TABLE "public"."inquiries" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."integration_alerts" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "alert_type" "text" NOT NULL,
+    "severity" "text" DEFAULT 'medium'::"text" NOT NULL,
+    "title" "text" NOT NULL,
+    "message" "text" NOT NULL,
+    "metadata" "jsonb" DEFAULT '{}'::"jsonb",
+    "is_resolved" boolean DEFAULT false,
+    "resolved_at" timestamp with time zone,
+    "resolved_by" "text",
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"(),
+    CONSTRAINT "check_alert_severity" CHECK (("severity" = ANY (ARRAY['low'::"text", 'medium'::"text", 'high'::"text", 'critical'::"text"]))),
+    CONSTRAINT "check_alert_type" CHECK (("alert_type" = ANY (ARRAY['order_processing'::"text", 'system_health'::"text", 'webhook_failure'::"text", 'queue_backlog'::"text", 'performance'::"text"])))
+);
+
+
+ALTER TABLE "public"."integration_alerts" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."integration_webhooks" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "webhook_name" "text" NOT NULL,
+    "webhook_url" "text" NOT NULL,
+    "webhook_secret" "text" NOT NULL,
+    "event_types" "text"[] DEFAULT ARRAY['order.status_changed'::"text"] NOT NULL,
+    "is_active" boolean DEFAULT true,
+    "retry_count" integer DEFAULT 3,
+    "timeout_seconds" integer DEFAULT 30,
+    "last_triggered_at" timestamp with time zone,
+    "last_success_at" timestamp with time zone,
+    "last_error" "text",
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"(),
+    CONSTRAINT "check_webhook_timeout" CHECK ((("timeout_seconds" > 0) AND ("timeout_seconds" <= 300)))
+);
+
+
+ALTER TABLE "public"."integration_webhooks" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."integrations" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "integration_name" "text" NOT NULL,
+    "integration_type" "text" NOT NULL,
+    "description" "text",
+    "api_endpoint" "text",
+    "api_key_encrypted" "text",
+    "webhook_url" "text",
+    "webhook_secret_encrypted" "text",
+    "status" "text" DEFAULT 'inactive'::"text",
+    "last_sync_at" timestamp with time zone,
+    "sync_frequency" "text",
+    "created_by_user_id" "uuid" NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "integrations_integration_type_check" CHECK (("integration_type" = ANY (ARRAY['payment'::"text", 'accounting'::"text", 'crm'::"text", 'marketing'::"text", 'hr'::"text", 'inventory'::"text", 'other'::"text"]))),
+    CONSTRAINT "integrations_status_check" CHECK (("status" = ANY (ARRAY['active'::"text", 'inactive'::"text", 'configured'::"text", 'error'::"text", 'testing'::"text"])))
+);
+
+
+ALTER TABLE "public"."integrations" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."inventory_levels" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "product_id" "uuid" NOT NULL,
+    "location_id" "uuid" NOT NULL,
+    "quantity_on_hand" integer DEFAULT 0 NOT NULL,
+    "reserved_quantity" integer DEFAULT 0,
+    "reorder_point" integer DEFAULT 0,
+    "max_stock_level" integer,
+    "last_restock_date" "date",
+    "last_count_date" "date",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "quantity_reserved" integer DEFAULT 0,
+    "quantity_available" integer GENERATED ALWAYS AS (("quantity_on_hand" - "quantity_reserved")) STORED,
+    CONSTRAINT "inventory_levels_quantity_on_hand_check" CHECK (("quantity_on_hand" >= 0)),
+    CONSTRAINT "inventory_levels_reserved_quantity_check" CHECK (("reserved_quantity" >= 0))
+);
+
+
+ALTER TABLE "public"."inventory_levels" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."inventory_levels" IS 'Current stock levels by location';
+
+
+
+COMMENT ON COLUMN "public"."inventory_levels"."quantity_available" IS 'Computed column: quantity_on_hand - quantity_reserved';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."inventory_movements" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "product_id" "uuid",
+    "movement_type" "text" NOT NULL,
+    "quantity" integer NOT NULL,
+    "reference_type" "text" DEFAULT 'manual'::"text",
+    "reference_id" "uuid",
+    "notes" "text" DEFAULT ''::"text",
+    "staff_id" "uuid",
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "from_location_id" "uuid",
+    "to_location_id" "uuid",
+    "recorded_by_user_id" "uuid",
+    "related_order_id" "uuid",
+    CONSTRAINT "inventory_movements_movement_type_check" CHECK (("movement_type" = ANY (ARRAY['in'::"text", 'out'::"text", 'adjustment'::"text"]))),
+    CONSTRAINT "inventory_movements_reference_type_check" CHECK (("reference_type" = ANY (ARRAY['purchase'::"text", 'sale'::"text", 'adjustment'::"text", 'transfer'::"text", 'return'::"text"])))
+);
+
+
+ALTER TABLE "public"."inventory_movements" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."invoice_items" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "invoice_id" "uuid" NOT NULL,
+    "product_id" "uuid",
+    "description" "text" NOT NULL,
+    "quantity" integer NOT NULL,
+    "unit_price" numeric(10,2) NOT NULL,
+    "discount_amount" numeric(10,2) DEFAULT 0,
+    "line_total" numeric(10,2) NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "invoice_items_quantity_check" CHECK (("quantity" > 0))
+);
+
+
+ALTER TABLE "public"."invoice_items" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."invoices" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "invoice_number" "text" NOT NULL,
+    "customer_id" "uuid" NOT NULL,
+    "sales_order_id" "uuid",
+    "invoice_date" "date" NOT NULL,
+    "due_date" "date" NOT NULL,
+    "subtotal" numeric(12,2) DEFAULT 0 NOT NULL,
+    "tax_amount" numeric(12,2) DEFAULT 0,
+    "total_amount" numeric(12,2) DEFAULT 0 NOT NULL,
+    "amount_paid" numeric(12,2) DEFAULT 0,
+    "amount_due" numeric(12,2) DEFAULT 0 NOT NULL,
+    "status" "text" DEFAULT 'draft'::"text",
+    "payment_terms" "text" DEFAULT '30 days'::"text",
+    "notes" "text",
+    "created_by_user_id" "uuid" NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "invoices_status_check" CHECK (("status" = ANY (ARRAY['draft'::"text", 'sent'::"text", 'viewed'::"text", 'paid'::"text", 'partially_paid'::"text", 'overdue'::"text", 'cancelled'::"text", 'voided'::"text"])))
+);
+
+
+ALTER TABLE "public"."invoices" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."job_titles" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "title_name" "text" NOT NULL,
+    "description" "text",
+    "department_id" "uuid",
+    "salary_range_min" numeric(12,2),
+    "salary_range_max" numeric(12,2),
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+
+ALTER TABLE "public"."job_titles" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."kiosk_integration_orders" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "kiosk_order_id" "text" NOT NULL,
+    "pos_order_id" "uuid",
+    "status" "text" DEFAULT 'RECEIVED'::"text" NOT NULL,
+    "order_payload" "jsonb" NOT NULL,
+    "payment_details" "jsonb",
+    "last_error" "text",
+    "retry_count" integer DEFAULT 0 NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"(),
+    "webhook_notifications_sent" "jsonb" DEFAULT '[]'::"jsonb",
+    "processing_started_at" timestamp with time zone,
+    "processing_completed_at" timestamp with time zone,
+    "customer_notified_at" timestamp with time zone,
+    CONSTRAINT "kiosk_integration_orders_status_check" CHECK (("status" = ANY (ARRAY['RECEIVED'::"text", 'QUEUED'::"text", 'PROCESSING'::"text", 'COMPLETED'::"text", 'FAILED'::"text", 'RETRYING'::"text"])))
+);
+
+
+ALTER TABLE "public"."kiosk_integration_orders" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."leads" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "lead_number" "text",
+    "first_name" "text",
+    "last_name" "text",
+    "company_name" "text",
+    "email" "text",
+    "phone_number" "text",
+    "source" "text",
+    "status" "text" DEFAULT 'new'::"text",
+    "lead_score" integer DEFAULT 0,
+    "assigned_to_staff_id" "uuid",
+    "estimated_value" numeric(12,2),
+    "expected_close_date" "date",
+    "notes" "text",
+    "last_contact_date" "date",
+    "next_follow_up_date" "date",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "leads_lead_score_check" CHECK ((("lead_score" >= 0) AND ("lead_score" <= 100))),
+    CONSTRAINT "leads_status_check" CHECK (("status" = ANY (ARRAY['new'::"text", 'contacted'::"text", 'qualified'::"text", 'proposal'::"text", 'negotiation'::"text", 'won'::"text", 'lost'::"text", 'unqualified'::"text"])))
+);
+
+
+ALTER TABLE "public"."leads" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."leave_requests" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "staff_id" "uuid",
+    "leave_type" "text" NOT NULL,
+    "start_date" "date" NOT NULL,
+    "end_date" "date" NOT NULL,
+    "days_requested" integer DEFAULT 1 NOT NULL,
+    "reason" "text" NOT NULL,
+    "status" "text" DEFAULT 'pending'::"text",
+    "approved_by" "uuid",
+    "approved_date" timestamp with time zone,
+    "emergency_contact" "text" DEFAULT ''::"text",
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"(),
+    CONSTRAINT "leave_requests_leave_type_check" CHECK (("leave_type" = ANY (ARRAY['annual'::"text", 'sick'::"text", 'personal'::"text", 'emergency'::"text", 'maternity'::"text", 'paternity'::"text"]))),
+    CONSTRAINT "leave_requests_status_check" CHECK (("status" = ANY (ARRAY['pending'::"text", 'approved'::"text", 'rejected'::"text"])))
+);
+
+
+ALTER TABLE "public"."leave_requests" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."locations" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "name" "text" NOT NULL,
+    "location_type" "text" DEFAULT 'warehouse'::"text",
+    "address" "text",
+    "city" "text",
+    "state" "text",
+    "zip_code" "text",
+    "phone_number" "text",
+    "email" "text",
+    "branch_id" "uuid",
+    "manager_staff_id" "uuid",
+    "is_active" boolean DEFAULT true,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "locations_location_type_check" CHECK (("location_type" = ANY (ARRAY['warehouse'::"text", 'store'::"text", 'office'::"text", 'other'::"text"])))
+);
+
+
+ALTER TABLE "public"."locations" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."marketing_audit_logs" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "user_id" "uuid",
+    "action" character varying(100) NOT NULL,
+    "entity_type" character varying(50) NOT NULL,
+    "entity_id" "uuid",
+    "old_values" "jsonb",
+    "new_values" "jsonb",
+    "ip_address" "inet",
+    "user_agent" "text",
+    "created_at" timestamp with time zone DEFAULT "now"()
+);
+
+
+ALTER TABLE "public"."marketing_audit_logs" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."marketing_campaigns" (
+    "id" "uuid" DEFAULT "extensions"."uuid_generate_v4"() NOT NULL,
+    "campaign_name" character varying(255) NOT NULL,
+    "template_id" "uuid",
+    "template_type" character varying(50) NOT NULL,
+    "title" character varying(255) NOT NULL,
+    "description" "text",
+    "content" "text",
+    "background_color" character varying(7),
+    "text_color" character varying(7),
+    "image_url" "text",
+    "image_alt_text" character varying(255),
+    "cta_text" character varying(100),
+    "cta_url" "text",
+    "cta_button_color" character varying(7),
+    "cta_text_color" character varying(7),
+    "is_active" boolean DEFAULT false,
+    "is_published" boolean DEFAULT false,
+    "publish_date" timestamp with time zone,
+    "unpublish_date" timestamp with time zone,
+    "target_audience" "text"[],
+    "target_channels" "text"[],
+    "views_count" integer DEFAULT 0,
+    "clicks_count" integer DEFAULT 0,
+    "conversions_count" integer DEFAULT 0,
+    "created_by" "uuid",
+    "updated_by" "uuid",
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"(),
+    CONSTRAINT "marketing_campaigns_template_type_check" CHECK ((("template_type")::"text" = ANY ((ARRAY['hero_banner'::character varying, 'promo_card'::character varying, 'popup'::character varying])::"text"[])))
+);
+
+
+ALTER TABLE "public"."marketing_campaigns" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."marketing_campaigns" IS 'Marketing campaign management';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."marketing_user_roles" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "user_id" "uuid",
+    "role" character varying(50) NOT NULL,
+    "permissions" "jsonb" DEFAULT '{}'::"jsonb",
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"(),
+    CONSTRAINT "marketing_user_roles_role_check" CHECK ((("role")::"text" = ANY ((ARRAY['admin'::character varying, 'marketing_manager'::character varying, 'viewer'::character varying])::"text"[])))
+);
+
+
+ALTER TABLE "public"."marketing_user_roles" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."notification_templates" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "template_name" character varying(255) NOT NULL,
+    "notification_type" character varying(50) NOT NULL,
+    "subject" character varying(255),
+    "message" "text" NOT NULL,
+    "html_content" "text",
+    "variables" "text"[] DEFAULT '{}'::"text"[],
+    "is_active" boolean DEFAULT true,
+    "created_by" "uuid",
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"()
+);
+
+
+ALTER TABLE "public"."notification_templates" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."notifications" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "customer_id" "uuid",
+    "title" "text" NOT NULL,
+    "message" "text" NOT NULL,
+    "notification_type" "text" NOT NULL,
+    "channel" "text" NOT NULL,
+    "status" "text" DEFAULT 'pending'::"text",
+    "priority" "text" DEFAULT 'medium'::"text",
+    "scheduled_at" timestamp with time zone,
+    "sent_at" timestamp with time zone,
+    "delivered_at" timestamp with time zone,
+    "opened_at" timestamp with time zone,
+    "clicked_at" timestamp with time zone,
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    CONSTRAINT "notifications_channel_check" CHECK (("channel" = ANY (ARRAY['sms'::"text", 'email'::"text", 'push'::"text", 'in_app'::"text"]))),
+    CONSTRAINT "notifications_notification_type_check" CHECK (("notification_type" = ANY (ARRAY['order_update'::"text", 'appointment'::"text", 'payment'::"text", 'promotion'::"text", 'product_alert'::"text", 'stock_alert'::"text"]))),
+    CONSTRAINT "notifications_priority_check" CHECK (("priority" = ANY (ARRAY['low'::"text", 'medium'::"text", 'high'::"text"]))),
+    CONSTRAINT "notifications_status_check" CHECK (("status" = ANY (ARRAY['pending'::"text", 'sent'::"text", 'delivered'::"text", 'failed'::"text", 'opened'::"text", 'clicked'::"text"])))
+);
+
+
+ALTER TABLE "public"."notifications" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."order_items" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "order_id" "uuid" NOT NULL,
+    "product_id" "uuid" NOT NULL,
+    "quantity" integer NOT NULL,
+    "unit_price" numeric(10,2) NOT NULL,
+    "discount_amount" numeric(10,2) DEFAULT 0,
+    "line_total" numeric(10,2) NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "order_items_quantity_check" CHECK (("quantity" > 0))
+);
+
+
+ALTER TABLE "public"."order_items" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."order_status_history" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "integration_order_id" "uuid" NOT NULL,
+    "kiosk_order_id" "text" NOT NULL,
+    "pos_order_id" "text",
+    "previous_status" "text",
+    "new_status" "text" NOT NULL,
+    "changed_by" "text" DEFAULT 'system'::"text",
+    "change_reason" "text",
+    "metadata" "jsonb" DEFAULT '{}'::"jsonb",
+    "created_at" timestamp with time zone DEFAULT "now"()
+);
+
+
+ALTER TABLE "public"."order_status_history" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."password_reset_requests" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "staff_id" "uuid",
+    "email" "text" DEFAULT ''::"text",
+    "reason" "text" DEFAULT ''::"text",
+    "status" "text" DEFAULT 'pending'::"text",
+    "requested_at" timestamp with time zone DEFAULT "now"(),
+    "processed_at" timestamp with time zone,
+    CONSTRAINT "password_reset_requests_status_check" CHECK (("status" = ANY (ARRAY['pending'::"text", 'approved'::"text"])))
+);
+
+
+ALTER TABLE "public"."password_reset_requests" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."payments" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "payment_number" "text" NOT NULL,
+    "customer_id" "uuid",
+    "supplier_id" "uuid",
+    "invoice_id" "uuid",
+    "payment_date" "date" NOT NULL,
+    "amount" numeric(12,2) NOT NULL,
+    "payment_method" "text" NOT NULL,
+    "transaction_reference" "text",
+    "bank_account" "text",
+    "notes" "text",
+    "recorded_by_user_id" "uuid" NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "chk_payment_entity" CHECK (((("customer_id" IS NOT NULL) AND ("supplier_id" IS NULL)) OR (("customer_id" IS NULL) AND ("supplier_id" IS NOT NULL)))),
+    CONSTRAINT "payments_amount_check" CHECK (("amount" > (0)::numeric)),
+    CONSTRAINT "payments_payment_method_check" CHECK (("payment_method" = ANY (ARRAY['cash'::"text", 'credit_card'::"text", 'debit_card'::"text", 'bank_transfer'::"text", 'check'::"text", 'digital_wallet'::"text", 'other'::"text"])))
+);
+
+
+ALTER TABLE "public"."payments" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."payroll_audit_log" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "period_id" "uuid",
+    "record_id" "uuid",
+    "action" character varying(100) NOT NULL,
+    "actor_id" "uuid",
+    "actor_name" character varying(255),
+    "old_values" "jsonb",
+    "new_values" "jsonb",
+    "ip_address" "inet",
+    "user_agent" "text",
+    "created_at" timestamp with time zone DEFAULT "now"()
+);
+
+
+ALTER TABLE "public"."payroll_audit_log" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."payroll_audit_log" IS 'Audit trail for all payroll operations';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."payroll_benefits" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "benefit_name" character varying(100) NOT NULL,
+    "benefit_type" character varying(50) NOT NULL,
+    "cost_type" character varying(20) NOT NULL,
+    "cost_value" numeric(10,2) NOT NULL,
+    "employer_contribution" numeric(10,2) DEFAULT 0,
+    "employee_contribution" numeric(10,2) DEFAULT 0,
+    "is_taxable" boolean DEFAULT true,
+    "is_active" boolean DEFAULT true,
+    "effective_date" "date" NOT NULL,
+    "end_date" "date",
+    "description" "text",
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"(),
+    CONSTRAINT "payroll_benefits_benefit_type_check" CHECK ((("benefit_type")::"text" = ANY ((ARRAY['health'::character varying, 'dental'::character varying, 'vision'::character varying, 'retirement'::character varying, 'life_insurance'::character varying, 'other'::character varying])::"text"[]))),
+    CONSTRAINT "payroll_benefits_cost_type_check" CHECK ((("cost_type")::"text" = ANY ((ARRAY['fixed'::character varying, 'percentage'::character varying, 'per_employee'::character varying])::"text"[])))
+);
+
+
+ALTER TABLE "public"."payroll_benefits" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."payroll_benefits" IS 'Available benefits that can be linked to payroll';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."payroll_components" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "component_name" character varying(100) NOT NULL,
+    "component_type" character varying(50) NOT NULL,
+    "calculation_type" character varying(50) NOT NULL,
+    "is_taxable" boolean DEFAULT true,
+    "is_mandatory" boolean DEFAULT false,
+    "is_active" boolean DEFAULT true,
+    "description" "text",
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"(),
+    CONSTRAINT "payroll_components_calculation_type_check" CHECK ((("calculation_type")::"text" = ANY ((ARRAY['fixed'::character varying, 'percentage'::character varying, 'hourly'::character varying, 'custom'::character varying, 'bracket'::character varying])::"text"[]))),
+    CONSTRAINT "payroll_components_component_type_check" CHECK ((("component_type")::"text" = ANY ((ARRAY['earnings'::character varying, 'deduction'::character varying, 'tax'::character varying, 'benefit'::character varying])::"text"[])))
+);
+
+
+ALTER TABLE "public"."payroll_components" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."payroll_components" IS 'Different types of payroll components (earnings, deductions, etc.)';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."payroll_periods" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "period_name" character varying(100) NOT NULL,
+    "period_type" character varying(20) NOT NULL,
+    "start_date" "date" NOT NULL,
+    "end_date" "date" NOT NULL,
+    "pay_date" "date" NOT NULL,
+    "status" character varying(20) DEFAULT 'draft'::character varying,
+    "total_employees" integer DEFAULT 0,
+    "total_gross_pay" numeric(12,2) DEFAULT 0,
+    "total_tax_amount" numeric(12,2) DEFAULT 0,
+    "total_net_pay" numeric(12,2) DEFAULT 0,
+    "created_by" "uuid",
+    "approved_by" "uuid",
+    "processed_at" timestamp with time zone,
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"(),
+    CONSTRAINT "payroll_periods_period_type_check" CHECK ((("period_type")::"text" = ANY ((ARRAY['monthly'::character varying, 'bi-weekly'::character varying, 'weekly'::character varying, 'custom'::character varying])::"text"[]))),
+    CONSTRAINT "payroll_periods_status_check" CHECK ((("status")::"text" = ANY ((ARRAY['draft'::character varying, 'processing'::character varying, 'review'::character varying, 'approved'::character varying, 'paid'::character varying, 'closed'::character varying])::"text"[])))
+);
+
+
+ALTER TABLE "public"."payroll_periods" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."payroll_periods" IS 'Payroll periods for processing employee payments';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."payroll_records" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "period_id" "uuid",
+    "staff_id" "uuid",
+    "employee_id" character varying(255) NOT NULL,
+    "employee_name" character varying(255) NOT NULL,
+    "position" character varying(255),
+    "department" character varying(255),
+    "base_salary" numeric(10,2) DEFAULT 0 NOT NULL,
+    "regular_hours" numeric(5,2) DEFAULT 0,
+    "overtime_hours" numeric(5,2) DEFAULT 0,
+    "overtime_rate" numeric(5,2) DEFAULT 1.5,
+    "overtime_pay" numeric(10,2) DEFAULT 0,
+    "bonuses" numeric(10,2) DEFAULT 0,
+    "allowances" numeric(10,2) DEFAULT 0,
+    "commissions" numeric(10,2) DEFAULT 0,
+    "holiday_pay" numeric(10,2) DEFAULT 0,
+    "night_differential" numeric(10,2) DEFAULT 0,
+    "tax_amount" numeric(10,2) DEFAULT 0,
+    "sss_contribution" numeric(10,2) DEFAULT 0,
+    "philhealth_contribution" numeric(10,2) DEFAULT 0,
+    "pagibig_contribution" numeric(10,2) DEFAULT 0,
+    "benefits_deduction" numeric(10,2) DEFAULT 0,
+    "loan_deduction" numeric(10,2) DEFAULT 0,
+    "other_deductions" numeric(10,2) DEFAULT 0,
+    "gross_pay" numeric(10,2) DEFAULT 0,
+    "total_deductions" numeric(10,2) DEFAULT 0,
+    "net_pay" numeric(10,2) DEFAULT 0,
+    "status" character varying(20) DEFAULT 'pending'::character varying,
+    "payment_method" character varying(50),
+    "payment_reference" character varying(255),
+    "paid_at" timestamp with time zone,
+    "notes" "text",
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"(),
+    CONSTRAINT "payroll_records_status_check" CHECK ((("status")::"text" = ANY ((ARRAY['pending'::character varying, 'reviewed'::character varying, 'approved'::character varying, 'paid'::character varying, 'disputed'::character varying])::"text"[])))
+);
+
+
+ALTER TABLE "public"."payroll_records" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."payroll_records" IS 'Individual payroll records per period';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."payroll_reports" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "period_id" "uuid",
+    "report_type" character varying(50) NOT NULL,
+    "report_name" character varying(255) NOT NULL,
+    "file_path" character varying(500),
+    "file_size" integer,
+    "generated_by" "uuid",
+    "generated_at" timestamp with time zone DEFAULT "now"(),
+    "status" character varying(20) DEFAULT 'generated'::character varying,
+    "parameters" "jsonb" DEFAULT '{}'::"jsonb",
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    CONSTRAINT "payroll_reports_report_type_check" CHECK ((("report_type")::"text" = ANY ((ARRAY['summary'::character varying, 'detailed'::character varying, 'tax_report'::character varying, 'benefits_report'::character varying, 'pay_stubs'::character varying])::"text"[]))),
+    CONSTRAINT "payroll_reports_status_check" CHECK ((("status")::"text" = ANY ((ARRAY['generating'::character varying, 'generated'::character varying, 'failed'::character varying])::"text"[])))
+);
+
+
+ALTER TABLE "public"."payroll_reports" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."payroll_reports" IS 'Generated payroll reports and documents';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."performance_reviews" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "staff_id" "uuid" NOT NULL,
+    "reviewer_staff_id" "uuid",
+    "review_period_start" "date" NOT NULL,
+    "review_period_end" "date" NOT NULL,
+    "review_date" "date" NOT NULL,
+    "overall_rating" numeric(3,1),
+    "goals_set" "text",
+    "goals_achieved" "text",
+    "strengths" "text",
+    "areas_for_improvement" "text",
+    "comments" "text",
+    "status" "text" DEFAULT 'draft'::"text",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "performance_reviews_overall_rating_check" CHECK ((("overall_rating" >= (0)::numeric) AND ("overall_rating" <= (5)::numeric))),
+    CONSTRAINT "performance_reviews_status_check" CHECK (("status" = ANY (ARRAY['draft'::"text", 'submitted'::"text", 'approved'::"text", 'final'::"text"])))
+);
+
+
+ALTER TABLE "public"."performance_reviews" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."permissions" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "name" character varying(100) NOT NULL,
+    "description" "text",
+    "resource" character varying(50) NOT NULL,
+    "action" character varying(50) NOT NULL,
+    "component" character varying(200),
+    "category" character varying(20) DEFAULT 'standard'::character varying,
+    "is_system" boolean DEFAULT false,
+    "is_visible" boolean DEFAULT true,
+    "is_enabled" boolean DEFAULT true,
+    "upgrade_message" "text",
+    "required_role" character varying(50),
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"(),
+    CONSTRAINT "permissions_category_check" CHECK ((("category")::"text" = ANY ((ARRAY['sensitive'::character varying, 'upgradeable'::character varying, 'standard'::character varying])::"text"[])))
+);
+
+
+ALTER TABLE "public"."permissions" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."permissions" IS 'Granular permissions for system access control';
+
+
+
+COMMENT ON COLUMN "public"."permissions"."category" IS 'Permission visibility: sensitive=hidden, upgradeable=shown with upgrade message, standard=normal';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."pos_sessions" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "session_number" "text" NOT NULL,
+    "branch_id" "uuid" NOT NULL,
+    "location_id" "uuid",
+    "opened_by_staff_id" "uuid" NOT NULL,
+    "closed_by_staff_id" "uuid",
+    "opened_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "closed_at" timestamp with time zone,
+    "starting_cash" numeric(12,2) DEFAULT 0 NOT NULL,
+    "ending_cash" numeric(12,2),
+    "expected_cash" numeric(12,2),
+    "cash_variance" numeric(12,2),
+    "status" "text" DEFAULT 'open'::"text",
+    "notes" "text",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "pos_sessions_status_check" CHECK (("status" = ANY (ARRAY['open'::"text", 'closed'::"text", 'reconciled'::"text"])))
+);
+
+
+ALTER TABLE "public"."pos_sessions" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."pos_transactions" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "pos_session_id" "uuid" NOT NULL,
+    "sales_transaction_id" "uuid",
+    "transaction_type" "text" NOT NULL,
+    "payment_method" "text",
+    "amount" numeric(12,2) NOT NULL,
+    "transaction_date" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "receipt_number" "text",
+    "notes" "text",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "pos_transactions_transaction_type_check" CHECK (("transaction_type" = ANY (ARRAY['sale'::"text", 'return'::"text", 'void'::"text", 'cash_in'::"text", 'cash_out'::"text"])))
+);
+
+
+ALTER TABLE "public"."pos_transactions" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."products" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "sku" "text" NOT NULL,
+    "name" "text" NOT NULL,
+    "description" "text" DEFAULT ''::"text",
+    "category_id" "uuid",
+    "supplier_id" "uuid",
+    "unit_price" numeric(10,2) DEFAULT 0 NOT NULL,
+    "cost_price" numeric(10,2) DEFAULT 0 NOT NULL,
+    "stock_quantity" integer DEFAULT 0 NOT NULL,
+    "minimum_stock" integer DEFAULT 0 NOT NULL,
+    "maximum_stock" integer DEFAULT 1000,
+    "unit_of_measure" "text" DEFAULT 'pcs'::"text",
+    "barcode" "text" DEFAULT ''::"text",
+    "expiry_date" "date",
+    "is_active" boolean DEFAULT true,
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"()
+);
+
+
+ALTER TABLE "public"."products" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."products" IS 'Product catalog with pricing and inventory data';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."purchase_order_items" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "purchase_order_id" "uuid" NOT NULL,
+    "product_id" "uuid" NOT NULL,
+    "quantity_ordered" integer NOT NULL,
+    "quantity_received" integer DEFAULT 0,
+    "unit_cost" numeric(10,2) NOT NULL,
+    "line_total" numeric(10,2) NOT NULL,
+    "received_date" "date",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "purchase_order_items_quantity_ordered_check" CHECK (("quantity_ordered" > 0)),
+    CONSTRAINT "purchase_order_items_quantity_received_check" CHECK (("quantity_received" >= 0))
+);
+
+
+ALTER TABLE "public"."purchase_order_items" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."purchase_orders" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "po_number" "text" NOT NULL,
+    "supplier_id" "uuid" NOT NULL,
+    "order_date" "date" NOT NULL,
+    "expected_delivery_date" "date",
+    "actual_delivery_date" "date",
+    "status" "text" DEFAULT 'draft'::"text",
+    "subtotal" numeric(12,2) DEFAULT 0 NOT NULL,
+    "tax_amount" numeric(12,2) DEFAULT 0,
+    "shipping_amount" numeric(12,2) DEFAULT 0,
+    "total_amount" numeric(12,2) DEFAULT 0 NOT NULL,
+    "notes" "text",
+    "created_by_user_id" "uuid" NOT NULL,
+    "approved_by_user_id" "uuid",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "purchase_orders_status_check" CHECK (("status" = ANY (ARRAY['draft'::"text", 'sent'::"text", 'confirmed'::"text", 'partially_received'::"text", 'received'::"text", 'cancelled'::"text"])))
+);
+
+
+ALTER TABLE "public"."purchase_orders" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."role_definitions" (
+    "id" "uuid" DEFAULT "extensions"."uuid_generate_v4"() NOT NULL,
+    "role_name" character varying(100) NOT NULL,
+    "display_name" character varying(255) NOT NULL,
+    "description" "text",
+    "is_system_role" boolean DEFAULT false,
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"()
+);
+
+
+ALTER TABLE "public"."role_definitions" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."role_permissions" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "role_id" "uuid",
+    "role_name" character varying(100) NOT NULL,
+    "module" character varying(100) NOT NULL,
+    "can_view" boolean DEFAULT false,
+    "can_edit" boolean DEFAULT false,
+    "can_delete" boolean DEFAULT false,
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"(),
+    "permission_id" "uuid"
+);
+
+
+ALTER TABLE "public"."role_permissions" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."roles" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "role_name" "text" NOT NULL,
+    "description" "text",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "level" integer DEFAULT 10,
+    "display_name" character varying DEFAULT ''::character varying NOT NULL,
+    "is_custom" boolean DEFAULT false,
+    "is_active" boolean DEFAULT true
+);
+
+
+ALTER TABLE "public"."roles" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."roles" IS 'User roles with hierarchical permissions';
+
+
+
+COMMENT ON COLUMN "public"."roles"."level" IS 'Hierarchy level: 1=highest (super-admin), higher numbers=lower access';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."sales_orders" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "order_number" "text" NOT NULL,
+    "customer_id" "uuid",
+    "staff_id" "uuid",
+    "branch_id" "uuid",
+    "order_date" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "required_date" "date",
+    "shipped_date" "date",
+    "status" "text" DEFAULT 'pending'::"text",
+    "subtotal" numeric(12,2) DEFAULT 0 NOT NULL,
+    "discount_amount" numeric(12,2) DEFAULT 0,
+    "tax_amount" numeric(12,2) DEFAULT 0,
+    "shipping_amount" numeric(12,2) DEFAULT 0,
+    "total_amount" numeric(12,2) DEFAULT 0 NOT NULL,
+    "shipping_address" "text",
+    "billing_address" "text",
+    "payment_status" "text" DEFAULT 'pending'::"text",
+    "notes" "text",
+    "processed_by_user_id" "uuid",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "sales_orders_payment_status_check" CHECK (("payment_status" = ANY (ARRAY['pending'::"text", 'paid'::"text", 'partially_paid'::"text", 'refunded'::"text", 'voided'::"text"]))),
+    CONSTRAINT "sales_orders_status_check" CHECK (("status" = ANY (ARRAY['pending'::"text", 'confirmed'::"text", 'processing'::"text", 'shipped'::"text", 'delivered'::"text", 'completed'::"text", 'cancelled'::"text", 'returned'::"text"])))
+);
+
+
+ALTER TABLE "public"."sales_orders" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."sales_transactions" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "transaction_number" "text" NOT NULL,
+    "customer_id" "uuid",
+    "staff_id" "uuid",
+    "branch_id" "uuid",
+    "transaction_date" timestamp with time zone DEFAULT "now"(),
+    "subtotal" numeric(12,2) DEFAULT 0 NOT NULL,
+    "discount_amount" numeric(12,2) DEFAULT 0,
+    "tax_amount" numeric(12,2) DEFAULT 0,
+    "total_amount" numeric(12,2) DEFAULT 0 NOT NULL,
+    "payment_method" "text" DEFAULT 'cash'::"text",
+    "payment_status" "text" DEFAULT 'completed'::"text",
+    "notes" "text" DEFAULT ''::"text",
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"(),
+    "source" "text" DEFAULT 'pos'::"text",
+    "kiosk_order_id" "text",
+    CONSTRAINT "sales_transactions_payment_method_check" CHECK (("payment_method" = ANY (ARRAY['cash'::"text", 'credit_card'::"text", 'bank_transfer'::"text", 'digital_wallet'::"text"]))),
+    CONSTRAINT "sales_transactions_payment_status_check" CHECK (("payment_status" = ANY (ARRAY['pending'::"text", 'completed'::"text", 'failed'::"text", 'refunded'::"text"]))),
+    CONSTRAINT "sales_transactions_source_check" CHECK (("source" = ANY (ARRAY['pos'::"text", 'kiosk'::"text", 'online'::"text", 'mobile_app'::"text"])))
+);
+
+
+ALTER TABLE "public"."sales_transactions" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."sales_transactions" IS 'Point of sale transaction records';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."staff" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "employee_id" "text" NOT NULL,
+    "first_name" "text" NOT NULL,
+    "last_name" "text" NOT NULL,
+    "email" "text" NOT NULL,
+    "phone" "text" DEFAULT ''::"text",
+    "position" "text" NOT NULL,
+    "department" "text" NOT NULL,
+    "branch_id" "uuid",
+    "hire_date" "date" NOT NULL,
+    "salary" numeric(10,2) DEFAULT 0,
+    "is_active" boolean DEFAULT true,
+    "role" "text" DEFAULT 'staff'::"text",
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"(),
+    "termination_date" "date",
+    "manager_staff_id" "uuid",
+    "date_of_birth" "date",
+    "address" "text",
+    "city" "text",
+    "state" "text",
+    "zip_code" "text",
+    "emergency_contact_name" "text",
+    "emergency_contact_phone" "text",
+    "department_id" "uuid",
+    "job_title_id" "uuid",
+    "user_account_id" "uuid",
+    CONSTRAINT "staff_role_check" CHECK (("role" = ANY (ARRAY['admin'::"text", 'manager'::"text", 'staff'::"text", 'veterinarian'::"text", 'cashier'::"text"])))
+);
+
+
+ALTER TABLE "public"."staff" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."staff" IS 'Staff members with employment information';
+
+
+
+COMMENT ON COLUMN "public"."staff"."user_account_id" IS 'Reference to the linked user account';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."staff_user_links" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "staff_id" "uuid",
+    "user_id" "uuid",
+    "link_status" character varying(20) DEFAULT 'active'::character varying,
+    "linked_at" timestamp with time zone DEFAULT "now"(),
+    "unlinked_at" timestamp with time zone,
+    "created_by" "uuid",
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"(),
+    CONSTRAINT "staff_user_links_link_status_check" CHECK ((("link_status")::"text" = ANY ((ARRAY['active'::character varying, 'inactive'::character varying, 'transferred'::character varying])::"text"[])))
+);
+
+
+ALTER TABLE "public"."staff_user_links" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."staff_user_links" IS 'Tracks the relationship between staff records and user accounts';
+
+
+
+COMMENT ON COLUMN "public"."staff_user_links"."link_status" IS 'Status of the staff-user link: active, inactive, or transferred';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."users" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "email" "text" NOT NULL,
+    "first_name" "text" NOT NULL,
+    "last_name" "text" NOT NULL,
+    "phone" "text" DEFAULT ''::"text",
+    "avatar_url" "text" DEFAULT ''::"text",
+    "role" "text" DEFAULT 'user'::"text",
+    "is_active" boolean DEFAULT true,
+    "last_login" timestamp with time zone,
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"(),
+    "staff_id" "uuid",
+    "username" character varying(50),
+    "password_hash" "text",
+    "phone_number" character varying(20),
+    "last_login_at" timestamp with time zone,
+    CONSTRAINT "users_role_check" CHECK (("role" = ANY (ARRAY['admin'::"text", 'manager'::"text", 'staff'::"text", 'user'::"text", 'hr'::"text", 'marketing'::"text", 'cashier'::"text"])))
+);
+
+
+ALTER TABLE "public"."users" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."users" IS 'System users with authentication and profile information';
+
+
+
+COMMENT ON COLUMN "public"."users"."id" IS 'Primary key - UUID';
+
+
+
+COMMENT ON COLUMN "public"."users"."email" IS 'User email address - must be unique';
+
+
+
+COMMENT ON COLUMN "public"."users"."role" IS 'User role (admin, manager, staff, user, etc.)';
+
+
+
+COMMENT ON COLUMN "public"."users"."staff_id" IS 'Reference to linked staff record';
+
+
+
+COMMENT ON COLUMN "public"."users"."username" IS 'Username for login - must be unique';
+
+
+
+CREATE OR REPLACE VIEW "public"."staff_with_accounts" AS
+ SELECT "s"."id",
+    "s"."employee_id",
+    "s"."first_name",
+    "s"."last_name",
+    "s"."email",
+    "s"."phone",
+    "s"."position",
+    "s"."department",
+    "s"."branch_id",
+    "s"."hire_date",
+    "s"."salary",
+    "s"."is_active",
+    "s"."role",
+    "s"."created_at",
+    "s"."updated_at",
+    "s"."termination_date",
+    "s"."manager_staff_id",
+    "s"."date_of_birth",
+    "s"."address",
+    "s"."city",
+    "s"."state",
+    "s"."zip_code",
+    "s"."emergency_contact_name",
+    "s"."emergency_contact_phone",
+    "s"."department_id",
+    "s"."job_title_id",
+    "s"."user_account_id",
+    "u"."id" AS "linked_user_id",
+    "u"."email" AS "user_email",
+    "u"."is_active" AS "user_is_active",
+    "u"."last_login",
+    "sul"."link_status",
+    "sul"."linked_at",
+    "acw"."workflow_status",
+    "acw"."account_creation_method"
+   FROM ((("public"."staff" "s"
+     LEFT JOIN "public"."staff_user_links" "sul" ON ((("s"."id" = "sul"."staff_id") AND (("sul"."link_status")::"text" = 'active'::"text"))))
+     LEFT JOIN "public"."users" "u" ON (("sul"."user_id" = "u"."id")))
+     LEFT JOIN "public"."account_creation_workflow" "acw" ON (("s"."id" = "acw"."staff_id")));
+
+
+ALTER VIEW "public"."staff_with_accounts" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."suppliers" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "name" "text" NOT NULL,
+    "contact_person" "text" DEFAULT ''::"text",
+    "email" "text" DEFAULT ''::"text",
+    "phone" "text" DEFAULT ''::"text",
+    "address" "text" DEFAULT ''::"text",
+    "city" "text" DEFAULT ''::"text",
+    "country" "text" DEFAULT 'Philippines'::"text",
+    "payment_terms" "text" DEFAULT ''::"text",
+    "is_active" boolean DEFAULT true,
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"()
+);
+
+
+ALTER TABLE "public"."suppliers" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."system_settings" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "setting_category" "text" NOT NULL,
+    "setting_key" "text" NOT NULL,
+    "setting_value" "text",
+    "setting_type" "text" DEFAULT 'string'::"text",
+    "description" "text",
+    "is_public" boolean DEFAULT false,
+    "modified_by_user_id" "uuid",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "system_settings_setting_type_check" CHECK (("setting_type" = ANY (ARRAY['string'::"text", 'number'::"text", 'boolean'::"text", 'json'::"text", 'encrypted'::"text"])))
+);
+
+
+ALTER TABLE "public"."system_settings" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."tax_rates" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "tax_name" character varying(100) NOT NULL,
+    "tax_type" character varying(50) NOT NULL,
+    "rate_type" character varying(20) NOT NULL,
+    "rate_value" numeric(8,4) NOT NULL,
+    "min_amount" numeric(12,2) DEFAULT 0,
+    "max_amount" numeric(12,2),
+    "is_active" boolean DEFAULT true,
+    "effective_date" "date" NOT NULL,
+    "end_date" "date",
+    "description" "text",
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"(),
+    CONSTRAINT "tax_rates_rate_type_check" CHECK ((("rate_type")::"text" = ANY ((ARRAY['percentage'::character varying, 'fixed'::character varying, 'bracket'::character varying])::"text"[]))),
+    CONSTRAINT "tax_rates_tax_type_check" CHECK ((("tax_type")::"text" = ANY ((ARRAY['federal'::character varying, 'state'::character varying, 'local'::character varying, 'sss'::character varying, 'philhealth'::character varying, 'pagibig'::character varying, 'withholding'::character varying])::"text"[])))
+);
+
+
+ALTER TABLE "public"."tax_rates" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."tax_rates" IS 'Configurable tax rates and brackets for payroll calculations';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."transaction_items" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "transaction_id" "uuid",
+    "product_id" "uuid",
+    "quantity" integer DEFAULT 1 NOT NULL,
+    "unit_price" numeric(10,2) DEFAULT 0 NOT NULL,
+    "discount_amount" numeric(10,2) DEFAULT 0,
+    "line_total" numeric(10,2) DEFAULT 0 NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"()
+);
+
+
+ALTER TABLE "public"."transaction_items" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."user_account_audit" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "actor_email" character varying(255),
+    "action" character varying(50) NOT NULL,
+    "target_user_email" character varying(255) NOT NULL,
+    "target_user_id" "uuid",
+    "target_staff_id" "uuid",
+    "details" "jsonb" DEFAULT '{}'::"jsonb",
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    CONSTRAINT "user_account_audit_action_check" CHECK ((("action")::"text" = ANY ((ARRAY['create'::character varying, 'update'::character varying, 'delete'::character varying, 'activate'::character varying, 'deactivate'::character varying, 'suspend'::character varying, 'link'::character varying, 'unlink'::character varying, 'transfer'::character varying])::"text"[])))
+);
+
+
+ALTER TABLE "public"."user_account_audit" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."user_account_audit" IS 'Audit log for all user account operations';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."user_activity" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "user_email" "text" NOT NULL,
+    "user_name" "text",
+    "role" "text",
+    "branch" "text",
+    "module" "text",
+    "action" "text",
+    "details" "text",
+    "ip" "text",
+    "device" "text",
+    "old_values" "jsonb",
+    "new_values" "jsonb",
+    "user_agent" "text",
+    "entity_id" "text",
+    "entity_type" "text",
+    CONSTRAINT "user_activity_action_check" CHECK (("action" = ANY (ARRAY['login_success'::"text", 'login_failed'::"text", 'view'::"text", 'create'::"text", 'update'::"text", 'delete'::"text", 'export'::"text"]))),
+    CONSTRAINT "user_activity_module_check" CHECK (("module" = ANY (ARRAY['Dashboard'::"text", 'Inventory'::"text", 'Sales'::"text", 'Reports'::"text", 'Staff'::"text", 'Marketing'::"text", 'Settings'::"text"])))
+);
+
+
+ALTER TABLE "public"."user_activity" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."user_roles" (
+    "user_id" "uuid" NOT NULL,
+    "role_id" "uuid" NOT NULL,
+    "assigned_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "assigned_by_user_id" "uuid"
+);
+
+
+ALTER TABLE "public"."user_roles" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."user_sessions" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "user_email" "text" NOT NULL,
+    "device" "text",
+    "ip" "text",
+    "location" "text",
+    "started_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "last_active_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "is_current" boolean DEFAULT false NOT NULL
+);
+
+
+ALTER TABLE "public"."user_sessions" OWNER TO "postgres";
+
+
+CREATE OR REPLACE VIEW "public"."users_with_staff" AS
+ SELECT "u"."id",
+    "u"."email",
+    "u"."is_active",
+    "u"."last_login",
+    "u"."staff_id",
+    "s"."employee_id",
+    "s"."first_name" AS "staff_first_name",
+    "s"."last_name" AS "staff_last_name",
+    "s"."position",
+    "s"."department",
+    "s"."branch_id",
+    "s"."hire_date",
+    "s"."salary",
+    "s"."is_active" AS "staff_is_active",
+    "sul"."link_status",
+    "sul"."linked_at"
+   FROM (("public"."users" "u"
+     LEFT JOIN "public"."staff_user_links" "sul" ON ((("u"."id" = "sul"."user_id") AND (("sul"."link_status")::"text" = 'active'::"text"))))
+     LEFT JOIN "public"."staff" "s" ON (("sul"."staff_id" = "s"."id")));
+
+
+ALTER VIEW "public"."users_with_staff" OWNER TO "postgres";
+
+
+ALTER TABLE ONLY "public"."account_creation_workflow"
+    ADD CONSTRAINT "account_creation_workflow_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."accounts"
+    ADD CONSTRAINT "accounts_account_number_key" UNIQUE ("account_number");
+
+
+
+ALTER TABLE ONLY "public"."accounts"
+    ADD CONSTRAINT "accounts_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."app_settings"
+    ADD CONSTRAINT "app_settings_app_name_key" UNIQUE ("app_name");
+
+
+
+ALTER TABLE ONLY "public"."app_settings"
+    ADD CONSTRAINT "app_settings_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."attendance_records"
+    ADD CONSTRAINT "attendance_records_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."attendance_records"
+    ADD CONSTRAINT "attendance_records_staff_id_attendance_date_key" UNIQUE ("staff_id", "attendance_date");
+
+
+
+ALTER TABLE ONLY "public"."audit_logs"
+    ADD CONSTRAINT "audit_logs_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."benefits"
+    ADD CONSTRAINT "benefits_benefit_name_key" UNIQUE ("benefit_name");
+
+
+
+ALTER TABLE ONLY "public"."benefits"
+    ADD CONSTRAINT "benefits_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."branches"
+    ADD CONSTRAINT "branches_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."campaign_analytics"
+    ADD CONSTRAINT "campaign_analytics_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."campaign_schedules"
+    ADD CONSTRAINT "campaign_schedules_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."campaign_templates"
+    ADD CONSTRAINT "campaign_templates_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."categories"
+    ADD CONSTRAINT "categories_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."client_notifications"
+    ADD CONSTRAINT "client_notifications_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."component_access"
+    ADD CONSTRAINT "component_access_component_path_key" UNIQUE ("component_path");
+
+
+
+ALTER TABLE ONLY "public"."component_access"
+    ADD CONSTRAINT "component_access_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."customers"
+    ADD CONSTRAINT "customers_customer_code_key" UNIQUE ("customer_code");
+
+
+
+ALTER TABLE ONLY "public"."customers"
+    ADD CONSTRAINT "customers_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."departments"
+    ADD CONSTRAINT "departments_name_key" UNIQUE ("name");
+
+
+
+ALTER TABLE ONLY "public"."departments"
+    ADD CONSTRAINT "departments_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."email_invitations"
+    ADD CONSTRAINT "email_invitations_invitation_token_key" UNIQUE ("invitation_token");
+
+
+
+ALTER TABLE ONLY "public"."email_invitations"
+    ADD CONSTRAINT "email_invitations_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."employee_benefits"
+    ADD CONSTRAINT "employee_benefits_pkey" PRIMARY KEY ("staff_id", "benefit_id");
+
+
+
+ALTER TABLE ONLY "public"."employee_payroll_benefits"
+    ADD CONSTRAINT "employee_payroll_benefits_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."employee_payroll_benefits"
+    ADD CONSTRAINT "employee_payroll_benefits_staff_id_benefit_id_key" UNIQUE ("staff_id", "benefit_id");
+
+
+
+ALTER TABLE ONLY "public"."expenses"
+    ADD CONSTRAINT "expenses_expense_number_key" UNIQUE ("expense_number");
+
+
+
+ALTER TABLE ONLY "public"."expenses"
+    ADD CONSTRAINT "expenses_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."gl_transaction_items"
+    ADD CONSTRAINT "gl_transaction_items_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."gl_transactions"
+    ADD CONSTRAINT "gl_transactions_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."gl_transactions"
+    ADD CONSTRAINT "gl_transactions_transaction_number_key" UNIQUE ("transaction_number");
+
+
+
+ALTER TABLE ONLY "public"."hr_documents"
+    ADD CONSTRAINT "hr_documents_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."inquiries"
+    ADD CONSTRAINT "inquiries_inquiry_number_key" UNIQUE ("inquiry_number");
+
+
+
+ALTER TABLE ONLY "public"."inquiries"
+    ADD CONSTRAINT "inquiries_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."integration_alerts"
+    ADD CONSTRAINT "integration_alerts_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."integration_webhooks"
+    ADD CONSTRAINT "integration_webhooks_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."integrations"
+    ADD CONSTRAINT "integrations_integration_name_key" UNIQUE ("integration_name");
+
+
+
+ALTER TABLE ONLY "public"."integrations"
+    ADD CONSTRAINT "integrations_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."inventory_levels"
+    ADD CONSTRAINT "inventory_levels_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."inventory_levels"
+    ADD CONSTRAINT "inventory_levels_product_id_location_id_key" UNIQUE ("product_id", "location_id");
+
+
+
+ALTER TABLE ONLY "public"."inventory_movements"
+    ADD CONSTRAINT "inventory_movements_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."invoice_items"
+    ADD CONSTRAINT "invoice_items_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."invoices"
+    ADD CONSTRAINT "invoices_invoice_number_key" UNIQUE ("invoice_number");
+
+
+
+ALTER TABLE ONLY "public"."invoices"
+    ADD CONSTRAINT "invoices_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."job_titles"
+    ADD CONSTRAINT "job_titles_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."job_titles"
+    ADD CONSTRAINT "job_titles_title_name_key" UNIQUE ("title_name");
+
+
+
+ALTER TABLE ONLY "public"."kiosk_integration_orders"
+    ADD CONSTRAINT "kiosk_integration_orders_kiosk_order_id_key" UNIQUE ("kiosk_order_id");
+
+
+
+ALTER TABLE ONLY "public"."kiosk_integration_orders"
+    ADD CONSTRAINT "kiosk_integration_orders_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."leads"
+    ADD CONSTRAINT "leads_lead_number_key" UNIQUE ("lead_number");
+
+
+
+ALTER TABLE ONLY "public"."leads"
+    ADD CONSTRAINT "leads_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."leave_requests"
+    ADD CONSTRAINT "leave_requests_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."locations"
+    ADD CONSTRAINT "locations_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."marketing_audit_logs"
+    ADD CONSTRAINT "marketing_audit_logs_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."marketing_campaigns"
+    ADD CONSTRAINT "marketing_campaigns_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."marketing_user_roles"
+    ADD CONSTRAINT "marketing_user_roles_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."marketing_user_roles"
+    ADD CONSTRAINT "marketing_user_roles_user_id_key" UNIQUE ("user_id");
+
+
+
+ALTER TABLE ONLY "public"."notification_templates"
+    ADD CONSTRAINT "notification_templates_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."notifications"
+    ADD CONSTRAINT "notifications_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."order_items"
+    ADD CONSTRAINT "order_items_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."order_status_history"
+    ADD CONSTRAINT "order_status_history_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."password_reset_requests"
+    ADD CONSTRAINT "password_reset_requests_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."payments"
+    ADD CONSTRAINT "payments_payment_number_key" UNIQUE ("payment_number");
+
+
+
+ALTER TABLE ONLY "public"."payments"
+    ADD CONSTRAINT "payments_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."payroll_audit_log"
+    ADD CONSTRAINT "payroll_audit_log_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."payroll_benefits"
+    ADD CONSTRAINT "payroll_benefits_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."payroll_components"
+    ADD CONSTRAINT "payroll_components_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."payroll_periods"
+    ADD CONSTRAINT "payroll_periods_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."payroll_periods"
+    ADD CONSTRAINT "payroll_periods_start_date_end_date_key" UNIQUE ("start_date", "end_date");
+
+
+
+ALTER TABLE ONLY "public"."payroll_records"
+    ADD CONSTRAINT "payroll_records_period_id_staff_id_key" UNIQUE ("period_id", "staff_id");
+
+
+
+ALTER TABLE ONLY "public"."payroll_records"
+    ADD CONSTRAINT "payroll_records_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."payroll_reports"
+    ADD CONSTRAINT "payroll_reports_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."performance_reviews"
+    ADD CONSTRAINT "performance_reviews_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."permissions"
+    ADD CONSTRAINT "permissions_name_key" UNIQUE ("name");
+
+
+
+ALTER TABLE ONLY "public"."permissions"
+    ADD CONSTRAINT "permissions_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."pos_sessions"
+    ADD CONSTRAINT "pos_sessions_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."pos_sessions"
+    ADD CONSTRAINT "pos_sessions_session_number_key" UNIQUE ("session_number");
+
+
+
+ALTER TABLE ONLY "public"."pos_transactions"
+    ADD CONSTRAINT "pos_transactions_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."products"
+    ADD CONSTRAINT "products_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."products"
+    ADD CONSTRAINT "products_sku_key" UNIQUE ("sku");
+
+
+
+ALTER TABLE ONLY "public"."purchase_order_items"
+    ADD CONSTRAINT "purchase_order_items_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."purchase_orders"
+    ADD CONSTRAINT "purchase_orders_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."purchase_orders"
+    ADD CONSTRAINT "purchase_orders_po_number_key" UNIQUE ("po_number");
+
+
+
+ALTER TABLE ONLY "public"."role_definitions"
+    ADD CONSTRAINT "role_definitions_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."role_definitions"
+    ADD CONSTRAINT "role_definitions_role_name_key" UNIQUE ("role_name");
+
+
+
+ALTER TABLE ONLY "public"."role_permissions"
+    ADD CONSTRAINT "role_permissions_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."role_permissions"
+    ADD CONSTRAINT "role_permissions_role_id_module_key" UNIQUE ("role_id", "module");
+
+
+
+ALTER TABLE ONLY "public"."roles"
+    ADD CONSTRAINT "roles_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."roles"
+    ADD CONSTRAINT "roles_role_name_key" UNIQUE ("role_name");
+
+
+
+ALTER TABLE ONLY "public"."sales_orders"
+    ADD CONSTRAINT "sales_orders_order_number_key" UNIQUE ("order_number");
+
+
+
+ALTER TABLE ONLY "public"."sales_orders"
+    ADD CONSTRAINT "sales_orders_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."sales_transactions"
+    ADD CONSTRAINT "sales_transactions_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."sales_transactions"
+    ADD CONSTRAINT "sales_transactions_transaction_number_key" UNIQUE ("transaction_number");
+
+
+
+ALTER TABLE ONLY "public"."staff"
+    ADD CONSTRAINT "staff_email_key" UNIQUE ("email");
+
+
+
+ALTER TABLE ONLY "public"."staff"
+    ADD CONSTRAINT "staff_employee_id_key" UNIQUE ("employee_id");
+
+
+
+ALTER TABLE ONLY "public"."staff"
+    ADD CONSTRAINT "staff_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."staff_user_links"
+    ADD CONSTRAINT "staff_user_links_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."staff_user_links"
+    ADD CONSTRAINT "staff_user_links_staff_id_user_id_key" UNIQUE ("staff_id", "user_id");
+
+
+
+ALTER TABLE ONLY "public"."suppliers"
+    ADD CONSTRAINT "suppliers_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."system_settings"
+    ADD CONSTRAINT "system_settings_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."system_settings"
+    ADD CONSTRAINT "system_settings_setting_category_setting_key_key" UNIQUE ("setting_category", "setting_key");
+
+
+
+ALTER TABLE ONLY "public"."system_settings"
+    ADD CONSTRAINT "system_settings_setting_key_key" UNIQUE ("setting_key");
+
+
+
+ALTER TABLE ONLY "public"."tax_rates"
+    ADD CONSTRAINT "tax_rates_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."transaction_items"
+    ADD CONSTRAINT "transaction_items_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."user_account_audit"
+    ADD CONSTRAINT "user_account_audit_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."user_activity"
+    ADD CONSTRAINT "user_activity_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."user_roles"
+    ADD CONSTRAINT "user_roles_pkey" PRIMARY KEY ("user_id", "role_id");
+
+
+
+ALTER TABLE ONLY "public"."user_sessions"
+    ADD CONSTRAINT "user_sessions_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."users"
+    ADD CONSTRAINT "users_email_key" UNIQUE ("email");
+
+
+
+ALTER TABLE ONLY "public"."users"
+    ADD CONSTRAINT "users_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."users"
+    ADD CONSTRAINT "users_username_key" UNIQUE ("username");
+
+
+
+CREATE INDEX "idx_account_creation_workflow_staff_id" ON "public"."account_creation_workflow" USING "btree" ("staff_id");
+
+
+
+CREATE INDEX "idx_account_creation_workflow_status" ON "public"."account_creation_workflow" USING "btree" ("workflow_status");
+
+
+
+CREATE INDEX "idx_accounts_number" ON "public"."accounts" USING "btree" ("account_number");
+
+
+
+CREATE INDEX "idx_accounts_type" ON "public"."accounts" USING "btree" ("account_type");
+
+
+
+CREATE INDEX "idx_alerts_resolved" ON "public"."integration_alerts" USING "btree" ("is_resolved");
+
+
+
+CREATE INDEX "idx_alerts_severity" ON "public"."integration_alerts" USING "btree" ("severity");
+
+
+
+CREATE INDEX "idx_alerts_type" ON "public"."integration_alerts" USING "btree" ("alert_type");
+
+
+
+CREATE INDEX "idx_app_settings_updated_at" ON "public"."app_settings" USING "btree" ("updated_at");
+
+
+
+CREATE INDEX "idx_attendance_date" ON "public"."attendance_records" USING "btree" ("attendance_date");
+
+
+
+CREATE INDEX "idx_attendance_records_date" ON "public"."attendance_records" USING "btree" ("attendance_date");
+
+
+
+CREATE INDEX "idx_attendance_records_staff_id" ON "public"."attendance_records" USING "btree" ("staff_id");
+
+
+
+CREATE INDEX "idx_attendance_staff" ON "public"."attendance_records" USING "btree" ("staff_id");
+
+
+
+CREATE INDEX "idx_attendance_status" ON "public"."attendance_records" USING "btree" ("status");
+
+
+
+CREATE INDEX "idx_campaign_analytics_campaign_id" ON "public"."campaign_analytics" USING "btree" ("campaign_id");
+
+
+
+CREATE INDEX "idx_campaign_analytics_created_at" ON "public"."campaign_analytics" USING "btree" ("created_at");
+
+
+
+CREATE INDEX "idx_campaign_analytics_event_type" ON "public"."campaign_analytics" USING "btree" ("event_type");
+
+
+
+CREATE INDEX "idx_campaign_schedules_campaign_id" ON "public"."campaign_schedules" USING "btree" ("campaign_id");
+
+
+
+CREATE INDEX "idx_client_notifications_created_by" ON "public"."client_notifications" USING "btree" ("created_by");
+
+
+
+CREATE INDEX "idx_client_notifications_scheduled_at" ON "public"."client_notifications" USING "btree" ("scheduled_at");
+
+
+
+CREATE INDEX "idx_client_notifications_status" ON "public"."client_notifications" USING "btree" ("status");
+
+
+
+CREATE INDEX "idx_customers_active" ON "public"."customers" USING "btree" ("is_active");
+
+
+
+CREATE INDEX "idx_customers_city" ON "public"."customers" USING "btree" ("city");
+
+
+
+CREATE INDEX "idx_customers_email" ON "public"."customers" USING "btree" ("email");
+
+
+
+CREATE INDEX "idx_customers_phone" ON "public"."customers" USING "btree" ("phone");
+
+
+
+CREATE INDEX "idx_customers_type" ON "public"."customers" USING "btree" ("customer_type");
+
+
+
+CREATE INDEX "idx_email_invitations_staff_id" ON "public"."email_invitations" USING "btree" ("staff_id");
+
+
+
+CREATE INDEX "idx_email_invitations_status" ON "public"."email_invitations" USING "btree" ("status");
+
+
+
+CREATE INDEX "idx_email_invitations_token" ON "public"."email_invitations" USING "btree" ("invitation_token");
+
+
+
+CREATE INDEX "idx_employee_benefits_staff_id" ON "public"."employee_benefits" USING "btree" ("staff_id");
+
+
+
+CREATE INDEX "idx_employee_payroll_benefits_staff_id" ON "public"."employee_payroll_benefits" USING "btree" ("staff_id");
+
+
+
+CREATE INDEX "idx_expenses_category" ON "public"."expenses" USING "btree" ("category");
+
+
+
+CREATE INDEX "idx_expenses_date" ON "public"."expenses" USING "btree" ("expense_date");
+
+
+
+CREATE INDEX "idx_expenses_status" ON "public"."expenses" USING "btree" ("status");
+
+
+
+CREATE INDEX "idx_gl_transaction_items_account_id" ON "public"."gl_transaction_items" USING "btree" ("account_id");
+
+
+
+CREATE INDEX "idx_gl_transaction_items_transaction_id" ON "public"."gl_transaction_items" USING "btree" ("transaction_id");
+
+
+
+CREATE INDEX "idx_gl_transactions_date" ON "public"."gl_transactions" USING "btree" ("transaction_date");
+
+
+
+CREATE INDEX "idx_gl_transactions_type" ON "public"."gl_transactions" USING "btree" ("transaction_type");
+
+
+
+CREATE INDEX "idx_hr_documents_staff_id" ON "public"."hr_documents" USING "btree" ("staff_id");
+
+
+
+CREATE INDEX "idx_hr_documents_type" ON "public"."hr_documents" USING "btree" ("document_type");
+
+
+
+CREATE INDEX "idx_inquiries_assigned_staff" ON "public"."inquiries" USING "btree" ("assigned_to_staff_id");
+
+
+
+CREATE INDEX "idx_inquiries_date" ON "public"."inquiries" USING "btree" ("created_at");
+
+
+
+CREATE INDEX "idx_inquiries_status" ON "public"."inquiries" USING "btree" ("status");
+
+
+
+CREATE INDEX "idx_integrations_status" ON "public"."integrations" USING "btree" ("status");
+
+
+
+CREATE INDEX "idx_integrations_type" ON "public"."integrations" USING "btree" ("integration_type");
+
+
+
+CREATE INDEX "idx_inventory_date" ON "public"."inventory_movements" USING "btree" ("created_at");
+
+
+
+CREATE INDEX "idx_inventory_levels_location_id" ON "public"."inventory_levels" USING "btree" ("location_id");
+
+
+
+CREATE INDEX "idx_inventory_levels_product_id" ON "public"."inventory_levels" USING "btree" ("product_id");
+
+
+
+CREATE INDEX "idx_inventory_movements_created_at" ON "public"."inventory_movements" USING "btree" ("created_at");
+
+
+
+CREATE INDEX "idx_inventory_movements_product_id" ON "public"."inventory_movements" USING "btree" ("product_id");
+
+
+
+CREATE INDEX "idx_inventory_product" ON "public"."inventory_movements" USING "btree" ("product_id");
+
+
+
+CREATE INDEX "idx_inventory_staff" ON "public"."inventory_movements" USING "btree" ("staff_id");
+
+
+
+CREATE INDEX "idx_inventory_type" ON "public"."inventory_movements" USING "btree" ("movement_type");
+
+
+
+CREATE INDEX "idx_invoices_customer_id" ON "public"."invoices" USING "btree" ("customer_id");
+
+
+
+CREATE INDEX "idx_invoices_date" ON "public"."invoices" USING "btree" ("invoice_date");
+
+
+
+CREATE INDEX "idx_invoices_due_date" ON "public"."invoices" USING "btree" ("due_date");
+
+
+
+CREATE INDEX "idx_invoices_status" ON "public"."invoices" USING "btree" ("status");
+
+
+
+CREATE INDEX "idx_kiosk_integration_orders_created_at" ON "public"."kiosk_integration_orders" USING "btree" ("created_at");
+
+
+
+CREATE INDEX "idx_kiosk_integration_orders_kiosk_id" ON "public"."kiosk_integration_orders" USING "btree" ("kiosk_order_id");
+
+
+
+CREATE INDEX "idx_kiosk_integration_orders_pos_order_id" ON "public"."kiosk_integration_orders" USING "btree" ("pos_order_id");
+
+
+
+CREATE INDEX "idx_kiosk_integration_orders_status" ON "public"."kiosk_integration_orders" USING "btree" ("status");
+
+
+
+CREATE INDEX "idx_leads_assigned_staff" ON "public"."leads" USING "btree" ("assigned_to_staff_id");
+
+
+
+CREATE INDEX "idx_leads_email" ON "public"."leads" USING "btree" ("email");
+
+
+
+CREATE INDEX "idx_leads_source" ON "public"."leads" USING "btree" ("source");
+
+
+
+CREATE INDEX "idx_leads_status" ON "public"."leads" USING "btree" ("status");
+
+
+
+CREATE INDEX "idx_leave_dates" ON "public"."leave_requests" USING "btree" ("start_date", "end_date");
+
+
+
+CREATE INDEX "idx_leave_staff" ON "public"."leave_requests" USING "btree" ("staff_id");
+
+
+
+CREATE INDEX "idx_leave_status" ON "public"."leave_requests" USING "btree" ("status");
+
+
+
+CREATE INDEX "idx_leave_type" ON "public"."leave_requests" USING "btree" ("leave_type");
+
+
+
+CREATE INDEX "idx_locations_branch_id" ON "public"."locations" USING "btree" ("branch_id");
+
+
+
+CREATE INDEX "idx_marketing_campaigns_created_by" ON "public"."marketing_campaigns" USING "btree" ("created_by");
+
+
+
+CREATE INDEX "idx_marketing_campaigns_is_active" ON "public"."marketing_campaigns" USING "btree" ("is_active");
+
+
+
+CREATE INDEX "idx_marketing_campaigns_is_published" ON "public"."marketing_campaigns" USING "btree" ("is_published");
+
+
+
+CREATE INDEX "idx_marketing_campaigns_publish_date" ON "public"."marketing_campaigns" USING "btree" ("publish_date");
+
+
+
+CREATE INDEX "idx_marketing_campaigns_template_id" ON "public"."marketing_campaigns" USING "btree" ("template_id");
+
+
+
+CREATE INDEX "idx_marketing_campaigns_template_type" ON "public"."marketing_campaigns" USING "btree" ("template_type");
+
+
+
+CREATE INDEX "idx_notifications_channel" ON "public"."notifications" USING "btree" ("channel");
+
+
+
+CREATE INDEX "idx_notifications_customer" ON "public"."notifications" USING "btree" ("customer_id");
+
+
+
+CREATE INDEX "idx_notifications_scheduled" ON "public"."notifications" USING "btree" ("scheduled_at");
+
+
+
+CREATE INDEX "idx_notifications_status" ON "public"."notifications" USING "btree" ("status");
+
+
+
+CREATE INDEX "idx_notifications_type" ON "public"."notifications" USING "btree" ("notification_type");
+
+
+
+CREATE INDEX "idx_order_items_order_id" ON "public"."order_items" USING "btree" ("order_id");
+
+
+
+CREATE INDEX "idx_order_items_product_id" ON "public"."order_items" USING "btree" ("product_id");
+
+
+
+CREATE INDEX "idx_payments_customer_id" ON "public"."payments" USING "btree" ("customer_id");
+
+
+
+CREATE INDEX "idx_payments_date" ON "public"."payments" USING "btree" ("payment_date");
+
+
+
+CREATE INDEX "idx_payments_supplier_id" ON "public"."payments" USING "btree" ("supplier_id");
+
+
+
+CREATE INDEX "idx_payroll_audit_log_created_at" ON "public"."payroll_audit_log" USING "btree" ("created_at");
+
+
+
+CREATE INDEX "idx_payroll_audit_log_period_id" ON "public"."payroll_audit_log" USING "btree" ("period_id");
+
+
+
+CREATE INDEX "idx_payroll_benefits_active" ON "public"."payroll_benefits" USING "btree" ("is_active");
+
+
+
+CREATE INDEX "idx_payroll_benefits_type" ON "public"."payroll_benefits" USING "btree" ("benefit_type");
+
+
+
+CREATE INDEX "idx_payroll_components_type" ON "public"."payroll_components" USING "btree" ("component_type");
+
+
+
+CREATE INDEX "idx_payroll_periods_dates" ON "public"."payroll_periods" USING "btree" ("start_date", "end_date");
+
+
+
+CREATE INDEX "idx_payroll_periods_status" ON "public"."payroll_periods" USING "btree" ("status");
+
+
+
+CREATE INDEX "idx_payroll_records_period_id" ON "public"."payroll_records" USING "btree" ("period_id");
+
+
+
+CREATE INDEX "idx_payroll_records_staff_id" ON "public"."payroll_records" USING "btree" ("staff_id");
+
+
+
+CREATE INDEX "idx_payroll_records_status" ON "public"."payroll_records" USING "btree" ("status");
+
+
+
+CREATE INDEX "idx_payroll_reports_period_id" ON "public"."payroll_reports" USING "btree" ("period_id");
+
+
+
+CREATE INDEX "idx_payroll_reports_type" ON "public"."payroll_reports" USING "btree" ("report_type");
+
+
+
+CREATE INDEX "idx_performance_reviews_date" ON "public"."performance_reviews" USING "btree" ("review_date");
+
+
+
+CREATE INDEX "idx_performance_reviews_staff_id" ON "public"."performance_reviews" USING "btree" ("staff_id");
+
+
+
+CREATE INDEX "idx_pos_sessions_branch_id" ON "public"."pos_sessions" USING "btree" ("branch_id");
+
+
+
+CREATE INDEX "idx_pos_sessions_date" ON "public"."pos_sessions" USING "btree" ("opened_at");
+
+
+
+CREATE INDEX "idx_pos_sessions_staff_id" ON "public"."pos_sessions" USING "btree" ("opened_by_staff_id");
+
+
+
+CREATE INDEX "idx_pos_transactions_session_id" ON "public"."pos_transactions" USING "btree" ("pos_session_id");
+
+
+
+CREATE INDEX "idx_products_active" ON "public"."products" USING "btree" ("is_active");
+
+
+
+CREATE INDEX "idx_products_category" ON "public"."products" USING "btree" ("category_id");
+
+
+
+CREATE INDEX "idx_products_category_id" ON "public"."products" USING "btree" ("category_id");
+
+
+
+CREATE INDEX "idx_products_is_active" ON "public"."products" USING "btree" ("is_active");
+
+
+
+CREATE INDEX "idx_products_name" ON "public"."products" USING "gin" ("to_tsvector"('"english"'::"regconfig", "name"));
+
+
+
+CREATE INDEX "idx_products_sku" ON "public"."products" USING "btree" ("sku");
+
+
+
+CREATE INDEX "idx_products_stock" ON "public"."products" USING "btree" ("stock_quantity");
+
+
+
+CREATE INDEX "idx_products_supplier" ON "public"."products" USING "btree" ("supplier_id");
+
+
+
+CREATE INDEX "idx_products_supplier_id" ON "public"."products" USING "btree" ("supplier_id");
+
+
+
+CREATE INDEX "idx_prr_requested_at" ON "public"."password_reset_requests" USING "btree" ("requested_at");
+
+
+
+CREATE INDEX "idx_prr_staff" ON "public"."password_reset_requests" USING "btree" ("staff_id");
+
+
+
+CREATE INDEX "idx_prr_status" ON "public"."password_reset_requests" USING "btree" ("status");
+
+
+
+CREATE INDEX "idx_role_definitions_role_name" ON "public"."role_definitions" USING "btree" ("role_name");
+
+
+
+CREATE INDEX "idx_sales_branch" ON "public"."sales_transactions" USING "btree" ("branch_id");
+
+
+
+CREATE INDEX "idx_sales_customer" ON "public"."sales_transactions" USING "btree" ("customer_id");
+
+
+
+CREATE INDEX "idx_sales_date" ON "public"."sales_transactions" USING "btree" ("transaction_date");
+
+
+
+CREATE INDEX "idx_sales_orders_customer_id" ON "public"."sales_orders" USING "btree" ("customer_id");
+
+
+
+CREATE INDEX "idx_sales_orders_date" ON "public"."sales_orders" USING "btree" ("order_date");
+
+
+
+CREATE INDEX "idx_sales_orders_staff_id" ON "public"."sales_orders" USING "btree" ("staff_id");
+
+
+
+CREATE INDEX "idx_sales_orders_status" ON "public"."sales_orders" USING "btree" ("status");
+
+
+
+CREATE INDEX "idx_sales_payment_method" ON "public"."sales_transactions" USING "btree" ("payment_method");
+
+
+
+CREATE INDEX "idx_sales_staff" ON "public"."sales_transactions" USING "btree" ("staff_id");
+
+
+
+CREATE INDEX "idx_sales_status" ON "public"."sales_transactions" USING "btree" ("payment_status");
+
+
+
+CREATE INDEX "idx_sales_transactions_branch_id" ON "public"."sales_transactions" USING "btree" ("branch_id");
+
+
+
+CREATE INDEX "idx_sales_transactions_customer_id" ON "public"."sales_transactions" USING "btree" ("customer_id");
+
+
+
+CREATE INDEX "idx_sales_transactions_date" ON "public"."sales_transactions" USING "btree" ("transaction_date");
+
+
+
+CREATE INDEX "idx_sales_transactions_kiosk_order_id" ON "public"."sales_transactions" USING "btree" ("kiosk_order_id");
+
+
+
+CREATE INDEX "idx_sales_transactions_source" ON "public"."sales_transactions" USING "btree" ("source");
+
+
+
+CREATE INDEX "idx_sales_transactions_staff_id" ON "public"."sales_transactions" USING "btree" ("staff_id");
+
+
+
+CREATE INDEX "idx_staff_active" ON "public"."staff" USING "btree" ("is_active");
+
+
+
+CREATE INDEX "idx_staff_branch" ON "public"."staff" USING "btree" ("branch_id");
+
+
+
+CREATE INDEX "idx_staff_branch_id" ON "public"."staff" USING "btree" ("branch_id");
+
+
+
+CREATE INDEX "idx_staff_department" ON "public"."staff" USING "btree" ("department");
+
+
+
+CREATE INDEX "idx_staff_department_id" ON "public"."staff" USING "btree" ("department_id");
+
+
+
+CREATE INDEX "idx_staff_email" ON "public"."staff" USING "btree" ("email");
+
+
+
+CREATE INDEX "idx_staff_employee_id" ON "public"."staff" USING "btree" ("employee_id");
+
+
+
+CREATE INDEX "idx_staff_is_active" ON "public"."staff" USING "btree" ("is_active");
+
+
+
+CREATE INDEX "idx_staff_job_title_id" ON "public"."staff" USING "btree" ("job_title_id");
+
+
+
+CREATE INDEX "idx_staff_manager_id" ON "public"."staff" USING "btree" ("manager_staff_id");
+
+
+
+CREATE INDEX "idx_staff_role" ON "public"."staff" USING "btree" ("role");
+
+
+
+CREATE INDEX "idx_staff_user_account_id" ON "public"."staff" USING "btree" ("user_account_id");
+
+
+
+CREATE INDEX "idx_staff_user_links_staff_id" ON "public"."staff_user_links" USING "btree" ("staff_id");
+
+
+
+CREATE INDEX "idx_staff_user_links_status" ON "public"."staff_user_links" USING "btree" ("link_status");
+
+
+
+CREATE INDEX "idx_staff_user_links_user_id" ON "public"."staff_user_links" USING "btree" ("user_id");
+
+
+
+CREATE INDEX "idx_status_history_created_at" ON "public"."order_status_history" USING "btree" ("created_at");
+
+
+
+CREATE INDEX "idx_status_history_integration_order" ON "public"."order_status_history" USING "btree" ("integration_order_id");
+
+
+
+CREATE INDEX "idx_status_history_kiosk_order" ON "public"."order_status_history" USING "btree" ("kiosk_order_id");
+
+
+
+CREATE INDEX "idx_system_settings_category" ON "public"."system_settings" USING "btree" ("setting_category");
+
+
+
+CREATE INDEX "idx_tax_rates_active" ON "public"."tax_rates" USING "btree" ("is_active");
+
+
+
+CREATE INDEX "idx_tax_rates_type" ON "public"."tax_rates" USING "btree" ("tax_type");
+
+
+
+CREATE INDEX "idx_transaction_items_product" ON "public"."transaction_items" USING "btree" ("product_id");
+
+
+
+CREATE INDEX "idx_transaction_items_transaction" ON "public"."transaction_items" USING "btree" ("transaction_id");
+
+
+
+CREATE INDEX "idx_user_account_audit_created_at" ON "public"."user_account_audit" USING "btree" ("created_at");
+
+
+
+CREATE INDEX "idx_user_account_audit_target_user_id" ON "public"."user_account_audit" USING "btree" ("target_user_id");
+
+
+
+CREATE INDEX "idx_user_roles_role_id" ON "public"."user_roles" USING "btree" ("role_id");
+
+
+
+CREATE INDEX "idx_user_roles_user_id" ON "public"."user_roles" USING "btree" ("user_id");
+
+
+
+CREATE INDEX "idx_users_active" ON "public"."users" USING "btree" ("is_active");
+
+
+
+CREATE INDEX "idx_users_created_at" ON "public"."users" USING "btree" ("created_at");
+
+
+
+CREATE INDEX "idx_users_email" ON "public"."users" USING "btree" ("email");
+
+
+
+CREATE INDEX "idx_users_is_active" ON "public"."users" USING "btree" ("is_active");
+
+
+
+CREATE INDEX "idx_users_role" ON "public"."users" USING "btree" ("role");
+
+
+
+CREATE INDEX "idx_users_staff_id" ON "public"."users" USING "btree" ("staff_id");
+
+
+
+CREATE INDEX "idx_webhooks_active" ON "public"."integration_webhooks" USING "btree" ("is_active");
+
+
+
+CREATE INDEX "idx_webhooks_events" ON "public"."integration_webhooks" USING "gin" ("event_types");
+
+
+
+CREATE OR REPLACE TRIGGER "trigger_track_order_status_change" AFTER UPDATE ON "public"."kiosk_integration_orders" FOR EACH ROW EXECUTE FUNCTION "public"."track_order_status_change"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_account_creation_workflow_updated_at" BEFORE UPDATE ON "public"."account_creation_workflow" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_benefits_updated_at" BEFORE UPDATE ON "public"."benefits" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_branches_updated_at" BEFORE UPDATE ON "public"."branches" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_campaign_schedules_updated_at" BEFORE UPDATE ON "public"."campaign_schedules" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_campaign_templates_updated_at" BEFORE UPDATE ON "public"."campaign_templates" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_categories_updated_at" BEFORE UPDATE ON "public"."categories" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_client_notifications_updated_at" BEFORE UPDATE ON "public"."client_notifications" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_customers_updated_at" BEFORE UPDATE ON "public"."customers" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_departments_updated_at" BEFORE UPDATE ON "public"."departments" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_email_invitations_updated_at" BEFORE UPDATE ON "public"."email_invitations" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_employee_benefits_updated_at" BEFORE UPDATE ON "public"."employee_benefits" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_employee_payroll_benefits_updated_at" BEFORE UPDATE ON "public"."employee_payroll_benefits" FOR EACH ROW EXECUTE FUNCTION "public"."update_payroll_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_expenses_updated_at" BEFORE UPDATE ON "public"."expenses" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_gl_transaction_items_updated_at" BEFORE UPDATE ON "public"."gl_transaction_items" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_gl_transactions_updated_at" BEFORE UPDATE ON "public"."gl_transactions" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_hr_documents_updated_at" BEFORE UPDATE ON "public"."hr_documents" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_inquiries_updated_at" BEFORE UPDATE ON "public"."inquiries" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_integrations_updated_at" BEFORE UPDATE ON "public"."integrations" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_inventory_levels_updated_at" BEFORE UPDATE ON "public"."inventory_levels" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_invoice_items_updated_at" BEFORE UPDATE ON "public"."invoice_items" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_invoices_updated_at" BEFORE UPDATE ON "public"."invoices" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_job_titles_updated_at" BEFORE UPDATE ON "public"."job_titles" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_leads_updated_at" BEFORE UPDATE ON "public"."leads" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_locations_updated_at" BEFORE UPDATE ON "public"."locations" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_marketing_campaigns_updated_at" BEFORE UPDATE ON "public"."marketing_campaigns" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_marketing_user_roles_updated_at" BEFORE UPDATE ON "public"."marketing_user_roles" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_notification_templates_updated_at" BEFORE UPDATE ON "public"."notification_templates" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_order_items_updated_at" BEFORE UPDATE ON "public"."order_items" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_payments_updated_at" BEFORE UPDATE ON "public"."payments" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_payroll_benefits_updated_at" BEFORE UPDATE ON "public"."payroll_benefits" FOR EACH ROW EXECUTE FUNCTION "public"."update_payroll_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_payroll_components_updated_at" BEFORE UPDATE ON "public"."payroll_components" FOR EACH ROW EXECUTE FUNCTION "public"."update_payroll_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_payroll_periods_updated_at" BEFORE UPDATE ON "public"."payroll_periods" FOR EACH ROW EXECUTE FUNCTION "public"."update_payroll_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_payroll_records_updated_at" BEFORE UPDATE ON "public"."payroll_records" FOR EACH ROW EXECUTE FUNCTION "public"."update_payroll_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_performance_reviews_updated_at" BEFORE UPDATE ON "public"."performance_reviews" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_permissions_updated_at" BEFORE UPDATE ON "public"."permissions" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_pos_sessions_updated_at" BEFORE UPDATE ON "public"."pos_sessions" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_pos_transactions_updated_at" BEFORE UPDATE ON "public"."pos_transactions" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_products_updated_at" BEFORE UPDATE ON "public"."products" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_purchase_order_items_updated_at" BEFORE UPDATE ON "public"."purchase_order_items" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_purchase_orders_updated_at" BEFORE UPDATE ON "public"."purchase_orders" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_role_definitions_updated_at" BEFORE UPDATE ON "public"."role_definitions" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_roles_updated_at" BEFORE UPDATE ON "public"."roles" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_sales_orders_updated_at" BEFORE UPDATE ON "public"."sales_orders" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_staff_updated_at" BEFORE UPDATE ON "public"."staff" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_staff_user_links_updated_at" BEFORE UPDATE ON "public"."staff_user_links" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_suppliers_updated_at" BEFORE UPDATE ON "public"."suppliers" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_system_settings_updated_at" BEFORE UPDATE ON "public"."system_settings" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_tax_rates_updated_at" BEFORE UPDATE ON "public"."tax_rates" FOR EACH ROW EXECUTE FUNCTION "public"."update_payroll_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "update_users_updated_at" BEFORE UPDATE ON "public"."users" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+ALTER TABLE ONLY "public"."account_creation_workflow"
+    ADD CONSTRAINT "account_creation_workflow_staff_id_fkey" FOREIGN KEY ("staff_id") REFERENCES "public"."staff"("id") ON DELETE CASCADE;
+
+
+
+COMMENT ON CONSTRAINT "account_creation_workflow_staff_id_fkey" ON "public"."account_creation_workflow" IS 'Links to staff record';
+
+
+
+ALTER TABLE ONLY "public"."accounts"
+    ADD CONSTRAINT "accounts_parent_account_id_fkey" FOREIGN KEY ("parent_account_id") REFERENCES "public"."accounts"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."attendance_records"
+    ADD CONSTRAINT "attendance_records_staff_id_fkey" FOREIGN KEY ("staff_id") REFERENCES "public"."staff"("id");
+
+
+
+ALTER TABLE ONLY "public"."audit_logs"
+    ADD CONSTRAINT "audit_logs_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id");
+
+
+
+ALTER TABLE ONLY "public"."campaign_analytics"
+    ADD CONSTRAINT "campaign_analytics_campaign_id_fkey" FOREIGN KEY ("campaign_id") REFERENCES "public"."marketing_campaigns"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."campaign_schedules"
+    ADD CONSTRAINT "campaign_schedules_campaign_id_fkey" FOREIGN KEY ("campaign_id") REFERENCES "public"."marketing_campaigns"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."campaign_templates"
+    ADD CONSTRAINT "campaign_templates_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id");
+
+
+
+ALTER TABLE ONLY "public"."categories"
+    ADD CONSTRAINT "categories_parent_id_fkey" FOREIGN KEY ("parent_id") REFERENCES "public"."categories"("id");
+
+
+
+ALTER TABLE ONLY "public"."client_notifications"
+    ADD CONSTRAINT "client_notifications_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id");
+
+
+
+ALTER TABLE ONLY "public"."customers"
+    ADD CONSTRAINT "customers_assigned_staff_id_fkey" FOREIGN KEY ("assigned_staff_id") REFERENCES "public"."staff"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."departments"
+    ADD CONSTRAINT "departments_manager_staff_id_fkey" FOREIGN KEY ("manager_staff_id") REFERENCES "public"."staff"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."email_invitations"
+    ADD CONSTRAINT "email_invitations_staff_id_fkey" FOREIGN KEY ("staff_id") REFERENCES "public"."staff"("id") ON DELETE CASCADE;
+
+
+
+COMMENT ON CONSTRAINT "email_invitations_staff_id_fkey" ON "public"."email_invitations" IS 'Links to staff record';
+
+
+
+ALTER TABLE ONLY "public"."employee_benefits"
+    ADD CONSTRAINT "employee_benefits_benefit_id_fkey" FOREIGN KEY ("benefit_id") REFERENCES "public"."benefits"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."employee_benefits"
+    ADD CONSTRAINT "employee_benefits_staff_id_fkey" FOREIGN KEY ("staff_id") REFERENCES "public"."staff"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."employee_payroll_benefits"
+    ADD CONSTRAINT "employee_payroll_benefits_benefit_id_fkey" FOREIGN KEY ("benefit_id") REFERENCES "public"."payroll_benefits"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."employee_payroll_benefits"
+    ADD CONSTRAINT "employee_payroll_benefits_staff_id_fkey" FOREIGN KEY ("staff_id") REFERENCES "public"."staff"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."expenses"
+    ADD CONSTRAINT "expenses_account_id_fkey" FOREIGN KEY ("account_id") REFERENCES "public"."accounts"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."expenses"
+    ADD CONSTRAINT "expenses_approved_by_user_id_fkey" FOREIGN KEY ("approved_by_user_id") REFERENCES "public"."users"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."expenses"
+    ADD CONSTRAINT "expenses_recorded_by_user_id_fkey" FOREIGN KEY ("recorded_by_user_id") REFERENCES "public"."users"("id") ON DELETE RESTRICT;
+
+
+
+ALTER TABLE ONLY "public"."expenses"
+    ADD CONSTRAINT "expenses_supplier_id_fkey" FOREIGN KEY ("supplier_id") REFERENCES "public"."suppliers"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."gl_transaction_items"
+    ADD CONSTRAINT "gl_transaction_items_account_id_fkey" FOREIGN KEY ("account_id") REFERENCES "public"."accounts"("id") ON DELETE RESTRICT;
+
+
+
+ALTER TABLE ONLY "public"."gl_transaction_items"
+    ADD CONSTRAINT "gl_transaction_items_transaction_id_fkey" FOREIGN KEY ("transaction_id") REFERENCES "public"."gl_transactions"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."gl_transactions"
+    ADD CONSTRAINT "gl_transactions_approved_by_user_id_fkey" FOREIGN KEY ("approved_by_user_id") REFERENCES "public"."users"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."gl_transactions"
+    ADD CONSTRAINT "gl_transactions_posted_by_user_id_fkey" FOREIGN KEY ("posted_by_user_id") REFERENCES "public"."users"("id") ON DELETE RESTRICT;
+
+
+
+ALTER TABLE ONLY "public"."hr_documents"
+    ADD CONSTRAINT "hr_documents_staff_id_fkey" FOREIGN KEY ("staff_id") REFERENCES "public"."staff"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."hr_documents"
+    ADD CONSTRAINT "hr_documents_uploaded_by_user_id_fkey" FOREIGN KEY ("uploaded_by_user_id") REFERENCES "public"."users"("id") ON DELETE RESTRICT;
+
+
+
+ALTER TABLE ONLY "public"."inquiries"
+    ADD CONSTRAINT "inquiries_assigned_to_staff_id_fkey" FOREIGN KEY ("assigned_to_staff_id") REFERENCES "public"."staff"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."integrations"
+    ADD CONSTRAINT "integrations_created_by_user_id_fkey" FOREIGN KEY ("created_by_user_id") REFERENCES "public"."users"("id") ON DELETE RESTRICT;
+
+
+
+ALTER TABLE ONLY "public"."inventory_levels"
+    ADD CONSTRAINT "inventory_levels_location_id_fkey" FOREIGN KEY ("location_id") REFERENCES "public"."locations"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."inventory_levels"
+    ADD CONSTRAINT "inventory_levels_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "public"."products"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."inventory_movements"
+    ADD CONSTRAINT "inventory_movements_from_location_id_fkey" FOREIGN KEY ("from_location_id") REFERENCES "public"."locations"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."inventory_movements"
+    ADD CONSTRAINT "inventory_movements_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "public"."products"("id");
+
+
+
+ALTER TABLE ONLY "public"."inventory_movements"
+    ADD CONSTRAINT "inventory_movements_recorded_by_user_id_fkey" FOREIGN KEY ("recorded_by_user_id") REFERENCES "public"."users"("id") ON DELETE RESTRICT;
+
+
+
+ALTER TABLE ONLY "public"."inventory_movements"
+    ADD CONSTRAINT "inventory_movements_staff_id_fkey" FOREIGN KEY ("staff_id") REFERENCES "public"."staff"("id");
+
+
+
+ALTER TABLE ONLY "public"."inventory_movements"
+    ADD CONSTRAINT "inventory_movements_to_location_id_fkey" FOREIGN KEY ("to_location_id") REFERENCES "public"."locations"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."invoice_items"
+    ADD CONSTRAINT "invoice_items_invoice_id_fkey" FOREIGN KEY ("invoice_id") REFERENCES "public"."invoices"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."invoice_items"
+    ADD CONSTRAINT "invoice_items_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "public"."products"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."invoices"
+    ADD CONSTRAINT "invoices_created_by_user_id_fkey" FOREIGN KEY ("created_by_user_id") REFERENCES "public"."users"("id") ON DELETE RESTRICT;
+
+
+
+ALTER TABLE ONLY "public"."invoices"
+    ADD CONSTRAINT "invoices_customer_id_fkey" FOREIGN KEY ("customer_id") REFERENCES "public"."customers"("id") ON DELETE RESTRICT;
+
+
+
+ALTER TABLE ONLY "public"."invoices"
+    ADD CONSTRAINT "invoices_sales_order_id_fkey" FOREIGN KEY ("sales_order_id") REFERENCES "public"."sales_orders"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."job_titles"
+    ADD CONSTRAINT "job_titles_department_id_fkey" FOREIGN KEY ("department_id") REFERENCES "public"."departments"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."kiosk_integration_orders"
+    ADD CONSTRAINT "kiosk_integration_orders_pos_order_id_fkey" FOREIGN KEY ("pos_order_id") REFERENCES "public"."sales_transactions"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."leads"
+    ADD CONSTRAINT "leads_assigned_to_staff_id_fkey" FOREIGN KEY ("assigned_to_staff_id") REFERENCES "public"."staff"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."leave_requests"
+    ADD CONSTRAINT "leave_requests_approved_by_fkey" FOREIGN KEY ("approved_by") REFERENCES "public"."staff"("id");
+
+
+
+ALTER TABLE ONLY "public"."leave_requests"
+    ADD CONSTRAINT "leave_requests_staff_id_fkey" FOREIGN KEY ("staff_id") REFERENCES "public"."staff"("id");
+
+
+
+ALTER TABLE ONLY "public"."locations"
+    ADD CONSTRAINT "locations_branch_id_fkey" FOREIGN KEY ("branch_id") REFERENCES "public"."branches"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."locations"
+    ADD CONSTRAINT "locations_manager_staff_id_fkey" FOREIGN KEY ("manager_staff_id") REFERENCES "public"."staff"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."marketing_audit_logs"
+    ADD CONSTRAINT "marketing_audit_logs_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id");
+
+
+
+ALTER TABLE ONLY "public"."marketing_campaigns"
+    ADD CONSTRAINT "marketing_campaigns_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id");
+
+
+
+ALTER TABLE ONLY "public"."marketing_campaigns"
+    ADD CONSTRAINT "marketing_campaigns_template_id_fkey" FOREIGN KEY ("template_id") REFERENCES "public"."campaign_templates"("id");
+
+
+
+ALTER TABLE ONLY "public"."marketing_campaigns"
+    ADD CONSTRAINT "marketing_campaigns_updated_by_fkey" FOREIGN KEY ("updated_by") REFERENCES "public"."users"("id");
+
+
+
+ALTER TABLE ONLY "public"."marketing_user_roles"
+    ADD CONSTRAINT "marketing_user_roles_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."notification_templates"
+    ADD CONSTRAINT "notification_templates_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id");
+
+
+
+ALTER TABLE ONLY "public"."notifications"
+    ADD CONSTRAINT "notifications_customer_id_fkey" FOREIGN KEY ("customer_id") REFERENCES "public"."customers"("id");
+
+
+
+ALTER TABLE ONLY "public"."order_items"
+    ADD CONSTRAINT "order_items_order_id_fkey" FOREIGN KEY ("order_id") REFERENCES "public"."sales_orders"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."order_items"
+    ADD CONSTRAINT "order_items_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "public"."products"("id") ON DELETE RESTRICT;
+
+
+
+ALTER TABLE ONLY "public"."password_reset_requests"
+    ADD CONSTRAINT "password_reset_requests_staff_id_fkey" FOREIGN KEY ("staff_id") REFERENCES "public"."staff"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."payments"
+    ADD CONSTRAINT "payments_customer_id_fkey" FOREIGN KEY ("customer_id") REFERENCES "public"."customers"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."payments"
+    ADD CONSTRAINT "payments_invoice_id_fkey" FOREIGN KEY ("invoice_id") REFERENCES "public"."invoices"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."payments"
+    ADD CONSTRAINT "payments_recorded_by_user_id_fkey" FOREIGN KEY ("recorded_by_user_id") REFERENCES "public"."users"("id") ON DELETE RESTRICT;
+
+
+
+ALTER TABLE ONLY "public"."payments"
+    ADD CONSTRAINT "payments_supplier_id_fkey" FOREIGN KEY ("supplier_id") REFERENCES "public"."suppliers"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."payroll_audit_log"
+    ADD CONSTRAINT "payroll_audit_log_period_id_fkey" FOREIGN KEY ("period_id") REFERENCES "public"."payroll_periods"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."payroll_audit_log"
+    ADD CONSTRAINT "payroll_audit_log_record_id_fkey" FOREIGN KEY ("record_id") REFERENCES "public"."payroll_records"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."payroll_records"
+    ADD CONSTRAINT "payroll_records_period_id_fkey" FOREIGN KEY ("period_id") REFERENCES "public"."payroll_periods"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."payroll_records"
+    ADD CONSTRAINT "payroll_records_staff_id_fkey" FOREIGN KEY ("staff_id") REFERENCES "public"."staff"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."payroll_reports"
+    ADD CONSTRAINT "payroll_reports_period_id_fkey" FOREIGN KEY ("period_id") REFERENCES "public"."payroll_periods"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."performance_reviews"
+    ADD CONSTRAINT "performance_reviews_reviewer_staff_id_fkey" FOREIGN KEY ("reviewer_staff_id") REFERENCES "public"."staff"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."performance_reviews"
+    ADD CONSTRAINT "performance_reviews_staff_id_fkey" FOREIGN KEY ("staff_id") REFERENCES "public"."staff"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."pos_sessions"
+    ADD CONSTRAINT "pos_sessions_branch_id_fkey" FOREIGN KEY ("branch_id") REFERENCES "public"."branches"("id") ON DELETE RESTRICT;
+
+
+
+ALTER TABLE ONLY "public"."pos_sessions"
+    ADD CONSTRAINT "pos_sessions_closed_by_staff_id_fkey" FOREIGN KEY ("closed_by_staff_id") REFERENCES "public"."staff"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."pos_sessions"
+    ADD CONSTRAINT "pos_sessions_location_id_fkey" FOREIGN KEY ("location_id") REFERENCES "public"."locations"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."pos_sessions"
+    ADD CONSTRAINT "pos_sessions_opened_by_staff_id_fkey" FOREIGN KEY ("opened_by_staff_id") REFERENCES "public"."staff"("id") ON DELETE RESTRICT;
+
+
+
+ALTER TABLE ONLY "public"."pos_transactions"
+    ADD CONSTRAINT "pos_transactions_pos_session_id_fkey" FOREIGN KEY ("pos_session_id") REFERENCES "public"."pos_sessions"("id") ON DELETE RESTRICT;
+
+
+
+ALTER TABLE ONLY "public"."pos_transactions"
+    ADD CONSTRAINT "pos_transactions_sales_transaction_id_fkey" FOREIGN KEY ("sales_transaction_id") REFERENCES "public"."sales_transactions"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."products"
+    ADD CONSTRAINT "products_category_id_fkey" FOREIGN KEY ("category_id") REFERENCES "public"."categories"("id");
+
+
+
+ALTER TABLE ONLY "public"."products"
+    ADD CONSTRAINT "products_supplier_id_fkey" FOREIGN KEY ("supplier_id") REFERENCES "public"."suppliers"("id");
+
+
+
+ALTER TABLE ONLY "public"."purchase_order_items"
+    ADD CONSTRAINT "purchase_order_items_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "public"."products"("id") ON DELETE RESTRICT;
+
+
+
+ALTER TABLE ONLY "public"."purchase_order_items"
+    ADD CONSTRAINT "purchase_order_items_purchase_order_id_fkey" FOREIGN KEY ("purchase_order_id") REFERENCES "public"."purchase_orders"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."purchase_orders"
+    ADD CONSTRAINT "purchase_orders_approved_by_user_id_fkey" FOREIGN KEY ("approved_by_user_id") REFERENCES "public"."users"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."purchase_orders"
+    ADD CONSTRAINT "purchase_orders_created_by_user_id_fkey" FOREIGN KEY ("created_by_user_id") REFERENCES "public"."users"("id") ON DELETE RESTRICT;
+
+
+
+ALTER TABLE ONLY "public"."purchase_orders"
+    ADD CONSTRAINT "purchase_orders_supplier_id_fkey" FOREIGN KEY ("supplier_id") REFERENCES "public"."suppliers"("id") ON DELETE RESTRICT;
+
+
+
+ALTER TABLE ONLY "public"."role_permissions"
+    ADD CONSTRAINT "role_permissions_permission_id_fkey" FOREIGN KEY ("permission_id") REFERENCES "public"."permissions"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."role_permissions"
+    ADD CONSTRAINT "role_permissions_role_id_fkey" FOREIGN KEY ("role_id") REFERENCES "public"."roles"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."sales_orders"
+    ADD CONSTRAINT "sales_orders_branch_id_fkey" FOREIGN KEY ("branch_id") REFERENCES "public"."branches"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."sales_orders"
+    ADD CONSTRAINT "sales_orders_customer_id_fkey" FOREIGN KEY ("customer_id") REFERENCES "public"."customers"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."sales_orders"
+    ADD CONSTRAINT "sales_orders_processed_by_user_id_fkey" FOREIGN KEY ("processed_by_user_id") REFERENCES "public"."users"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."sales_orders"
+    ADD CONSTRAINT "sales_orders_staff_id_fkey" FOREIGN KEY ("staff_id") REFERENCES "public"."staff"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."sales_transactions"
+    ADD CONSTRAINT "sales_transactions_branch_id_fkey" FOREIGN KEY ("branch_id") REFERENCES "public"."branches"("id");
+
+
+
+ALTER TABLE ONLY "public"."sales_transactions"
+    ADD CONSTRAINT "sales_transactions_customer_id_fkey" FOREIGN KEY ("customer_id") REFERENCES "public"."customers"("id");
+
+
+
+ALTER TABLE ONLY "public"."sales_transactions"
+    ADD CONSTRAINT "sales_transactions_staff_id_fkey" FOREIGN KEY ("staff_id") REFERENCES "public"."staff"("id");
+
+
+
+ALTER TABLE ONLY "public"."staff"
+    ADD CONSTRAINT "staff_user_account_id_fkey" FOREIGN KEY ("user_account_id") REFERENCES "public"."users"("id") ON DELETE SET NULL;
+
+
+
+COMMENT ON CONSTRAINT "staff_user_account_id_fkey" ON "public"."staff" IS 'Links staff to their user account';
+
+
+
+ALTER TABLE ONLY "public"."staff_user_links"
+    ADD CONSTRAINT "staff_user_links_staff_id_fkey" FOREIGN KEY ("staff_id") REFERENCES "public"."staff"("id") ON DELETE CASCADE;
+
+
+
+COMMENT ON CONSTRAINT "staff_user_links_staff_id_fkey" ON "public"."staff_user_links" IS 'Links to staff record';
+
+
+
+ALTER TABLE ONLY "public"."staff_user_links"
+    ADD CONSTRAINT "staff_user_links_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE CASCADE;
+
+
+
+COMMENT ON CONSTRAINT "staff_user_links_user_id_fkey" ON "public"."staff_user_links" IS 'Links to user account';
+
+
+
+ALTER TABLE ONLY "public"."system_settings"
+    ADD CONSTRAINT "system_settings_modified_by_user_id_fkey" FOREIGN KEY ("modified_by_user_id") REFERENCES "public"."users"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."transaction_items"
+    ADD CONSTRAINT "transaction_items_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "public"."products"("id");
+
+
+
+ALTER TABLE ONLY "public"."transaction_items"
+    ADD CONSTRAINT "transaction_items_transaction_id_fkey" FOREIGN KEY ("transaction_id") REFERENCES "public"."sales_transactions"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."user_roles"
+    ADD CONSTRAINT "user_roles_assigned_by_user_id_fkey" FOREIGN KEY ("assigned_by_user_id") REFERENCES "public"."users"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."user_roles"
+    ADD CONSTRAINT "user_roles_role_id_fkey" FOREIGN KEY ("role_id") REFERENCES "public"."roles"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."user_roles"
+    ADD CONSTRAINT "user_roles_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."users"
+    ADD CONSTRAINT "users_id_fkey" FOREIGN KEY ("id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."users"
+    ADD CONSTRAINT "users_staff_id_fkey" FOREIGN KEY ("staff_id") REFERENCES "public"."staff"("id") ON DELETE SET NULL;
+
+
+
+COMMENT ON CONSTRAINT "users_staff_id_fkey" ON "public"."users" IS 'Links user account to staff record';
+
+
+
+CREATE POLICY "Accounting staff can manage accounts" ON "public"."accounts" TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Accounting staff can manage expenses" ON "public"."expenses" TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Accounting staff can manage invoice items" ON "public"."invoice_items" TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Accounting staff can manage invoices" ON "public"."invoices" TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Accounting staff can manage payments" ON "public"."payments" TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Accounting staff can manage transaction items" ON "public"."gl_transaction_items" TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Accounting staff can manage transactions" ON "public"."gl_transactions" TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Accounting staff can read accounts" ON "public"."accounts" FOR SELECT TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Accounting staff can read expenses" ON "public"."expenses" FOR SELECT TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Accounting staff can read invoice items" ON "public"."invoice_items" FOR SELECT TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Accounting staff can read invoices" ON "public"."invoices" FOR SELECT TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Accounting staff can read payments" ON "public"."payments" FOR SELECT TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Accounting staff can read transaction items" ON "public"."gl_transaction_items" FOR SELECT TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Accounting staff can read transactions" ON "public"."gl_transactions" FOR SELECT TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Admin users can manage integrations" ON "public"."integrations" TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Admin users can manage system settings" ON "public"."system_settings" TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Admin users can read integrations" ON "public"."integrations" FOR SELECT TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Admin users can read system settings" ON "public"."system_settings" FOR SELECT TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Admins can insert audit logs" ON "public"."user_account_audit" FOR INSERT WITH CHECK ((EXISTS ( SELECT 1
+   FROM "public"."users" "u"
+  WHERE (("u"."id" = "auth"."uid"()) AND ("u"."role" = ANY (ARRAY['admin'::"text", 'manager'::"text"]))))));
+
+
+
+CREATE POLICY "Admins can manage invitations" ON "public"."email_invitations" USING ((EXISTS ( SELECT 1
+   FROM "public"."users" "u"
+  WHERE (("u"."id" = "auth"."uid"()) AND ("u"."role" = ANY (ARRAY['admin'::"text", 'manager'::"text"]))))));
+
+
+
+CREATE POLICY "Admins can manage staff links" ON "public"."staff_user_links" USING ((EXISTS ( SELECT 1
+   FROM "public"."users" "u"
+  WHERE (("u"."id" = "auth"."uid"()) AND ("u"."role" = ANY (ARRAY['admin'::"text", 'manager'::"text"]))))));
+
+
+
+CREATE POLICY "Admins can manage workflows" ON "public"."account_creation_workflow" USING ((EXISTS ( SELECT 1
+   FROM "public"."users" "u"
+  WHERE (("u"."id" = "auth"."uid"()) AND ("u"."role" = ANY (ARRAY['admin'::"text", 'manager'::"text"]))))));
+
+
+
+CREATE POLICY "Allow full access to campaign analytics for authenticated users" ON "public"."campaign_analytics" USING (("auth"."role"() = 'authenticated'::"text"));
+
+
+
+CREATE POLICY "Allow full access to campaign schedules for admin and marketing" ON "public"."campaign_schedules" USING ((("auth"."role"() = 'authenticated'::"text") AND (EXISTS ( SELECT 1
+   FROM "public"."users" "u"
+  WHERE (("u"."id" = "auth"."uid"()) AND ("u"."role" = ANY (ARRAY['admin'::"text", 'marketing'::"text"])))))));
+
+
+
+CREATE POLICY "Allow full access to campaign schedules for authenticated users" ON "public"."campaign_schedules" USING (("auth"."role"() = 'authenticated'::"text"));
+
+
+
+CREATE POLICY "Allow full access to campaign templates for authenticated users" ON "public"."campaign_templates" USING (("auth"."role"() = 'authenticated'::"text"));
+
+
+
+CREATE POLICY "Allow full access to client notifications for authenticated use" ON "public"."client_notifications" USING (("auth"."role"() = 'authenticated'::"text"));
+
+
+
+CREATE POLICY "Allow full access to marketing audit logs for authenticated use" ON "public"."marketing_audit_logs" USING (("auth"."role"() = 'authenticated'::"text"));
+
+
+
+CREATE POLICY "Allow full access to marketing campaigns for admin and marketin" ON "public"."marketing_campaigns" USING ((("auth"."role"() = 'authenticated'::"text") AND (EXISTS ( SELECT 1
+   FROM "public"."users" "u"
+  WHERE (("u"."id" = "auth"."uid"()) AND ("u"."role" = ANY (ARRAY['admin'::"text", 'marketing'::"text"])))))));
+
+
+
+CREATE POLICY "Allow full access to marketing campaigns for authenticated user" ON "public"."marketing_campaigns" USING (("auth"."role"() = 'authenticated'::"text"));
+
+
+
+CREATE POLICY "Allow full access to marketing user roles for authenticated use" ON "public"."marketing_user_roles" USING (("auth"."role"() = 'authenticated'::"text"));
+
+
+
+CREATE POLICY "Allow full access to notification templates for authenticated u" ON "public"."notification_templates" USING (("auth"."role"() = 'authenticated'::"text"));
+
+
+
+CREATE POLICY "Allow read access to campaign analytics for admin and marketing" ON "public"."campaign_analytics" FOR SELECT USING ((("auth"."role"() = 'authenticated'::"text") AND (EXISTS ( SELECT 1
+   FROM "public"."users" "u"
+  WHERE (("u"."id" = "auth"."uid"()) AND ("u"."role" = ANY (ARRAY['admin'::"text", 'marketing'::"text"])))))));
+
+
+
+CREATE POLICY "Allow read access to campaign templates" ON "public"."campaign_templates" FOR SELECT USING (("auth"."role"() = 'authenticated'::"text"));
+
+
+
+CREATE POLICY "Authenticated users can manage alerts" ON "public"."integration_alerts" TO "authenticated" USING (true) WITH CHECK (true);
+
+
+
+CREATE POLICY "Authenticated users can manage inventory levels" ON "public"."inventory_levels" TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Authenticated users can manage kiosk integration orders" ON "public"."kiosk_integration_orders" TO "authenticated" USING (true) WITH CHECK (true);
+
+
+
+CREATE POLICY "Authenticated users can manage webhooks" ON "public"."integration_webhooks" TO "authenticated" USING (true) WITH CHECK (true);
+
+
+
+CREATE POLICY "Authenticated users can read benefits" ON "public"."benefits" FOR SELECT TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Authenticated users can read departments" ON "public"."departments" FOR SELECT TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Authenticated users can read inventory levels" ON "public"."inventory_levels" FOR SELECT TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Authenticated users can read job titles" ON "public"."job_titles" FOR SELECT TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Authenticated users can read locations" ON "public"."locations" FOR SELECT TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Authenticated users can read order items" ON "public"."order_items" FOR SELECT TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Authenticated users can read order status history" ON "public"."order_status_history" FOR SELECT TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Authenticated users can read roles" ON "public"."roles" FOR SELECT TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Authenticated users can read sales orders" ON "public"."sales_orders" FOR SELECT TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Authenticated users can read user roles" ON "public"."user_roles" FOR SELECT TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Authenticated users can view audit logs" ON "public"."user_account_audit" FOR SELECT USING (("auth"."role"() = 'authenticated'::"text"));
+
+
+
+CREATE POLICY "HR and Admin can manage employee benefits" ON "public"."employee_payroll_benefits" USING ((EXISTS ( SELECT 1
+   FROM "public"."users" "u"
+  WHERE (("u"."id" = "auth"."uid"()) AND ("u"."role" = ANY (ARRAY['admin'::"text", 'hr'::"text"]))))));
+
+
+
+CREATE POLICY "HR and Admin can manage payroll benefits" ON "public"."payroll_benefits" USING ((EXISTS ( SELECT 1
+   FROM "public"."users" "u"
+  WHERE (("u"."id" = "auth"."uid"()) AND ("u"."role" = ANY (ARRAY['admin'::"text", 'hr'::"text"]))))));
+
+
+
+CREATE POLICY "HR and Admin can manage payroll periods" ON "public"."payroll_periods" USING ((EXISTS ( SELECT 1
+   FROM "public"."users" "u"
+  WHERE (("u"."id" = "auth"."uid"()) AND ("u"."role" = ANY (ARRAY['admin'::"text", 'hr'::"text", 'manager'::"text"]))))));
+
+
+
+CREATE POLICY "HR and Admin can manage payroll records" ON "public"."payroll_records" USING ((EXISTS ( SELECT 1
+   FROM "public"."users" "u"
+  WHERE (("u"."id" = "auth"."uid"()) AND ("u"."role" = ANY (ARRAY['admin'::"text", 'hr'::"text", 'manager'::"text"]))))));
+
+
+
+CREATE POLICY "HR and Admin can manage tax rates" ON "public"."tax_rates" USING ((EXISTS ( SELECT 1
+   FROM "public"."users" "u"
+  WHERE (("u"."id" = "auth"."uid"()) AND ("u"."role" = ANY (ARRAY['admin'::"text", 'hr'::"text"]))))));
+
+
+
+CREATE POLICY "HR staff can read documents" ON "public"."hr_documents" FOR SELECT TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "POS staff can manage sessions" ON "public"."pos_sessions" TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "POS staff can manage transactions" ON "public"."pos_transactions" TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "POS staff can read sessions" ON "public"."pos_sessions" FOR SELECT TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "POS staff can read transactions" ON "public"."pos_transactions" FOR SELECT TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Purchasing staff can manage purchase order items" ON "public"."purchase_order_items" TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Purchasing staff can manage purchase orders" ON "public"."purchase_orders" TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Purchasing staff can read purchase order items" ON "public"."purchase_order_items" FOR SELECT TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Purchasing staff can read purchase orders" ON "public"."purchase_orders" FOR SELECT TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Sales staff can manage leads" ON "public"."leads" TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Sales staff can manage order items" ON "public"."order_items" TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Sales staff can manage sales orders" ON "public"."sales_orders" TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Sales staff can read leads" ON "public"."leads" FOR SELECT TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Staff can manage inquiries" ON "public"."inquiries" TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Staff can read employee benefits" ON "public"."employee_benefits" FOR SELECT TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Staff can read inquiries" ON "public"."inquiries" FOR SELECT TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Staff can read performance reviews" ON "public"."performance_reviews" FOR SELECT TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Staff can view branch transactions" ON "public"."sales_transactions" FOR SELECT USING (("branch_id" IN ( SELECT "staff"."branch_id"
+   FROM ("public"."staff"
+     JOIN "public"."staff_user_links" ON (("staff"."id" = "staff_user_links"."staff_id")))
+  WHERE (("staff_user_links"."user_id" = "auth"."uid"()) AND (("staff_user_links"."link_status")::"text" = 'active'::"text")))));
+
+
+
+CREATE POLICY "Staff can view own data" ON "public"."staff" FOR SELECT USING (("auth"."uid"() IN ( SELECT "staff_user_links"."user_id"
+   FROM "public"."staff_user_links"
+  WHERE (("staff_user_links"."staff_id" = "staff"."id") AND (("staff_user_links"."link_status")::"text" = 'active'::"text")))));
+
+
+
+CREATE POLICY "Staff can view their own benefits" ON "public"."employee_payroll_benefits" FOR SELECT USING (("staff_id" IN ( SELECT "s"."id"
+   FROM ("public"."staff" "s"
+     JOIN "public"."staff_user_links" "sul" ON (("s"."id" = "sul"."staff_id")))
+  WHERE (("sul"."user_id" = "auth"."uid"()) AND (("sul"."link_status")::"text" = 'active'::"text")))));
+
+
+
+CREATE POLICY "Staff can view their own payroll records" ON "public"."payroll_records" FOR SELECT USING (("staff_id" IN ( SELECT "s"."id"
+   FROM ("public"."staff" "s"
+     JOIN "public"."staff_user_links" "sul" ON (("s"."id" = "sul"."staff_id")))
+  WHERE (("sul"."user_id" = "auth"."uid"()) AND (("sul"."link_status")::"text" = 'active'::"text")))));
+
+
+
+CREATE POLICY "System can insert order status history" ON "public"."order_status_history" FOR INSERT TO "authenticated" WITH CHECK (true);
+
+
+
+CREATE POLICY "Users can manage app_settings" ON "public"."app_settings" TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Users can manage attendance_records" ON "public"."attendance_records" TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Users can manage branches" ON "public"."branches" TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Users can manage categories" ON "public"."categories" TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Users can manage customers" ON "public"."customers" TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Users can manage inventory_movements" ON "public"."inventory_movements" TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Users can manage leave_requests" ON "public"."leave_requests" TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Users can manage notifications" ON "public"."notifications" TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Users can manage password_reset_requests" ON "public"."password_reset_requests" TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Users can manage products" ON "public"."products" TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Users can manage sales_transactions" ON "public"."sales_transactions" TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Users can manage staff" ON "public"."staff" TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Users can manage suppliers" ON "public"."suppliers" TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Users can manage transaction_items" ON "public"."transaction_items" TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Users can read basic info of other users" ON "public"."users" FOR SELECT TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Users can read own data" ON "public"."users" FOR SELECT TO "authenticated" USING (("auth"."uid"() = "id"));
+
+
+
+CREATE POLICY "Users can update own data" ON "public"."users" FOR UPDATE TO "authenticated" USING (("auth"."uid"() = "id")) WITH CHECK (("auth"."uid"() = "id"));
+
+
+
+CREATE POLICY "Users can view own data" ON "public"."users" FOR SELECT USING (("auth"."uid"() = "id"));
+
+
+
+CREATE POLICY "Users can view their own invitations" ON "public"."email_invitations" FOR SELECT USING ((("auth"."uid"() = "created_by") OR (("email")::"text" = "auth"."email"())));
+
+
+
+CREATE POLICY "Users can view their own staff links" ON "public"."staff_user_links" FOR SELECT USING ((("auth"."uid"() = "created_by") OR (("auth"."uid"())::"text" = ("staff_id")::"text")));
+
+
+
+CREATE POLICY "Users can view their own workflow" ON "public"."account_creation_workflow" FOR SELECT USING ((("auth"."uid"() = "created_by") OR (("auth"."uid"())::"text" = ("staff_id")::"text")));
+
+
+
+ALTER TABLE "public"."account_creation_workflow" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."accounts" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."app_settings" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."attendance_records" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."audit_logs" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."benefits" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."branches" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."campaign_analytics" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."campaign_schedules" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."campaign_templates" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."categories" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."client_notifications" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."customers" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."departments" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."email_invitations" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."employee_benefits" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."employee_payroll_benefits" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."expenses" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."gl_transaction_items" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."gl_transactions" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."hr_documents" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."inquiries" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."integration_alerts" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."integration_webhooks" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."integrations" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."inventory_levels" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."inventory_movements" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."invoice_items" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."invoices" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."job_titles" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."kiosk_integration_orders" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."leads" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."leave_requests" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."locations" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."marketing_audit_logs" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."marketing_campaigns" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."marketing_user_roles" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."notification_templates" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."notifications" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."order_items" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."order_status_history" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."password_reset_requests" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."payments" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."payroll_audit_log" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."payroll_benefits" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."payroll_components" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."payroll_periods" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."payroll_records" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."payroll_reports" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."performance_reviews" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."pos_sessions" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."pos_transactions" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."products" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."purchase_order_items" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."purchase_orders" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."roles" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."sales_orders" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."sales_transactions" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."staff" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."staff_user_links" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."suppliers" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."system_settings" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."tax_rates" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."transaction_items" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."user_account_audit" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."user_roles" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."users" ENABLE ROW LEVEL SECURITY;
+
+
+
+
+ALTER PUBLICATION "supabase_realtime" OWNER TO "postgres";
+
+
+GRANT USAGE ON SCHEMA "public" TO "postgres";
+GRANT USAGE ON SCHEMA "public" TO "anon";
+GRANT USAGE ON SCHEMA "public" TO "authenticated";
+GRANT USAGE ON SCHEMA "public" TO "service_role";
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+GRANT ALL ON FUNCTION "public"."calculate_payroll_record"("p_staff_id" "uuid", "p_period_id" "uuid", "p_base_salary" numeric, "p_regular_hours" numeric, "p_overtime_hours" numeric, "p_bonuses" numeric, "p_allowances" numeric) TO "anon";
+GRANT ALL ON FUNCTION "public"."calculate_payroll_record"("p_staff_id" "uuid", "p_period_id" "uuid", "p_base_salary" numeric, "p_regular_hours" numeric, "p_overtime_hours" numeric, "p_bonuses" numeric, "p_allowances" numeric) TO "authenticated";
+GRANT ALL ON FUNCTION "public"."calculate_payroll_record"("p_staff_id" "uuid", "p_period_id" "uuid", "p_base_salary" numeric, "p_regular_hours" numeric, "p_overtime_hours" numeric, "p_bonuses" numeric, "p_allowances" numeric) TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."create_staff_user_link"("p_staff_id" "uuid", "p_user_id" "uuid", "p_created_by" "uuid") TO "anon";
+GRANT ALL ON FUNCTION "public"."create_staff_user_link"("p_staff_id" "uuid", "p_user_id" "uuid", "p_created_by" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."create_staff_user_link"("p_staff_id" "uuid", "p_user_id" "uuid", "p_created_by" "uuid") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."generate_integration_alert"("p_alert_type" "text", "p_severity" "text", "p_title" "text", "p_message" "text", "p_metadata" "jsonb") TO "anon";
+GRANT ALL ON FUNCTION "public"."generate_integration_alert"("p_alert_type" "text", "p_severity" "text", "p_title" "text", "p_message" "text", "p_metadata" "jsonb") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."generate_integration_alert"("p_alert_type" "text", "p_severity" "text", "p_title" "text", "p_message" "text", "p_metadata" "jsonb") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."generate_invitation_token"() TO "anon";
+GRANT ALL ON FUNCTION "public"."generate_invitation_token"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."generate_invitation_token"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."get_user_accessible_components"("user_uuid" "uuid") TO "anon";
+GRANT ALL ON FUNCTION "public"."get_user_accessible_components"("user_uuid" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."get_user_accessible_components"("user_uuid" "uuid") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."get_user_permissions"("user_uuid" "uuid") TO "anon";
+GRANT ALL ON FUNCTION "public"."get_user_permissions"("user_uuid" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."get_user_permissions"("user_uuid" "uuid") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."handle_new_user"() TO "anon";
+GRANT ALL ON FUNCTION "public"."handle_new_user"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."handle_new_user"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."process_payroll_period"("p_period_id" "uuid") TO "anon";
+GRANT ALL ON FUNCTION "public"."process_payroll_period"("p_period_id" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."process_payroll_period"("p_period_id" "uuid") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."track_order_status_change"() TO "anon";
+GRANT ALL ON FUNCTION "public"."track_order_status_change"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."track_order_status_change"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."unlink_staff_user"("p_staff_id" "uuid", "p_user_id" "uuid") TO "anon";
+GRANT ALL ON FUNCTION "public"."unlink_staff_user"("p_staff_id" "uuid", "p_user_id" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."unlink_staff_user"("p_staff_id" "uuid", "p_user_id" "uuid") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."update_payroll_updated_at_column"() TO "anon";
+GRANT ALL ON FUNCTION "public"."update_payroll_updated_at_column"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."update_payroll_updated_at_column"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."update_updated_at_column"() TO "anon";
+GRANT ALL ON FUNCTION "public"."update_updated_at_column"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."update_updated_at_column"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."user_has_permission"("user_uuid" "uuid", "permission_name" character varying) TO "anon";
+GRANT ALL ON FUNCTION "public"."user_has_permission"("user_uuid" "uuid", "permission_name" character varying) TO "authenticated";
+GRANT ALL ON FUNCTION "public"."user_has_permission"("user_uuid" "uuid", "permission_name" character varying) TO "service_role";
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+GRANT ALL ON TABLE "public"."account_creation_workflow" TO "anon";
+GRANT ALL ON TABLE "public"."account_creation_workflow" TO "authenticated";
+GRANT ALL ON TABLE "public"."account_creation_workflow" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."accounts" TO "anon";
+GRANT ALL ON TABLE "public"."accounts" TO "authenticated";
+GRANT ALL ON TABLE "public"."accounts" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."app_settings" TO "anon";
+GRANT ALL ON TABLE "public"."app_settings" TO "authenticated";
+GRANT ALL ON TABLE "public"."app_settings" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."attendance_records" TO "anon";
+GRANT ALL ON TABLE "public"."attendance_records" TO "authenticated";
+GRANT ALL ON TABLE "public"."attendance_records" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."audit_logs" TO "anon";
+GRANT ALL ON TABLE "public"."audit_logs" TO "authenticated";
+GRANT ALL ON TABLE "public"."audit_logs" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."benefits" TO "anon";
+GRANT ALL ON TABLE "public"."benefits" TO "authenticated";
+GRANT ALL ON TABLE "public"."benefits" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."branches" TO "anon";
+GRANT ALL ON TABLE "public"."branches" TO "authenticated";
+GRANT ALL ON TABLE "public"."branches" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."campaign_analytics" TO "anon";
+GRANT ALL ON TABLE "public"."campaign_analytics" TO "authenticated";
+GRANT ALL ON TABLE "public"."campaign_analytics" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."campaign_schedules" TO "anon";
+GRANT ALL ON TABLE "public"."campaign_schedules" TO "authenticated";
+GRANT ALL ON TABLE "public"."campaign_schedules" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."campaign_templates" TO "anon";
+GRANT ALL ON TABLE "public"."campaign_templates" TO "authenticated";
+GRANT ALL ON TABLE "public"."campaign_templates" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."categories" TO "anon";
+GRANT ALL ON TABLE "public"."categories" TO "authenticated";
+GRANT ALL ON TABLE "public"."categories" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."client_notifications" TO "anon";
+GRANT ALL ON TABLE "public"."client_notifications" TO "authenticated";
+GRANT ALL ON TABLE "public"."client_notifications" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."component_access" TO "anon";
+GRANT ALL ON TABLE "public"."component_access" TO "authenticated";
+GRANT ALL ON TABLE "public"."component_access" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."customers" TO "anon";
+GRANT ALL ON TABLE "public"."customers" TO "authenticated";
+GRANT ALL ON TABLE "public"."customers" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."departments" TO "anon";
+GRANT ALL ON TABLE "public"."departments" TO "authenticated";
+GRANT ALL ON TABLE "public"."departments" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."email_invitations" TO "anon";
+GRANT ALL ON TABLE "public"."email_invitations" TO "authenticated";
+GRANT ALL ON TABLE "public"."email_invitations" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."employee_benefits" TO "anon";
+GRANT ALL ON TABLE "public"."employee_benefits" TO "authenticated";
+GRANT ALL ON TABLE "public"."employee_benefits" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."employee_payroll_benefits" TO "anon";
+GRANT ALL ON TABLE "public"."employee_payroll_benefits" TO "authenticated";
+GRANT ALL ON TABLE "public"."employee_payroll_benefits" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."expenses" TO "anon";
+GRANT ALL ON TABLE "public"."expenses" TO "authenticated";
+GRANT ALL ON TABLE "public"."expenses" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."gl_transaction_items" TO "anon";
+GRANT ALL ON TABLE "public"."gl_transaction_items" TO "authenticated";
+GRANT ALL ON TABLE "public"."gl_transaction_items" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."gl_transactions" TO "anon";
+GRANT ALL ON TABLE "public"."gl_transactions" TO "authenticated";
+GRANT ALL ON TABLE "public"."gl_transactions" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."hr_documents" TO "anon";
+GRANT ALL ON TABLE "public"."hr_documents" TO "authenticated";
+GRANT ALL ON TABLE "public"."hr_documents" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."inquiries" TO "anon";
+GRANT ALL ON TABLE "public"."inquiries" TO "authenticated";
+GRANT ALL ON TABLE "public"."inquiries" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."integration_alerts" TO "anon";
+GRANT ALL ON TABLE "public"."integration_alerts" TO "authenticated";
+GRANT ALL ON TABLE "public"."integration_alerts" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."integration_webhooks" TO "anon";
+GRANT ALL ON TABLE "public"."integration_webhooks" TO "authenticated";
+GRANT ALL ON TABLE "public"."integration_webhooks" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."integrations" TO "anon";
+GRANT ALL ON TABLE "public"."integrations" TO "authenticated";
+GRANT ALL ON TABLE "public"."integrations" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."inventory_levels" TO "anon";
+GRANT ALL ON TABLE "public"."inventory_levels" TO "authenticated";
+GRANT ALL ON TABLE "public"."inventory_levels" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."inventory_movements" TO "anon";
+GRANT ALL ON TABLE "public"."inventory_movements" TO "authenticated";
+GRANT ALL ON TABLE "public"."inventory_movements" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."invoice_items" TO "anon";
+GRANT ALL ON TABLE "public"."invoice_items" TO "authenticated";
+GRANT ALL ON TABLE "public"."invoice_items" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."invoices" TO "anon";
+GRANT ALL ON TABLE "public"."invoices" TO "authenticated";
+GRANT ALL ON TABLE "public"."invoices" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."job_titles" TO "anon";
+GRANT ALL ON TABLE "public"."job_titles" TO "authenticated";
+GRANT ALL ON TABLE "public"."job_titles" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."kiosk_integration_orders" TO "anon";
+GRANT ALL ON TABLE "public"."kiosk_integration_orders" TO "authenticated";
+GRANT ALL ON TABLE "public"."kiosk_integration_orders" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."leads" TO "anon";
+GRANT ALL ON TABLE "public"."leads" TO "authenticated";
+GRANT ALL ON TABLE "public"."leads" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."leave_requests" TO "anon";
+GRANT ALL ON TABLE "public"."leave_requests" TO "authenticated";
+GRANT ALL ON TABLE "public"."leave_requests" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."locations" TO "anon";
+GRANT ALL ON TABLE "public"."locations" TO "authenticated";
+GRANT ALL ON TABLE "public"."locations" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."marketing_audit_logs" TO "anon";
+GRANT ALL ON TABLE "public"."marketing_audit_logs" TO "authenticated";
+GRANT ALL ON TABLE "public"."marketing_audit_logs" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."marketing_campaigns" TO "anon";
+GRANT ALL ON TABLE "public"."marketing_campaigns" TO "authenticated";
+GRANT ALL ON TABLE "public"."marketing_campaigns" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."marketing_user_roles" TO "anon";
+GRANT ALL ON TABLE "public"."marketing_user_roles" TO "authenticated";
+GRANT ALL ON TABLE "public"."marketing_user_roles" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."notification_templates" TO "anon";
+GRANT ALL ON TABLE "public"."notification_templates" TO "authenticated";
+GRANT ALL ON TABLE "public"."notification_templates" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."notifications" TO "anon";
+GRANT ALL ON TABLE "public"."notifications" TO "authenticated";
+GRANT ALL ON TABLE "public"."notifications" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."order_items" TO "anon";
+GRANT ALL ON TABLE "public"."order_items" TO "authenticated";
+GRANT ALL ON TABLE "public"."order_items" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."order_status_history" TO "anon";
+GRANT ALL ON TABLE "public"."order_status_history" TO "authenticated";
+GRANT ALL ON TABLE "public"."order_status_history" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."password_reset_requests" TO "anon";
+GRANT ALL ON TABLE "public"."password_reset_requests" TO "authenticated";
+GRANT ALL ON TABLE "public"."password_reset_requests" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."payments" TO "anon";
+GRANT ALL ON TABLE "public"."payments" TO "authenticated";
+GRANT ALL ON TABLE "public"."payments" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."payroll_audit_log" TO "anon";
+GRANT ALL ON TABLE "public"."payroll_audit_log" TO "authenticated";
+GRANT ALL ON TABLE "public"."payroll_audit_log" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."payroll_benefits" TO "anon";
+GRANT ALL ON TABLE "public"."payroll_benefits" TO "authenticated";
+GRANT ALL ON TABLE "public"."payroll_benefits" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."payroll_components" TO "anon";
+GRANT ALL ON TABLE "public"."payroll_components" TO "authenticated";
+GRANT ALL ON TABLE "public"."payroll_components" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."payroll_periods" TO "anon";
+GRANT ALL ON TABLE "public"."payroll_periods" TO "authenticated";
+GRANT ALL ON TABLE "public"."payroll_periods" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."payroll_records" TO "anon";
+GRANT ALL ON TABLE "public"."payroll_records" TO "authenticated";
+GRANT ALL ON TABLE "public"."payroll_records" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."payroll_reports" TO "anon";
+GRANT ALL ON TABLE "public"."payroll_reports" TO "authenticated";
+GRANT ALL ON TABLE "public"."payroll_reports" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."performance_reviews" TO "anon";
+GRANT ALL ON TABLE "public"."performance_reviews" TO "authenticated";
+GRANT ALL ON TABLE "public"."performance_reviews" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."permissions" TO "anon";
+GRANT ALL ON TABLE "public"."permissions" TO "authenticated";
+GRANT ALL ON TABLE "public"."permissions" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."pos_sessions" TO "anon";
+GRANT ALL ON TABLE "public"."pos_sessions" TO "authenticated";
+GRANT ALL ON TABLE "public"."pos_sessions" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."pos_transactions" TO "anon";
+GRANT ALL ON TABLE "public"."pos_transactions" TO "authenticated";
+GRANT ALL ON TABLE "public"."pos_transactions" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."products" TO "anon";
+GRANT ALL ON TABLE "public"."products" TO "authenticated";
+GRANT ALL ON TABLE "public"."products" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."purchase_order_items" TO "anon";
+GRANT ALL ON TABLE "public"."purchase_order_items" TO "authenticated";
+GRANT ALL ON TABLE "public"."purchase_order_items" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."purchase_orders" TO "anon";
+GRANT ALL ON TABLE "public"."purchase_orders" TO "authenticated";
+GRANT ALL ON TABLE "public"."purchase_orders" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."role_definitions" TO "anon";
+GRANT ALL ON TABLE "public"."role_definitions" TO "authenticated";
+GRANT ALL ON TABLE "public"."role_definitions" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."role_permissions" TO "anon";
+GRANT ALL ON TABLE "public"."role_permissions" TO "authenticated";
+GRANT ALL ON TABLE "public"."role_permissions" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."roles" TO "anon";
+GRANT ALL ON TABLE "public"."roles" TO "authenticated";
+GRANT ALL ON TABLE "public"."roles" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."sales_orders" TO "anon";
+GRANT ALL ON TABLE "public"."sales_orders" TO "authenticated";
+GRANT ALL ON TABLE "public"."sales_orders" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."sales_transactions" TO "anon";
+GRANT ALL ON TABLE "public"."sales_transactions" TO "authenticated";
+GRANT ALL ON TABLE "public"."sales_transactions" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."staff" TO "anon";
+GRANT ALL ON TABLE "public"."staff" TO "authenticated";
+GRANT ALL ON TABLE "public"."staff" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."staff_user_links" TO "anon";
+GRANT ALL ON TABLE "public"."staff_user_links" TO "authenticated";
+GRANT ALL ON TABLE "public"."staff_user_links" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."users" TO "anon";
+GRANT ALL ON TABLE "public"."users" TO "authenticated";
+GRANT ALL ON TABLE "public"."users" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."staff_with_accounts" TO "anon";
+GRANT ALL ON TABLE "public"."staff_with_accounts" TO "authenticated";
+GRANT ALL ON TABLE "public"."staff_with_accounts" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."suppliers" TO "anon";
+GRANT ALL ON TABLE "public"."suppliers" TO "authenticated";
+GRANT ALL ON TABLE "public"."suppliers" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."system_settings" TO "anon";
+GRANT ALL ON TABLE "public"."system_settings" TO "authenticated";
+GRANT ALL ON TABLE "public"."system_settings" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."tax_rates" TO "anon";
+GRANT ALL ON TABLE "public"."tax_rates" TO "authenticated";
+GRANT ALL ON TABLE "public"."tax_rates" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."transaction_items" TO "anon";
+GRANT ALL ON TABLE "public"."transaction_items" TO "authenticated";
+GRANT ALL ON TABLE "public"."transaction_items" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."user_account_audit" TO "anon";
+GRANT ALL ON TABLE "public"."user_account_audit" TO "authenticated";
+GRANT ALL ON TABLE "public"."user_account_audit" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."user_activity" TO "anon";
+GRANT ALL ON TABLE "public"."user_activity" TO "authenticated";
+GRANT ALL ON TABLE "public"."user_activity" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."user_roles" TO "anon";
+GRANT ALL ON TABLE "public"."user_roles" TO "authenticated";
+GRANT ALL ON TABLE "public"."user_roles" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."user_sessions" TO "anon";
+GRANT ALL ON TABLE "public"."user_sessions" TO "authenticated";
+GRANT ALL ON TABLE "public"."user_sessions" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."users_with_staff" TO "anon";
+GRANT ALL ON TABLE "public"."users_with_staff" TO "authenticated";
+GRANT ALL ON TABLE "public"."users_with_staff" TO "service_role";
+
+
+
+
+
+
+
+
+
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON SEQUENCES TO "postgres";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON SEQUENCES TO "anon";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON SEQUENCES TO "authenticated";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON SEQUENCES TO "service_role";
+
+
+
+
+
+
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON FUNCTIONS TO "postgres";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON FUNCTIONS TO "anon";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON FUNCTIONS TO "authenticated";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON FUNCTIONS TO "service_role";
+
+
+
+
+
+
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "postgres";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "anon";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "authenticated";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "service_role";

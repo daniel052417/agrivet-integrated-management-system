@@ -19,13 +19,21 @@ interface ProductRow {
   description: string | null;
   category_id: string;
   supplier_id: string;
-  unit_price: number;
-  cost_price: number | null;
-  stock_quantity: number;
-  minimum_stock: number | null;
   is_active: boolean;
   updated_at: string | null;
   created_at: string | null;
+  // Inventory data
+  inventory_id: string;
+  quantity_on_hand: number;
+  quantity_available: number;
+  reorder_level: number;
+  max_stock_level: number;
+  // Variant data
+  variant_id: string;
+  variant_name: string;
+  variant_sku: string;
+  price: number;
+  cost: number | null;
 }
 
 const InventoryManagement: React.FC = () => {
@@ -45,21 +53,75 @@ const InventoryManagement: React.FC = () => {
     name: '',
     category_id: '',
     sku: '',
-    unit_price: '',
+    price: '',
+    cost: '',
     stock_quantity: '',
+    reorder_level: '',
     supplier_id: '',
-    description: ''
+    description: '',
+    variant_name: '',
+    variant_sku: ''
   });
 
   const fetchProducts = async () => {
     setIsLoadingProducts(true);
     try {
       const { data, error } = await supabase
-        .from('products')
-        .select('id, name, sku, description, category_id, supplier_id, unit_price, cost_price, stock_quantity, minimum_stock, is_active, updated_at, created_at')
-        .order('updated_at', { ascending: false });
+        .from('inventory')
+        .select(`
+          id:inventory_id,
+          quantity_on_hand,
+          quantity_available,
+          reorder_level,
+          max_stock_level,
+          product_variants!inner(
+            id:variant_id,
+            name:variant_name,
+            sku:variant_sku,
+            price,
+            cost,
+            products!inner(
+              id,
+              name,
+              sku,
+              description,
+              category_id,
+              supplier_id,
+              is_active,
+              updated_at,
+              created_at
+            )
+          )
+        `)
+        .eq('product_variants.products.is_active', true)
+        .order('updated_at', { ascending: false, foreignTable: 'product_variants.products' });
+      
       if (error) throw error;
-      setProducts(data as ProductRow[] || []);
+      
+      // Transform the data to match our interface
+      const transformedData = data?.map((item: any) => ({
+        id: item.product_variants.products.id,
+        name: item.product_variants.products.name,
+        sku: item.product_variants.products.sku,
+        description: item.product_variants.products.description,
+        category_id: item.product_variants.products.category_id,
+        supplier_id: item.product_variants.products.supplier_id,
+        is_active: item.product_variants.products.is_active,
+        updated_at: item.product_variants.products.updated_at,
+        created_at: item.product_variants.products.created_at,
+        inventory_id: item.inventory_id,
+        quantity_on_hand: item.quantity_on_hand,
+        quantity_available: item.quantity_available,
+        reorder_level: item.reorder_level,
+        max_stock_level: item.max_stock_level,
+        variant_id: item.product_variants.variant_id,
+        variant_name: item.product_variants.variant_name,
+        variant_sku: item.product_variants.variant_sku,
+        price: item.product_variants.price,
+        cost: item.product_variants.cost
+      })) || [];
+      
+      setProducts(transformedData);
     } catch (err: any) {
       console.error('Error fetching products:', err);
       setError('Failed to load products');
@@ -109,46 +171,115 @@ const InventoryManagement: React.FC = () => {
 
     try {
       // Validate required fields
-      if (!formData.name || !formData.sku || !formData.category_id || !formData.supplier_id || !formData.unit_price || !formData.stock_quantity) {
+      if (!formData.name || !formData.sku || !formData.category_id || !formData.supplier_id || !formData.price || !formData.stock_quantity) {
         throw new Error('Please fill in all required fields');
       }
 
-      // Prepare data for insertion
-      const productData = {
-        name: formData.name.trim(),
-        sku: formData.sku.trim().toUpperCase(),
-        description: formData.description.trim(),
-        category_id: formData.category_id,
-        supplier_id: formData.supplier_id,
-        unit_price: parseFloat(formData.unit_price),
-        cost_price: parseFloat(formData.unit_price) * 0.7, // Assuming 30% markup
-        stock_quantity: parseInt(formData.stock_quantity),
-        minimum_stock: Math.max(10, parseInt(formData.stock_quantity) * 0.2), // 20% of initial stock or minimum 10
-        is_active: true
-      };
-
-      let error: any = null;
       if (modalMode === 'add') {
-        const res = await supabase
+        // Create product first
+        const productData = {
+          name: formData.name.trim(),
+          sku: formData.sku.trim().toUpperCase(),
+          description: formData.description.trim(),
+          category_id: formData.category_id,
+          supplier_id: formData.supplier_id,
+          is_active: true
+        };
+
+        const { data: newProduct, error: productError } = await supabase
           .from('products')
           .insert([productData])
-          .select();
-        error = res.error;
+          .select()
+          .single();
+
+        if (productError) throw productError;
+
+        // Create product variant
+        const variantData = {
+          product_id: newProduct.id,
+          name: formData.variant_name.trim() || formData.name.trim(),
+          sku: formData.variant_sku.trim().toUpperCase() || formData.sku.trim().toUpperCase(),
+          price: parseFloat(formData.price),
+          cost: parseFloat(formData.cost) || parseFloat(formData.price) * 0.7,
+          is_active: true
+        };
+
+        const { data: newVariant, error: variantError } = await supabase
+          .from('product_variants')
+          .insert([variantData])
+          .select()
+          .single();
+
+        if (variantError) throw variantError;
+
+        // Create inventory record
+        const inventoryData = {
+          product_variant_id: newVariant.id,
+          quantity_on_hand: parseInt(formData.stock_quantity),
+          quantity_available: parseInt(formData.stock_quantity),
+          reorder_level: parseInt(formData.reorder_level) || Math.max(10, parseInt(formData.stock_quantity) * 0.2),
+          max_stock_level: parseInt(formData.stock_quantity) * 2
+        };
+
+        const { error: inventoryError } = await supabase
+          .from('inventory')
+          .insert([inventoryData]);
+
+        if (inventoryError) throw inventoryError;
+
       } else if (modalMode === 'edit' && editingProductId) {
-        const res = await supabase
+        // Find the product to get variant and inventory IDs
+        const product = products.find(p => p.id === editingProductId);
+        if (!product) throw new Error('Product not found');
+
+        // Update product
+        const productData = {
+          name: formData.name.trim(),
+          sku: formData.sku.trim().toUpperCase(),
+          description: formData.description.trim(),
+          category_id: formData.category_id,
+          supplier_id: formData.supplier_id
+        };
+
+        const { error: productError } = await supabase
           .from('products')
           .update(productData)
-          .eq('id', editingProductId)
-          .select();
-        error = res.error;
+          .eq('id', editingProductId);
+
+        if (productError) throw productError;
+
+        // Update variant
+        const variantData = {
+          name: formData.variant_name.trim() || formData.name.trim(),
+          sku: formData.variant_sku.trim().toUpperCase() || formData.sku.trim().toUpperCase(),
+          price: parseFloat(formData.price),
+          cost: parseFloat(formData.cost) || parseFloat(formData.price) * 0.7
+        };
+
+        const { error: variantError } = await supabase
+          .from('product_variants')
+          .update(variantData)
+          .eq('id', product.variant_id);
+
+        if (variantError) throw variantError;
+
+        // Update inventory
+        const inventoryData = {
+          quantity_on_hand: parseInt(formData.stock_quantity),
+          quantity_available: parseInt(formData.stock_quantity),
+          reorder_level: parseInt(formData.reorder_level) || Math.max(10, parseInt(formData.stock_quantity) * 0.2),
+          max_stock_level: parseInt(formData.stock_quantity) * 2
+        };
+
+        const { error: inventoryError } = await supabase
+          .from('inventory')
+          .update(inventoryData)
+          .eq('id', product.inventory_id);
+
+        if (inventoryError) throw inventoryError;
       }
 
-      if (error) {
-        if (error.code === '23505') {
-          throw new Error('A product with this SKU already exists');
-        }
-        throw error;
-      }
+      // Error handling is done in individual operations above
 
       // Success
       setSuccess(modalMode === 'add' ? 'Product added successfully!' : 'Product updated successfully!');
@@ -158,10 +289,14 @@ const InventoryManagement: React.FC = () => {
         name: '',
         category_id: '',
         sku: '',
-        unit_price: '',
+        price: '',
+        cost: '',
         stock_quantity: '',
+        reorder_level: '',
         supplier_id: '',
-        description: ''
+        description: '',
+        variant_name: '',
+        variant_sku: ''
       });
       setEditingProductId(null);
       setModalMode('add');
@@ -182,10 +317,14 @@ const InventoryManagement: React.FC = () => {
       name: '',
       category_id: '',
       sku: '',
-      unit_price: '',
+      price: '',
+      cost: '',
       stock_quantity: '',
+      reorder_level: '',
       supplier_id: '',
-      description: ''
+      description: '',
+      variant_name: '',
+      variant_sku: ''
     });
     setError(null);
     setSuccess(null);
@@ -216,8 +355,31 @@ const InventoryManagement: React.FC = () => {
   const handleDelete = async (id: string) => {
     if (!confirm('Delete this product? This action cannot be undone.')) return;
     try {
-      const { error } = await supabase.from('products').delete().eq('id', id);
-      if (error) throw error;
+      // Find the product to get variant and inventory IDs
+      const product = products.find(p => p.id === id);
+      if (!product) throw new Error('Product not found');
+
+      // Delete inventory record first (due to foreign key constraints)
+      const { error: inventoryError } = await supabase
+        .from('inventory')
+        .delete()
+        .eq('id', product.inventory_id);
+      if (inventoryError) throw inventoryError;
+
+      // Delete product variant
+      const { error: variantError } = await supabase
+        .from('product_variants')
+        .delete()
+        .eq('id', product.variant_id);
+      if (variantError) throw variantError;
+
+      // Delete product
+      const { error: productError } = await supabase
+        .from('products')
+        .delete()
+        .eq('id', id);
+      if (productError) throw productError;
+
       await fetchProducts();
     } catch (err: any) {
       console.error('Delete failed', err);
@@ -230,10 +392,14 @@ const InventoryManagement: React.FC = () => {
       name: '',
       category_id: '',
       sku: '',
-      unit_price: '',
+      price: '',
+      cost: '',
       stock_quantity: '',
+      reorder_level: '',
       supplier_id: '',
-      description: ''
+      description: '',
+      variant_name: '',
+      variant_sku: ''
     });
     setEditingProductId(null);
     setModalMode('add');
@@ -245,10 +411,14 @@ const InventoryManagement: React.FC = () => {
       name: product.name || '',
       category_id: product.category_id || '',
       sku: product.sku || '',
-      unit_price: String(product.unit_price ?? ''),
-      stock_quantity: String(product.stock_quantity ?? ''),
+      price: String(product.price ?? ''),
+      cost: String(product.cost ?? ''),
+      stock_quantity: String(product.quantity_on_hand ?? ''),
+      reorder_level: String(product.reorder_level ?? ''),
       supplier_id: product.supplier_id || '',
-      description: product.description || ''
+      description: product.description || '',
+      variant_name: product.variant_name || '',
+      variant_sku: product.variant_sku || ''
     });
     setEditingProductId(product.id);
     setModalMode('edit');
@@ -361,9 +531,9 @@ const InventoryManagement: React.FC = () => {
                 .map((product) => {
                   const categoryName = categories.find(c => c.id === product.category_id)?.name || '—';
                   const supplierName = suppliers.find(s => s.id === product.supplier_id)?.name || '—';
-                  const status = product.stock_quantity === 0
+                  const status = product.quantity_on_hand === 0
                     ? 'Out of Stock'
-                    : (product.minimum_stock != null && product.stock_quantity <= product.minimum_stock)
+                    : (product.reorder_level != null && product.quantity_on_hand <= product.reorder_level)
                       ? 'Low Stock'
                       : 'In Stock';
                   return (
@@ -378,10 +548,10 @@ const InventoryManagement: React.FC = () => {
                     {categoryName}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {product.stock_quantity}
+                    {product.quantity_on_hand}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    ₱{Number(product.unit_price || 0).toFixed(2)}
+                    ₱{Number(product.price || 0).toFixed(2)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(status)}`}>
@@ -512,18 +682,34 @@ const InventoryManagement: React.FC = () => {
 
                   <div>
                     <label htmlFor="productPrice" className="block text-sm font-medium text-gray-700 mb-2">
-                      Unit Price (₱) *
+                      Price (₱) *
                     </label>
                     <input
                       type="number"
                       id="productPrice"
-                      value={formData.unit_price}
-                      onChange={(e) => setFormData(prev => ({...prev, unit_price: e.target.value}))}
+                      value={formData.price}
+                      onChange={(e) => setFormData(prev => ({...prev, price: e.target.value}))}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                       placeholder="0.00"
                       step="0.01"
                       min="0"
                       required
+                    />
+                  </div>
+
+                  <div>
+                    <label htmlFor="productCost" className="block text-sm font-medium text-gray-700 mb-2">
+                      Cost (₱)
+                    </label>
+                    <input
+                      type="number"
+                      id="productCost"
+                      value={formData.cost}
+                      onChange={(e) => setFormData(prev => ({...prev, cost: e.target.value}))}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      placeholder="0.00"
+                      step="0.01"
+                      min="0"
                     />
                   </div>
 
@@ -539,9 +725,28 @@ const InventoryManagement: React.FC = () => {
                       id="productStock"
                       value={formData.stock_quantity}
                       onChange={(e) => setFormData((prev) => ({ ...prev, stock_quantity: e.target.value }))}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                       placeholder="0"
                       min="0"
                       required
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="productReorderLevel"
+                      className="block text-sm font-medium text-gray-700 mb-2"
+                    >
+                      Reorder Level
+                    </label>
+                    <input
+                      type="number"
+                      id="productReorderLevel"
+                      value={formData.reorder_level}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, reorder_level: e.target.value }))}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      placeholder="10"
+                      min="0"
                     />
                   </div>
 
@@ -552,6 +757,36 @@ const InventoryManagement: React.FC = () => {
                       <p className="text-red-800 text-sm">{error}</p>
                     </div>
                   )}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label htmlFor="productVariantName" className="block text-sm font-medium text-gray-700 mb-2">
+                      Variant Name
+                    </label>
+                    <input
+                      type="text"
+                      id="productVariantName"
+                      value={formData.variant_name}
+                      onChange={(e) => setFormData(prev => ({...prev, variant_name: e.target.value}))}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      placeholder="Leave empty to use product name"
+                    />
+                  </div>
+
+                  <div>
+                    <label htmlFor="productVariantSku" className="block text-sm font-medium text-gray-700 mb-2">
+                      Variant SKU
+                    </label>
+                    <input
+                      type="text"
+                      id="productVariantSku"
+                      value={formData.variant_sku}
+                      onChange={(e) => setFormData(prev => ({...prev, variant_sku: e.target.value.toUpperCase()}))}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      placeholder="Leave empty to use product SKU"
+                    />
+                  </div>
                 </div>
 
                 <div>

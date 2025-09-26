@@ -4,13 +4,13 @@ import { supabase } from '../../../lib/supabase';
 
 const SalesValue: React.FC = () => {
   const [selectedPeriod, setSelectedPeriod] = useState('monthly');
-  // const [selectedCategory, setSelectedCategory] = useState('all');
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  type TxRow = { id: string; total_amount: number; transaction_date: string; payment_method: string | null };
-  type ItemRow = { product_id: string; quantity: number; unit_price: number; discount_amount: number | null; line_total: number | null; created_at: string };
-  type ProductRow = { id: string; name: string; category_id: string | null; cost_price: number };
+  type TxRow = { id: string; total_amount: number; transaction_date: string; payment_status: string };
+  type ItemRow = { product_id: string; quantity: number; unit_price: number; total_price: number; created_at: string };
+  type ProductRow = { id: string; name: string; category_id: string; sku: string };
+  type VariantRow = { id: string; product_id: string; cost: number; price: number; name: string };
   type CategoryRow = { id: string; name: string };
 
   type Metric = { title: string; value: string; change: string; isPositive: boolean; period: string; color: string; icon: 'sales' | 'order' | 'daily' | 'target' };
@@ -44,11 +44,24 @@ const SalesValue: React.FC = () => {
       try {
         const { start, end, prevStart, prevEnd } = getPeriodRange(selectedPeriod);
 
-        const [{ data: txRows, error: txErr }, { data: prevTxRows, error: prevTxErr }] = await Promise.all([
-          supabase.from('sales_transactions').select('id, total_amount, transaction_date, payment_method').gte('transaction_date', start.toISOString()).lt('transaction_date', end.toISOString()) as any,
-          supabase.from('sales_transactions').select('id, total_amount, transaction_date').gte('transaction_date', prevStart.toISOString()).lt('transaction_date', prevEnd.toISOString()) as any,
-        ]);
-        if (txErr) throw txErr; if (prevTxErr) throw prevTxErr;
+        // Fetch current period transactions
+        const { data: txRows, error: txErr } = await supabase
+          .from('sales_transactions')
+          .select('id, total_amount, transaction_date, payment_status')
+          .gte('transaction_date', start.toISOString())
+          .lt('transaction_date', end.toISOString())
+          .eq('payment_status', 'completed'); // Only count completed transactions
+
+        // Fetch previous period transactions for comparison
+        const { data: prevTxRows, error: prevTxErr } = await supabase
+          .from('sales_transactions')
+          .select('id, total_amount, transaction_date')
+          .gte('transaction_date', prevStart.toISOString())
+          .lt('transaction_date', prevEnd.toISOString())
+          .eq('payment_status', 'completed');
+
+        if (txErr) throw txErr; 
+        if (prevTxErr) throw prevTxErr;
         const txs = (txRows as TxRow[] | null) || [];
         const prevTxs = (prevTxRows as TxRow[] | null) || [];
 
@@ -67,40 +80,93 @@ const SalesValue: React.FC = () => {
           { title: 'Sales Target Achievement', value: `${targetAch.toFixed(1)}%`, change: '', isPositive: true, period: 'vs previous', color: 'bg-orange-600', icon: 'target' },
         ]);
 
-        // Category breakdown and top products based on items
+        // Get transaction items for product analysis
         const txIds = Array.from(new Set(txs.map(t => t.id)));
-        const { data: itemsData, error: itemsErr } = txIds.length ? await supabase.from('transaction_items').select('product_id, quantity, unit_price, discount_amount, line_total, created_at').in('transaction_id', txIds) : { data: [], error: null } as any;
+        const { data: itemsData, error: itemsErr } = txIds.length 
+          ? await supabase
+              .from('transaction_items')
+              .select('product_id, quantity, unit_price, total_price, created_at')
+              .in('transaction_id', txIds)
+          : { data: [], error: null };
+
         if (itemsErr) throw itemsErr;
         const items = (itemsData as ItemRow[] | null) || [];
+
+        // Get product and variant data
         const productIds = Array.from(new Set(items.map(i => i.product_id)));
         const [{ data: prodRows, error: prodErr }, { data: catRows, error: catErr }] = await Promise.all([
-          productIds.length ? supabase.from('products').select('id, name, category_id, cost_price').in('id', productIds) : { data: [], error: null } as any,
-          supabase.from('categories').select('id, name'),
+          productIds.length 
+            ? supabase
+                .from('products')
+                .select('id, name, category_id, sku')
+                .in('id', productIds)
+                .eq('is_active', true)
+            : { data: [], error: null },
+          supabase
+            .from('categories')
+            .select('id, name')
+            .eq('is_active', true),
         ]);
-        if (prodErr) throw prodErr; if (catErr) throw catErr;
+
+        if (prodErr) throw prodErr; 
+        if (catErr) throw catErr;
+
         const products = (prodRows as ProductRow[]) || [];
         const cats = (catRows as CategoryRow[]) || [];
-        const catNameById = new Map<string, string>(); cats.forEach(c => catNameById.set(c.id, c.name));
+        const catNameById = new Map<string, string>(); 
+        cats.forEach(c => catNameById.set(c.id, c.name));
 
+        // Get product variants for cost data
+        const { data: variantRows, error: variantErr } = productIds.length
+          ? await supabase
+              .from('product_variants')
+              .select('id, product_id, cost, price, name')
+              .in('product_id', productIds)
+              .eq('is_active', true)
+          : { data: [], error: null };
+
+        if (variantErr) throw variantErr;
+        const variants = (variantRows as VariantRow[]) || [];
+
+        // Create variant lookup by product_id
+        const variantByProductId = new Map<string, VariantRow>();
+        variants.forEach(v => {
+          if (!variantByProductId.has(v.product_id)) {
+            variantByProductId.set(v.product_id, v);
+          }
+        });
+
+        // Calculate category and product metrics
         const byCategory = new Map<string, { revenue: number; units: number }>();
         const byProduct = new Map<string, { name: string; revenue: number; units: number; margin: number }>();
+
         items.forEach(i => {
-          const revenue = Number(i.line_total ?? (i.quantity * (i.unit_price || 0) - (i.discount_amount || 0)));
+          const revenue = Number(i.total_price || 0);
           const p = products.find(pp => pp.id === i.product_id);
           const category = p?.category_id ? (catNameById.get(p.category_id) || 'Uncategorized') : 'Uncategorized';
+          
+          // Update category metrics
           const prevC = byCategory.get(category) || { revenue: 0, units: 0 };
-          prevC.revenue += revenue; prevC.units += Number(i.quantity || 0); byCategory.set(category, prevC);
+          prevC.revenue += revenue; 
+          prevC.units += Number(i.quantity || 0); 
+          byCategory.set(category, prevC);
+
+          // Update product metrics
           if (p) {
             const prevP = byProduct.get(p.id) || { name: p.name, revenue: 0, units: 0, margin: 0 };
             prevP.revenue += revenue;
             prevP.units += Number(i.quantity || 0);
-            const unitCost = Number(p.cost_price || 0);
+            
+            // Calculate margin using variant cost
+            const variant = variantByProductId.get(p.id);
+            const unitCost = variant ? Number(variant.cost || 0) : 0;
             const profit = revenue - unitCost * Number(i.quantity || 0);
             prevP.margin = prevP.revenue > 0 ? (profit / prevP.revenue) * 100 : 0;
             byProduct.set(p.id, prevP);
           }
         });
 
+        // Set category metrics
         const catTotal = Array.from(byCategory.values()).reduce((s, v) => s + v.revenue, 0);
         const COLORS = ['bg-red-500','bg-green-500','bg-orange-500','bg-blue-500','bg-yellow-500','bg-purple-500'];
         const catList: CategoryMetric[] = Array.from(byCategory.entries()).map(([category, v], idx) => ({
@@ -110,24 +176,39 @@ const SalesValue: React.FC = () => {
           growth: '',
           color: COLORS[idx % COLORS.length],
         }))
-        .sort((a, b) => Number(a.value.replace(/[^0-9]/g,'') ) < Number(b.value.replace(/[^0-9]/g,'')) ? 1 : -1);
+        .sort((a, b) => Number(a.value.replace(/[^0-9]/g,'')) < Number(b.value.replace(/[^0-9]/g,'')) ? 1 : -1);
         setSalesByCategory(catList);
 
+        // Set top products
         const topList: TopProd[] = Array.from(byProduct.values())
           .map(p => ({ name: p.name, sales: formatPHP(p.revenue), units: p.units, margin: `${p.margin.toFixed(1)}%` }))
           .sort((a, b) => Number(a.sales.replace(/[^0-9]/g,'')) < Number(b.sales.replace(/[^0-9]/g,'')) ? 1 : -1)
           .slice(0, 5);
         setTopProducts(topList);
 
-        // Monthly trends using last 6 months
+        // Generate monthly trends for last 6 months
         const months: Trend[] = [];
         for (let i = 5; i >= 0; i--) {
-          const d = new Date(); d.setMonth(d.getMonth() - i, 1); d.setHours(0,0,0,0);
+          const d = new Date(); 
+          d.setMonth(d.getMonth() - i, 1); 
+          d.setHours(0,0,0,0);
           const next = new Date(d.getFullYear(), d.getMonth() + 1, 1);
-          const { data, error: e } = await supabase.from('sales_transactions').select('total_amount, transaction_date').gte('transaction_date', d.toISOString()).lt('transaction_date', next.toISOString());
+          
+          const { data, error: e } = await supabase
+            .from('sales_transactions')
+            .select('total_amount, transaction_date')
+            .gte('transaction_date', d.toISOString())
+            .lt('transaction_date', next.toISOString())
+            .eq('payment_status', 'completed');
+          
           if (e) throw e;
           const monthSales = ((data as any[])||[]).reduce((s, r) => s + Number(r.total_amount || 0), 0);
-          months.push({ month: d.toLocaleString('en-US', { month: 'short' }), sales: monthSales, target: monthSales * 1.05, orders: ((data as any[])||[]).length });
+          months.push({ 
+            month: d.toLocaleString('en-US', { month: 'short' }), 
+            sales: monthSales, 
+            target: monthSales * 1.05, 
+            orders: ((data as any[])||[]).length 
+          });
         }
         setMonthlyTrends(months);
 

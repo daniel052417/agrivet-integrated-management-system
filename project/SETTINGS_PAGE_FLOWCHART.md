@@ -217,3 +217,10 @@ flowchart TD
 - **Memoization**: Notification catalogue for performance optimization
 
 
+
+
+
+
+
+
+

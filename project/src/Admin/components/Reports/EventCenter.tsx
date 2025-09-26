@@ -121,7 +121,7 @@ const EventCenter: React.FC = () => {
   const monthlyStats = [
     { month: 'Oct', events: 3, attendees: 456, revenue: 234000 },
     { month: 'Nov', events: 5, attendees: 789, revenue: 456000 },
-    { month: 'Dec', events: 4, events: 4, attendees: 623, revenue: 345000 },
+    { month: 'Dec', events: 4, attendees: 623, revenue: 345000 },
     { month: 'Jan', events: 6, attendees: 892, revenue: 567000 }
   ];
 
