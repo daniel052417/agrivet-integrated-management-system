@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ShoppingCart, Search, CreditCard, Receipt, User, Settings, LogOut } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { ShoppingCart, Search, User } from 'lucide-react';
 import ProductSearch from './ProductSearch';
 import ShoppingCartComponent from './ShoppingCart';
 import PaymentProcessing from './PaymentProcessing';
@@ -8,10 +7,13 @@ import CustomerLookup from './CustomerLookup';
 import POSHeader from './POSHeader';
 import QuickSaleShortcuts from './QuickSaleShortcuts';
 import POSDashboard from './POSDashboard';
-import { POSSession, CartItem, Customer, Product } from '../../types/pos';
+import FloatingActionButton from './shared/FloatingActionButton';
+import MobileBottomSheet from './shared/MobileBottomSheet';
+import POSSessionService from '../services/sessionService';
+import { POSSession, CartItem, Customer, ProductVariant, User as UserType } from '../../types/pos';
 
 interface POSInterfaceProps {
-  user: any;
+  user: UserType;
   onLogout: () => void;
 }
 
@@ -23,48 +25,32 @@ const POSInterface: React.FC<POSInterfaceProps> = ({ user, onLogout }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [showDashboard, setShowDashboard] = useState(false);
+  const [showMobileCart, setShowMobileCart] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
 
   // Initialize POS session
   useEffect(() => {
     initializePOSSession();
   }, []);
 
+  // Check if mobile
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
   const initializePOSSession = async () => {
     try {
       setIsLoading(true);
       
-      // Check if there's an open session for this cashier
-      const { data: existingSession, error: sessionError } = await supabase
-        .from('pos_sessions')
-        .select('*')
-        .eq('cashier_id', user.id)
-        .eq('status', 'open')
-        .single();
-
-      if (sessionError && sessionError.code !== 'PGRST116') {
-        throw sessionError;
-      }
-
-      if (existingSession) {
-        setCurrentSession(existingSession);
-      } else {
-        // Create new session
-        const sessionNumber = await generateSessionNumber();
-        const { data: newSession, error: createError } = await supabase
-          .from('pos_sessions')
-          .insert({
-            cashier_id: user.id,
-            branch_id: user.branch_id || null,
-            session_number: sessionNumber,
-            starting_cash: 0, // Will be updated when cashier opens drawer
-            status: 'open'
-          })
-          .select()
-          .single();
-
-        if (createError) throw createError;
-        setCurrentSession(newSession);
-      }
+      const session = await POSSessionService.initializeSession(user, user.branch_id);
+      setCurrentSession(session);
     } catch (error: any) {
       console.error('Error initializing POS session:', error);
       setError('Failed to initialize POS session');
@@ -73,17 +59,15 @@ const POSInterface: React.FC<POSInterfaceProps> = ({ user, onLogout }) => {
     }
   };
 
-  const generateSessionNumber = async (): Promise<string> => {
-    const today = new Date().toISOString().split('T')[0].replace(/-/g, '');
-    const { count } = await supabase
-      .from('pos_sessions')
-      .select('*', { count: 'exact', head: true })
-      .gte('created_at', `${today}T00:00:00`);
+  const calculateLineTotal = (item: CartItem): number => {
+    const baseAmount = item.product.pos_pricing_type === 'weight_based' && item.weight
+      ? item.unitPrice * item.weight
+      : item.unitPrice * item.quantity;
     
-    return `S${today}${String((count || 0) + 1).padStart(3, '0')}`;
+    return baseAmount - item.discount;
   };
 
-  const addToCart = (product: Product, quantity: number = 1, weight?: number, expiryDate?: string, batchNumber?: string) => {
+  const addToCart = (product: ProductVariant, quantity: number = 1, weight?: number, expiryDate?: string, batchNumber?: string) => {
     const existingItemIndex = cart.findIndex(item => 
       item.product.id === product.id && 
       item.weight === weight
@@ -101,9 +85,19 @@ const POSInterface: React.FC<POSInterfaceProps> = ({ user, onLogout }) => {
         product,
         quantity,
         weight,
-        unitPrice: product.unit_price,
+        unitPrice: product.price,
         discount: 0,
-        lineTotal: (product.unit_price * quantity) - (weight ? 0 : 0),
+        lineTotal: calculateLineTotal({
+          id: `${product.id}-${Date.now()}`,
+          product,
+          quantity,
+          weight,
+          unitPrice: product.price,
+          discount: 0,
+          lineTotal: 0,
+          expiryDate,
+          batchNumber
+        }),
         expiryDate,
         batchNumber
       };
@@ -126,14 +120,6 @@ const POSInterface: React.FC<POSInterfaceProps> = ({ user, onLogout }) => {
   const clearCart = () => {
     setCart([]);
     setSelectedCustomer(null);
-  };
-
-  const calculateLineTotal = (item: CartItem): number => {
-    const baseAmount = item.product.pos_pricing_type === 'weight_based' && item.weight
-      ? item.unitPrice * item.weight
-      : item.unitPrice * item.quantity;
-    
-    return baseAmount - item.discount;
   };
 
   const calculateSubtotal = (): number => {
@@ -183,7 +169,7 @@ const POSInterface: React.FC<POSInterfaceProps> = ({ user, onLogout }) => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div className="min-h-screen bg-gray-50">
       <POSHeader 
         user={user}
         session={currentSession}
@@ -195,13 +181,13 @@ const POSInterface: React.FC<POSInterfaceProps> = ({ user, onLogout }) => {
         {/* Main Content Area */}
         <div className="flex-1 flex flex-col">
           {/* Tab Navigation */}
-          <div className="bg-white border-b border-gray-200">
+          <div className="bg-white border-b border-gray-200 shadow-sm">
             <nav className="flex space-x-8 px-6">
               <button
                 onClick={() => setActiveTab('products')}
-                className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                className={`py-4 px-1 border-b-2 font-semibold text-sm transition-colors ${
                   activeTab === 'products'
-                    ? 'border-green-500 text-green-600'
+                    ? 'border-emerald-500 text-emerald-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
               >
@@ -210,9 +196,9 @@ const POSInterface: React.FC<POSInterfaceProps> = ({ user, onLogout }) => {
               </button>
               <button
                 onClick={() => setActiveTab('cart')}
-                className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                className={`py-4 px-1 border-b-2 font-semibold text-sm transition-colors ${
                   activeTab === 'cart'
-                    ? 'border-green-500 text-green-600'
+                    ? 'border-emerald-500 text-emerald-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
               >
@@ -221,9 +207,9 @@ const POSInterface: React.FC<POSInterfaceProps> = ({ user, onLogout }) => {
               </button>
               <button
                 onClick={() => setActiveTab('customers')}
-                className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                className={`py-4 px-1 border-b-2 font-semibold text-sm transition-colors ${
                   activeTab === 'customers'
-                    ? 'border-green-500 text-green-600'
+                    ? 'border-emerald-500 text-emerald-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
               >
@@ -237,17 +223,19 @@ const POSInterface: React.FC<POSInterfaceProps> = ({ user, onLogout }) => {
           <div className="flex-1 overflow-hidden">
             {activeTab === 'products' && (
               <div className="h-full flex">
-                <div className="flex-1 p-6">
+                <div className="flex-1">
                   <ProductSearch onAddToCart={addToCart} />
                 </div>
-                <div className="w-80 border-l border-gray-200 bg-white">
-                  <QuickSaleShortcuts onAddToCart={addToCart} />
-                </div>
+                {!isMobile && (
+                  <div className="w-80 border-l border-gray-200 bg-white">
+                    <QuickSaleShortcuts onAddToCart={addToCart} />
+                  </div>
+                )}
               </div>
             )}
             
             {activeTab === 'cart' && (
-              <div className="h-full p-6">
+              <div className="h-full">
                 <ShoppingCartComponent
                   cart={cart}
                   selectedCustomer={selectedCustomer}
@@ -263,7 +251,7 @@ const POSInterface: React.FC<POSInterfaceProps> = ({ user, onLogout }) => {
             )}
             
             {activeTab === 'customers' && (
-              <div className="h-full p-6">
+              <div className="h-full">
                 <CustomerLookup
                   selectedCustomer={selectedCustomer}
                   onSelectCustomer={setSelectedCustomer}
@@ -272,7 +260,7 @@ const POSInterface: React.FC<POSInterfaceProps> = ({ user, onLogout }) => {
             )}
             
             {activeTab === 'payment' && (
-              <div className="h-full p-6">
+              <div className="h-full">
                 <PaymentProcessing
                   cart={cart}
                   selectedCustomer={selectedCustomer}
@@ -299,6 +287,41 @@ const POSInterface: React.FC<POSInterfaceProps> = ({ user, onLogout }) => {
             ×
           </button>
         </div>
+      )}
+
+      {/* Mobile Bottom Sheet for Cart */}
+      {isMobile && (
+        <MobileBottomSheet
+          isOpen={showMobileCart}
+          onClose={() => setShowMobileCart(false)}
+          title="Shopping Cart"
+        >
+          <ShoppingCartComponent
+            cart={cart}
+            selectedCustomer={selectedCustomer}
+            onUpdateItem={updateCartItem}
+            onRemoveItem={removeFromCart}
+            onClearCart={clearCart}
+            subtotal={calculateSubtotal()}
+            tax={calculateTax()}
+            total={calculateTotal()}
+            onProceedToPayment={() => {
+              setShowMobileCart(false);
+              setActiveTab('payment');
+            }}
+          />
+        </MobileBottomSheet>
+      )}
+
+      {/* Mobile Floating Action Button */}
+      {isMobile && cart.length > 0 && (
+        <FloatingActionButton
+          onClick={() => setShowMobileCart(true)}
+          icon={ShoppingCart}
+          label="View Cart"
+          variant="primary"
+          className="fixed bottom-4 right-4 z-30"
+        />
       )}
 
       {/* Dashboard Modal */}

@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { Scale, Package, Syringe, Pill, Calendar, Hash } from 'lucide-react';
-import { Product } from '../../types/pos';
+import { ProductVariant } from '../../types/pos';
 
 interface AgrivetProductHandlerProps {
-  product: Product;
-  onAddToCart: (product: Product, quantity: number, weight?: number, expiryDate?: string, batchNumber?: string) => void;
+  product: ProductVariant;
+  onAddToCart: (product: ProductVariant, quantity: number, weight?: number, expiryDate?: string, batchNumber?: string) => void;
   onCancel: () => void;
 }
 
@@ -61,14 +61,14 @@ const AgrivetProductHandler: React.FC<AgrivetProductHandlerProps> = ({
         return 'syringe';
       }
     }
-    return product.unit_of_measure;
+    return product.products?.unit_of_measure || 'piece';
   };
 
   const calculateTotal = () => {
     if (product.pos_pricing_type === 'weight_based' && weight) {
-      return product.unit_price * weight;
+      return product.price * weight;
     } else {
-      return product.unit_price * quantity;
+      return product.price * quantity;
     }
   };
 
@@ -110,7 +110,7 @@ const AgrivetProductHandler: React.FC<AgrivetProductHandlerProps> = ({
         <div className="mb-4">
           <h4 className="font-medium text-gray-900 mb-2">{product.name}</h4>
           <p className="text-sm text-gray-600">SKU: {product.sku}</p>
-          <p className="text-sm text-gray-600">Price: {formatPrice(product.unit_price)} per {getUnitOfMeasureLabel()}</p>
+          <p className="text-sm text-gray-600">Price: {formatPrice(product.price)} per {getUnitOfMeasureLabel()}</p>
         </div>
 
         {/* Quantity/Weight Input */}
@@ -202,7 +202,7 @@ const AgrivetProductHandler: React.FC<AgrivetProductHandlerProps> = ({
           </div>
           {product.pos_pricing_type === 'weight_based' && weight && (
             <p className="text-xs text-gray-500 mt-1">
-              {formatPrice(product.unit_price)} × {weight} {getUnitOfMeasureLabel()}
+              {formatPrice(product.price)} × {weight} {getUnitOfMeasureLabel()}
             </p>
           )}
         </div>

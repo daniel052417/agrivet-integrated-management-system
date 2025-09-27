@@ -28,6 +28,8 @@ import Categories from '../inventory/Categories';
 import ActiveUsers from '../users/ActiveUsers';
 import UserAccounts from '../users/UserAccounts';
 import UserActivity from '../users/UserActivity';
+import SessionHistory from '../users/SessionHistory';
+import UserRolesOverview from '../users/UserRolesOverview';
 import AddStaff from '../hr/AddStaff';
 import UserPermissions from '../users/UserPermissions';
 import HRDashboard from '../hr/HRDashboard';
@@ -84,6 +86,10 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, onLogou
         return <RolesPermissions />;
       case 'activity-logs':
         return <UserActivity />;
+      case 'session-history':
+        return <SessionHistory />;
+      case 'user-roles-overview':
+        return <UserRolesOverview />;
       
       // Legacy staff management routes (for backward compatibility)
       case 'staff':

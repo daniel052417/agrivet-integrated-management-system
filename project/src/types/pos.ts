@@ -22,43 +22,63 @@ export interface Product {
   sku: string;
   name: string;
   description?: string;
-  category_id?: string;
-  supplier_id?: string;
-  unit_price: number;
-  cost_price: number;
-  stock_quantity: number;
-  minimum_stock: number;
-  maximum_stock?: number;
+  category_id: string;
+  brand?: string;
   unit_of_measure: string;
-  barcode?: string;
-  expiry_date?: string;
+  weight?: number;
+  dimensions?: any;
+  is_prescription_required?: boolean;
   is_active: boolean;
-  pos_pricing_type?: 'fixed' | 'weight_based' | 'bulk';
-  weight_per_unit?: number;
-  bulk_discount_threshold?: number;
-  bulk_discount_percentage?: number;
-  requires_expiry_date?: boolean;
-  requires_batch_tracking?: boolean;
-  is_quick_sale?: boolean;
   created_at: string;
   updated_at: string;
+  barcode?: string;
+  supplier_id?: string;
 }
 
 export interface ProductVariant {
   id: string;
   product_id: string;
-  variant_name: string;
+  sku: string;
+  name: string;
+  description?: string;
+  variant_type: string;
   variant_value: string;
-  price_modifier: number;
-  stock_quantity: number;
+  price: number;
+  cost?: number;
   is_active: boolean;
   created_at: string;
-  updated_at: string;
+  pos_pricing_type: 'fixed' | 'weight_based' | 'bulk';
+  weight_per_unit?: number;
+  bulk_discount_threshold?: number;
+  bulk_discount_percentage?: number;
+  requires_expiry_date: boolean;
+  requires_batch_tracking: boolean;
+  is_quick_sale: boolean;
+  barcode?: string;
+  expiry_date?: string;
+  batch_number?: string;
+  image_url?: string;
+  // Inventory information (joined from inventory table)
+  inventory?: Inventory;
 }
+
+export interface Inventory {
+  id: string;
+  branch_id: string;
+  product_variant_id: string;
+  quantity_on_hand: number;
+  quantity_reserved: number;
+  quantity_available: number; // Generated column
+  reorder_level: number;
+  max_stock_level: number;
+  last_counted?: string;
+  updated_at?: string;
+}
+
 
 export interface CartItem {
   id: string;
-  product: Product;
+  product: ProductVariant;
   quantity: number;
   weight?: number; // For weight-based products
   unitPrice: number;
@@ -70,24 +90,26 @@ export interface CartItem {
 
 export interface Customer {
   id: string;
-  customer_code: string;
+  customer_number: string;
   first_name: string;
   last_name: string;
   email?: string;
   phone?: string;
   address?: string;
   city?: string;
-  customer_type: 'individual' | 'business' | 'veterinarian' | 'farmer';
+  province?: string;
+  customer_type: 'regular' | 'vip' | 'wholesale';
+  is_active: boolean;
+  created_at: string;
+  user_id?: string;
+  customer_code?: string;
   date_of_birth?: string;
   registration_date: string;
-  is_active: boolean;
   total_spent: number;
   last_purchase_date?: string;
-  loyalty_points?: number;
-  loyalty_tier?: 'bronze' | 'silver' | 'gold' | 'platinum';
-  total_lifetime_spent?: number;
-  created_at: string;
-  updated_at: string;
+  loyalty_points: number;
+  loyalty_tier: 'bronze' | 'silver' | 'gold' | 'platinum';
+  total_lifetime_spent: number;
 }
 
 export interface POSTransaction {
@@ -318,5 +340,199 @@ export interface CustomerLookupProps {
   selectedCustomer?: Customer | null;
   onSelectCustomer: (customer: Customer | null) => void;
   filters?: CustomerSearchFilters;
+}
+
+// Additional database schema interfaces
+export interface Category {
+  id: string;
+  name: string;
+  description?: string;
+  parent_id?: string;
+  sort_order: number;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface Branch {
+  id: string;
+  name: string;
+  code: string;
+  address: string;
+  city: string;
+  province: string;
+  postal_code?: string;
+  phone?: string;
+  email?: string;
+  manager_id?: string;
+  is_active: boolean;
+  operating_hours?: any;
+  created_at: string;
+  branch_type: 'main' | 'satellite';
+}
+
+export interface User {
+  id: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  phone?: string;
+  branch_id?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  last_login?: string;
+  last_activity?: string;
+  status: 'online' | 'away' | 'offline';
+  current_session_id?: string;
+  timezone?: string;
+  preferred_language?: string;
+  role: string;
+  account_status: 'active' | 'inactive' | 'suspended' | 'pending' | 'invite_sent' | 'no_account';
+  mfa_enabled: boolean;
+  mfa_secret?: string;
+  mfa_backup_codes?: string;
+  last_password_reset?: string;
+  password_reset_token?: string;
+  password_reset_expires?: string;
+}
+
+export interface Role {
+  id: string;
+  name: string;
+  description?: string;
+  is_active: boolean;
+  created_at: string;
+  display_name?: string;
+  is_system_role: boolean;
+  updated_at: string;
+}
+
+export interface UserRole {
+  user_id: string;
+  role_id: string;
+  assigned_at: string;
+}
+
+export interface UserSession {
+  id: string;
+  user_id: string;
+  session_token: string;
+  ip_address?: string;
+  user_agent?: string;
+  device_info?: any;
+  location_info?: any;
+  current_page?: string;
+  status: 'active' | 'away' | 'inactive';
+  last_activity: string;
+  created_at: string;
+  expires_at: string;
+  updated_at: string;
+  is_active: boolean;
+}
+
+export interface StockMovement {
+  id: string;
+  branch_id: string;
+  product_variant_id: string;
+  movement_type: 'in' | 'out' | 'adjustment' | 'transfer';
+  quantity: number;
+  reference_type: 'purchase_order' | 'order' | 'adjustment' | 'transfer' | 'initial';
+  reference_id?: string;
+  batch_number?: string;
+  expiry_date?: string;
+  cost?: number;
+  notes?: string;
+  created_by: string;
+  created_at: string;
+}
+
+export interface StockAdjustment {
+  id: string;
+  branch_id: string;
+  adjustment_date: string;
+  reason: string;
+  status: 'draft' | 'approved' | 'cancelled';
+  total_value: number;
+  notes?: string;
+  created_by: string;
+  approved_by?: string;
+  created_at: string;
+}
+
+export interface PaymentMethod {
+  id: string;
+  name: string;
+  type: 'cash' | 'card' | 'digital_wallet';
+  is_active: boolean;
+  requires_reference: boolean;
+  processing_fee: number;
+  created_at: string;
+}
+
+export interface Supplier {
+  id: string;
+  name: string;
+  contact_person?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+  city?: string;
+  province?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+// Online Orders interfaces
+export interface OnlineOrder {
+  id: string;
+  order_number: string;
+  customer_id: string;
+  customer_name: string;
+  customer_phone: string;
+  customer_email?: string;
+  customer_address: string;
+  branch_id: string;
+  order_type: 'pickup' | 'delivery' | 'reservation';
+  status: 'pending' | 'confirmed' | 'ready' | 'completed' | 'cancelled';
+  payment_status: 'pending' | 'paid' | 'failed' | 'refunded';
+  payment_method: 'cash' | 'digital' | 'card';
+  subtotal: number;
+  tax_amount: number;
+  delivery_fee?: number;
+  total_amount: number;
+  special_instructions?: string;
+  estimated_ready_time?: string;
+  actual_ready_time?: string;
+  pickup_time?: string;
+  delivery_time?: string;
+  created_at: string;
+  updated_at: string;
+  confirmed_at?: string;
+  completed_at?: string;
+  items: OnlineOrderItem[];
+}
+
+export interface OnlineOrderItem {
+  id: string;
+  order_id: string;
+  product_id: string;
+  product_name: string;
+  product_sku: string;
+  quantity: number;
+  unit_price: number;
+  line_total: number;
+  special_instructions?: string;
+  weight_kg?: number;
+  expiry_date?: string;
+  batch_number?: string;
+}
+
+export interface OnlineOrderFilters {
+  status?: string;
+  order_type?: string;
+  date_from?: string;
+  date_to?: string;
+  customer_name?: string;
 }
 

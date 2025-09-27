@@ -1,15 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { Zap, Package, Plus } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
-import { Product, QuickSaleItem } from '../../types/pos';
+import POSDatabaseService from '../services/databaseService';
+import { ProductVariant, QuickSaleItem } from '../../types/pos';
 
 interface QuickSaleShortcutsProps {
-  onAddToCart: (product: Product, quantity?: number, weight?: number) => void;
+  onAddToCart: (product: ProductVariant, quantity?: number, weight?: number) => void;
 }
 
 const QuickSaleShortcuts: React.FC<QuickSaleShortcutsProps> = ({ onAddToCart }) => {
   const [quickSaleItems, setQuickSaleItems] = useState<QuickSaleItem[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
+  const [products, setProducts] = useState<ProductVariant[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
@@ -20,17 +20,9 @@ const QuickSaleShortcuts: React.FC<QuickSaleShortcutsProps> = ({ onAddToCart }) 
   const loadQuickSaleItems = async () => {
     try {
       setIsLoading(true);
-      const { data, error } = await supabase
-        .from('quick_sale_items')
-        .select(`
-          *,
-          products:product_id(*)
-        `)
-        .eq('is_active', true)
-        .order('sort_order');
-
-      if (error) throw error;
-      setQuickSaleItems(data || []);
+      // For now, we'll use a simple approach since quick_sale_items table might not exist
+      // In a real implementation, you'd create this table or use a different approach
+      setQuickSaleItems([]);
     } catch (error) {
       console.error('Error loading quick sale items:', error);
     } finally {
@@ -40,15 +32,10 @@ const QuickSaleShortcuts: React.FC<QuickSaleShortcutsProps> = ({ onAddToCart }) 
 
   const loadProducts = async () => {
     try {
-      const { data, error } = await supabase
-        .from('products')
-        .select('*')
-        .eq('is_active', true)
-        .eq('is_quick_sale', true)
-        .order('name');
-
-      if (error) throw error;
-      setProducts(data || []);
+      const productVariants = await POSDatabaseService.getProductVariants({
+        quickSaleOnly: true
+      });
+      setProducts(productVariants);
     } catch (error) {
       console.error('Error loading products:', error);
     }
@@ -61,7 +48,7 @@ const QuickSaleShortcuts: React.FC<QuickSaleShortcutsProps> = ({ onAddToCart }) 
     }
   };
 
-  const handleProductQuickSale = (product: Product) => {
+  const handleProductQuickSale = (product: ProductVariant) => {
     onAddToCart(product, 1);
   };
 
@@ -125,12 +112,12 @@ const QuickSaleShortcuts: React.FC<QuickSaleShortcutsProps> = ({ onAddToCart }) 
                               </h5>
                             </div>
                             <p className="text-xs text-gray-600">
-                              {formatPrice(product.unit_price)} × {item.quantity}
+                              {formatPrice(product.price)} × {item.quantity}
                             </p>
                           </div>
                           <div className="text-right">
                             <p className="text-sm font-semibold text-green-600">
-                              {formatPrice(product.unit_price * item.quantity)}
+                              {formatPrice(product.price * item.quantity)}
                             </p>
                             {item.shortcut_key && (
                               <p className="text-xs text-gray-400 bg-gray-100 px-1 rounded">
@@ -171,15 +158,15 @@ const QuickSaleShortcuts: React.FC<QuickSaleShortcutsProps> = ({ onAddToCart }) 
                               </h5>
                             </div>
                             <p className="text-xs text-gray-600">
-                              {product.sku} • Stock: {product.stock_quantity}
+                              {product.sku} • Stock: {product.inventory?.quantity_available || 0}
                             </p>
                           </div>
                           <div className="text-right">
                             <p className="text-sm font-semibold text-green-600">
-                              {formatPrice(product.unit_price)}
+                              {formatPrice(product.price)}
                             </p>
                             <p className="text-xs text-gray-400">
-                              {product.unit_of_measure}
+                              {product.products?.unit_of_measure || 'pcs'}
                             </p>
                           </div>
                         </div>

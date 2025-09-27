@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ArrowLeft, CreditCard, DollarSign, CheckCircle, AlertCircle } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
 import { CartItem, Customer, POSSession, PaymentFormData } from '../../types/pos';
+import POSDatabaseService from '../services/databaseService';
 
 interface PaymentProcessingProps {
   cart: CartItem[];
@@ -66,92 +66,62 @@ const PaymentProcessing: React.FC<PaymentProcessingProps> = ({
     setError('');
 
     try {
-      // Generate transaction number
-      const transactionNum = await generateTransactionNumber();
-      setTransactionNumber(transactionNum);
-
       // Create transaction record
-      const { data: transaction, error: transactionError } = await supabase
-        .from('pos_transactions')
-        .insert({
-          transaction_number: transactionNum,
-          pos_session_id: session.id,
-          customer_id: selectedCustomer?.id || null,
-          cashier_id: session.cashier_id,
-          branch_id: session.branch_id,
-          transaction_type: 'sale',
-          subtotal: subtotal,
-          discount_amount: cart.reduce((sum, item) => sum + item.discount, 0),
-          tax_amount: tax,
-          total_amount: total,
-          payment_status: 'completed',
-          status: 'active'
-        })
-        .select()
-        .single();
+      const transaction = await POSDatabaseService.createPOSTransaction({
+        pos_session_id: session.id,
+        customer_id: selectedCustomer?.id || undefined,
+        cashier_id: session.cashier_id,
+        branch_id: session.branch_id,
+        transaction_type: 'sale',
+        subtotal: subtotal,
+        discount_amount: cart.reduce((sum, item) => sum + item.discount, 0),
+        tax_amount: tax,
+        total_amount: total,
+        payment_status: 'completed',
+        status: 'active'
+      });
 
-      if (transactionError) throw transactionError;
+      setTransactionNumber(transaction.transaction_number);
 
       // Create transaction items
       const transactionItems = cart.map(item => ({
-        transaction_id: transaction.id,
         product_id: item.product.id,
         product_name: item.product.name,
         product_sku: item.product.sku,
         quantity: item.quantity,
-        unit_of_measure: item.product.unit_of_measure,
+        unit_of_measure: item.product.products?.unit_of_measure || 'piece',
         unit_price: item.unitPrice,
         discount_amount: item.discount,
         line_total: item.lineTotal,
-        weight_kg: item.weight || null,
-        expiry_date: item.expiryDate || null,
-        batch_number: item.batchNumber || null
+        weight_kg: item.weight || undefined,
+        expiry_date: item.expiryDate || undefined,
+        batch_number: item.batchNumber || undefined
       }));
 
-      const { error: itemsError } = await supabase
-        .from('pos_transaction_items')
-        .insert(transactionItems);
-
-      if (itemsError) throw itemsError;
+      await POSDatabaseService.createTransactionItems(transaction.id, transactionItems);
 
       // Create payment record
-      const paymentData = {
+      await POSDatabaseService.createPayment({
         transaction_id: transaction.id,
         payment_method: paymentMethod,
-        payment_type: paymentMethod === 'digital' ? digitalPaymentType : null,
+        payment_type: paymentMethod === 'digital' ? digitalPaymentType : undefined,
         amount: total,
         change_given: calculateChange(),
-        reference_number: paymentMethod === 'digital' ? referenceNumber : null,
+        reference_number: paymentMethod === 'digital' ? referenceNumber : undefined,
         payment_status: 'completed'
-      };
-
-      const { error: paymentError } = await supabase
-        .from('pos_payments')
-        .insert(paymentData);
-
-      if (paymentError) throw paymentError;
+      });
 
       // Update product stock quantities
       for (const item of cart) {
         const newStock = item.product.stock_quantity - item.quantity;
-        const { error: stockError } = await supabase
-          .from('products')
-          .update({ stock_quantity: newStock })
-          .eq('id', item.product.id);
-
-        if (stockError) throw stockError;
+        await POSDatabaseService.updateProductVariantStock(item.product.id, newStock);
       }
 
       // Update session totals
-      const { error: sessionError } = await supabase
-        .from('pos_sessions')
-        .update({
-          total_sales: session.total_sales + total,
-          total_transactions: session.total_transactions + 1
-        })
-        .eq('id', session.id);
-
-      if (sessionError) throw sessionError;
+      await POSDatabaseService.updatePOSSession(session.id, {
+        total_sales: session.total_sales + total,
+        total_transactions: session.total_transactions + 1
+      });
 
       setTransactionComplete(true);
 
@@ -163,15 +133,6 @@ const PaymentProcessing: React.FC<PaymentProcessingProps> = ({
     }
   };
 
-  const generateTransactionNumber = async (): Promise<string> => {
-    const today = new Date().toISOString().split('T')[0].replace(/-/g, '');
-    const { count } = await supabase
-      .from('pos_transactions')
-      .select('*', { count: 'exact', head: true })
-      .gte('created_at', `${today}T00:00:00`);
-    
-    return `T${today}${String((count || 0) + 1).padStart(4, '0')}`;
-  };
 
   const handlePrintReceipt = () => {
     // TODO: Implement receipt printing

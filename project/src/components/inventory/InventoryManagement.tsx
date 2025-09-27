@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Search, Filter, Plus, Edit, Trash2, Eye, X, Save, Package } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Search, Filter, Plus, Edit, Trash2, Eye, X, Save, Package, Upload, Image as ImageIcon } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 interface Category {
@@ -40,6 +40,7 @@ interface ProductRow {
   variant_sku: string;
   price: number;
   cost: number | null;
+  image_url?: string;
   // Additional fields from the query
   variant_type?: string;
   variant_value?: string;
@@ -74,20 +75,113 @@ const InventoryManagement: React.FC = () => {
     branch_id: '',
     description: '',
     variant_name: '',
-    variant_sku: ''
+    variant_sku: '',
+    image_url: ''
   });
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Image upload functions
+  const uploadImage = async (file: File): Promise<string> => {
+    try {
+      setIsUploadingImage(true);
+      
+      // Create a unique filename
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
+      const filePath = `product-images/${fileName}`;
+
+      console.log('Attempting to upload image to bucket: product-images');
+      console.log('File path:', filePath);
+
+      // Try to upload directly - if bucket doesn't exist, we'll get a clear error
+      const { data, error } = await supabase.storage
+        .from('product-images')
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: false
+        });
+
+      if (error) {
+        console.error('Storage upload error:', error);
+        
+        // Check if it's a bucket not found error
+        if (error.message.includes('Bucket not found') || error.message.includes('not found')) {
+          throw new Error('Storage bucket "product-images" not found. Please create it in your Supabase dashboard and make sure it\'s set to public.');
+        }
+        
+        throw new Error(`Failed to upload image: ${error.message}`);
+      }
+
+      console.log('Upload successful:', data);
+
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('product-images')
+        .getPublicUrl(filePath);
+
+      console.log('Public URL generated:', publicUrl);
+      console.log('Image URL will be saved to database:', publicUrl);
+      return publicUrl;
+    } catch (error) {
+      console.error('Error uploading image:', error);
+      throw error; // Re-throw the original error to preserve the message
+    } finally {
+      setIsUploadingImage(false);
+    }
+  };
+
+  const handleImageSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        setError('Please select a valid image file');
+        return;
+      }
+
+      // Validate file size (5MB max)
+      if (file.size > 5 * 1024 * 1024) {
+        setError('Image size must be less than 5MB');
+        return;
+      }
+
+      setImageFile(file);
+      
+      // Create preview
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setImagePreview(e.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const removeImage = () => {
+    setImageFile(null);
+    setImagePreview(null);
+    setFormData(prev => ({ ...prev, image_url: '' }));
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
 
   const fetchProducts = async () => {
     console.log('🚀 Starting to fetch products...');
     setIsLoadingProducts(true);
+    
     try {
       // Use RPC function to execute the complex SQL query
       const { data, error } = await supabase.rpc('get_inventory_with_details', {
         branch_filter: selectedBranch !== 'all' ? selectedBranch : null
       });
       
-      if (error) throw error;
-      
+      if (error){ 
+        console.error('❌ RPC Error:', error);
+        throw error;
+      }
       console.log('🔍 Raw inventory data fetched:', data);
       console.log('📊 Number of inventory records:', data?.length || 0);
       console.log('🏢 Selected branch:', selectedBranch);
@@ -111,9 +205,10 @@ const InventoryManagement: React.FC = () => {
         max_stock_level: item.max_stock_level,
         variant_id: item.variant_id,
         variant_name: item.variant_name,
-        variant_sku: item.variant_name, // Using variant_name as SKU
+        variant_sku: item.variant_sku, // Using variant_name as SKU
         price: item.price,
-        cost: null, // Not in the query, will need to add if needed
+        cost: item.cost, // Not in the query, will need to add if needed
+        image_url: item.image_url || null,
         // Additional fields from the query
         variant_type: item.variant_type,
         variant_value: item.variant_value,
@@ -126,6 +221,8 @@ const InventoryManagement: React.FC = () => {
       
       setProducts(transformedData);
     } catch (err: any) {
+      console.error('❌ Error fetching products:', err);
+    setError('Failed to load products: ' + (err.message || 'Unknown error'));
       console.error('Error fetching products:', err);
       setError('Failed to load products');
     } finally {
@@ -202,6 +299,19 @@ const InventoryManagement: React.FC = () => {
         throw new Error('Please fill in all required fields');
       }
 
+      // Upload image if selected
+      let imageUrl = formData.image_url;
+      if (imageFile) {
+        try {
+          imageUrl = await uploadImage(imageFile);
+        } catch (uploadError: any) {
+          console.error('Image upload failed:', uploadError);
+          // For now, continue without image rather than failing the entire form
+          setError(`Image upload failed: ${uploadError?.message || 'Unknown error'}. Product will be saved without image.`);
+          imageUrl = ''; // Set to empty string so we don't save an invalid URL
+        }
+      }
+
       if (modalMode === 'add') {
         // Create product first
         const productData = {
@@ -228,8 +338,11 @@ const InventoryManagement: React.FC = () => {
           sku: formData.variant_sku.trim().toUpperCase() || formData.sku.trim().toUpperCase(),
           price: parseFloat(formData.price),
           cost: parseFloat(formData.cost) || parseFloat(formData.price) * 0.7,
+          image_url: imageUrl || null,
           is_active: true
         };
+
+        console.log('Creating product variant with data:', variantData);
 
         const { data: newVariant, error: variantError } = await supabase
           .from('product_variants')
@@ -281,7 +394,8 @@ const InventoryManagement: React.FC = () => {
           name: formData.variant_name.trim() || formData.name.trim(),
           sku: formData.variant_sku.trim().toUpperCase() || formData.sku.trim().toUpperCase(),
           price: parseFloat(formData.price),
-          cost: parseFloat(formData.cost) || parseFloat(formData.price) * 0.7
+          cost: parseFloat(formData.cost) || parseFloat(formData.price) * 0.7,
+          image_url: imageUrl || null
         };
 
         const { error: variantError } = await supabase
@@ -294,7 +408,6 @@ const InventoryManagement: React.FC = () => {
         // Update inventory
         const inventoryData = {
           quantity_on_hand: parseInt(formData.stock_quantity),
-          quantity_available: parseInt(formData.stock_quantity),
           reorder_level: parseInt(formData.reorder_level) || Math.max(10, parseInt(formData.stock_quantity) * 0.2),
           max_stock_level: parseInt(formData.stock_quantity) * 2
         };
@@ -325,8 +438,11 @@ const InventoryManagement: React.FC = () => {
         branch_id: '',
         description: '',
         variant_name: '',
-        variant_sku: ''
+        variant_sku: '',
+        image_url: ''
       });
+      setImageFile(null);
+      setImagePreview(null);
       setEditingProductId(null);
       setModalMode('add');
 
@@ -354,8 +470,11 @@ const InventoryManagement: React.FC = () => {
       branch_id: '',
       description: '',
       variant_name: '',
-      variant_sku: ''
+      variant_sku: '',
+      image_url: ''
     });
+    setImageFile(null);
+    setImagePreview(null);
     setError(null);
     setSuccess(null);
   };
@@ -422,8 +541,11 @@ const InventoryManagement: React.FC = () => {
       branch_id: '',
       description: '',
       variant_name: '',
-      variant_sku: ''
+      variant_sku: '',
+      image_url: ''
     });
+    setImageFile(null);
+    setImagePreview(null);
     setEditingProductId(null);
     setModalMode('add');
     setIsModalOpen(true);
@@ -442,8 +564,11 @@ const InventoryManagement: React.FC = () => {
       branch_id: product.branch_id || '',
       description: product.description || '',
       variant_name: product.variant_name || '',
-      variant_sku: product.variant_sku || ''
+      variant_sku: product.variant_sku || '',
+      image_url: product.image_url || ''
     });
+    setImageFile(null);
+    setImagePreview(product.image_url || null);
     setEditingProductId(product.id);
     setModalMode('edit');
     setIsModalOpen(true);
@@ -533,6 +658,9 @@ const InventoryManagement: React.FC = () => {
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Image
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Product / Branch
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -572,6 +700,19 @@ const InventoryManagement: React.FC = () => {
                       : 'In Stock';
                   return (
                 <tr key={product.id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 flex items-center justify-center">
+                      {product.image_url ? (
+                        <img
+                          src={product.image_url}
+                          alt={product.name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <ImageIcon className="w-6 h-6 text-gray-400" />
+                      )}
+                    </div>
+                  </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div>
                       <div className="text-sm font-medium text-gray-900">{product.name}</div>
@@ -860,6 +1001,69 @@ const InventoryManagement: React.FC = () => {
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                     placeholder="Enter product description (optional)"
                   />
+                </div>
+
+                {/* Image Upload Section */}
+                <div className="col-span-full">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Product Image
+                  </label>
+                  <div className="space-y-4">
+                    {/* Image Preview */}
+                    {(imagePreview || formData.image_url) && (
+                      <div className="relative inline-block">
+                        <img
+                          src={imagePreview || formData.image_url}
+                          alt="Product preview"
+                          className="w-32 h-32 object-cover rounded-lg border border-gray-300"
+                        />
+                        <button
+                          type="button"
+                          onClick={removeImage}
+                          className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-colors"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Upload Button */}
+                    <div className="flex items-center space-x-4">
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={isUploadingImage}
+                        className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {isUploadingImage ? (
+                          <>
+                            <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div>
+                            <span>Uploading...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="w-4 h-4" />
+                            <span>{imagePreview || formData.image_url ? 'Change Image' : 'Upload Image'}</span>
+                          </>
+                        )}
+                      </button>
+                      
+                      {!imagePreview && !formData.image_url && (
+                        <span className="text-sm text-gray-500">
+                          JPG, PNG, GIF up to 5MB
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Hidden File Input */}
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageSelect}
+                      className="hidden"
+                    />
+                  </div>
                 </div>
               </form>
             </div>

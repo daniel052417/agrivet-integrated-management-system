@@ -61,11 +61,12 @@ const SimplifiedSidebar: React.FC<SimplifiedSidebarProps> = ({ user, activeSecti
     },
     
     { id: 'staff-user-management',
-       label: 'Staff & User Management',
+       label: 'User Management',
         icon: Users, category: 'Staff & Users',
          children: [ { id: 'user-accounts', label: 'User Accounts', icon: Users, category: 'Staff & Users' },
-                     { id: 'roles-permissions', label: 'Roles & Permissions', icon: Shield, category: 'Staff & Users' },
-                     { id: 'activity-logs', label: 'Activity Logs', icon: BarChart3, category: 'Staff & Users' }, ] 
+                     { id: 'activity-logs', label: 'Activity Logs', icon: BarChart3, category: 'Staff & Users' },
+                     { id: 'session-history', label: 'Session History', icon: Clock, category: 'Staff & Users' },
+                     { id: 'user-roles-overview', label: 'User Roles Overview', icon: Shield, category: 'Staff & Users' }, ] 
     },
     
     { 

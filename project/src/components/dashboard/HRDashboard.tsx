@@ -9,11 +9,13 @@ import AttendanceDashboard from '../../components/hr/AttendanceDashboard';
 import LeaveManagement from '../../components/hr/LeaveManagement';
 import HRAnalytics from '../../components/hr/HRAnalytics';
 import PayrollCompensation from '../../components/hr/PayrollCompensation';
-import UserAccounts from '../../Admin/components/Users/UserAccounts';
-import AddStaff from '../../Admin/components/Staff/AddStaff';
-import RolesPermissions from '../../Admin/components/Staff/RolesPermissions';
-import UserActivity from '../../Admin/components/Users/UserActivity';
-import UserPermissions from '../../Admin/components/Users/UserPermissions';
+import UserAccounts from '../users/UserAccounts';
+import AddStaff from '../hr/AddStaff';
+import RolesPermissions from '../staff/RolesPermissions';
+import UserActivity from '../users/UserActivity';
+import SessionHistory from '../users/SessionHistory';
+import UserRolesOverview from '../users/UserRolesOverview';
+import UserPermissions from '../users/UserPermissions';
 
 interface HRDashboardProps {
   user: SimplifiedUser;
@@ -41,8 +43,12 @@ const HRDashboardComponent: React.FC<HRDashboardProps> = ({ user, onLogout }) =>
         return <AddStaff onBack={() => setActiveSection('user-accounts')} />;
       case 'roles-permissions':
         return <RolesPermissions />;
-      case 'user-activity':
+      case 'activity-logs':
         return <UserActivity />;
+      case 'session-history':
+        return <SessionHistory />;
+      case 'user-roles-overview':
+        return <UserRolesOverview />;
       case 'user-permissions':
         return <UserPermissions />;
       default:
