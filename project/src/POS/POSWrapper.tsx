@@ -42,3 +42,6 @@ class POSWrapper extends Component<Props, State> {
 export default POSWrapper;
 
 
+
+
+

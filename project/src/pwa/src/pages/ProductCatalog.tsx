@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Search, Filter, ShoppingCart, ArrowLeft, Grid, List, Star, Package, Weight, Clock, TrendingUp } from 'lucide-react'
+import { Search, Filter, ShoppingCart, ArrowLeft, Grid, List, Star, Package, Clock, TrendingUp } from 'lucide-react'
 import { useBranch } from '../contexts/BranchContext'
 import { useCart } from '../contexts/CartContext'
-import { ProductVariant, SearchFilters, Category } from '../types'
-import { productService } from '../services/productService'
-import ProductCard from '../components/catalog/ProductCard'
+import { ProductVariant, SearchFilters, Category, Promotion, NotificationData } from '../types'
+import { promotionService } from '../services/promotionService'
 import ProductGrid from '../components/catalog/ProductGrid'
 import SearchBar from '../components/catalog/SearchBar'
 import FilterSidebar from '../components/catalog/FilterSidebar'
+import PromoBanner from '../components/promotions/PromoBanner'
+import PromoModal from '../components/promotions/PromoModal'
+import PushNotificationSimulator from '../components/promotions/PushNotificationSimulator'
 import LoadingSpinner from '../components/common/LoadingSpinner'
 import ErrorMessage from '../components/common/ErrorMessage'
 
@@ -256,6 +258,13 @@ const ProductCatalog: React.FC = () => {
     inStock: true
   })
 
+  // Promotional state
+  const [bannerPromotions, setBannerPromotions] = useState<Promotion[]>([])
+  const [modalPromotions, setModalPromotions] = useState<Promotion[]>([])
+  const [showModal, setShowModal] = useState(false)
+  const [currentModalPromotion, setCurrentModalPromotion] = useState<Promotion | null>(null)
+  const [dismissedBanners, setDismissedBanners] = useState<Set<string>>(new Set())
+
   useEffect(() => {
     if (!selectedBranch) {
       navigate('/branch-selection')
@@ -263,7 +272,25 @@ const ProductCatalog: React.FC = () => {
     }
     loadProducts()
     loadCategories()
+    loadPromotions()
   }, [selectedBranch, filters, currentPage])
+
+  // Load promotional data
+  useEffect(() => {
+    if (selectedBranch) {
+      loadPromotions()
+    }
+  }, [selectedBranch])
+
+  // Check for modal display
+  useEffect(() => {
+    if (modalPromotions.length > 0 && promotionService.shouldShowModal()) {
+      const firstModalPromotion = modalPromotions[0]
+      setCurrentModalPromotion(firstModalPromotion)
+      setShowModal(true)
+      promotionService.markModalAsShown()
+    }
+  }, [modalPromotions])
 
   const loadProducts = async () => {
     if (!selectedBranch) return
@@ -333,6 +360,20 @@ const ProductCatalog: React.FC = () => {
     }
   }
 
+  const loadPromotions = async () => {
+    try {
+      const [bannerPromos, modalPromos] = await Promise.all([
+        promotionService.getBannerPromotions(),
+        promotionService.getModalPromotions()
+      ])
+      
+      setBannerPromotions(bannerPromos)
+      setModalPromotions(modalPromos)
+    } catch (err) {
+      console.error('Error loading promotions:', err)
+    }
+  }
+
   const handleSearch = (query: string) => {
     setFilters(prev => ({ ...prev, searchQuery: query }))
     setCurrentPage(1)
@@ -348,12 +389,61 @@ const ProductCatalog: React.FC = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
+  // Promotional handlers
+  const handleBannerDismiss = (promotionId: string) => {
+    setDismissedBanners(prev => new Set([...prev, promotionId]))
+  }
+
+  const handleBannerAction = (promotion: Promotion) => {
+    // Navigate to relevant products or apply filter
+    if (promotion.conditions?.applicableProducts) {
+      // Filter by applicable products
+      setFilters(prev => ({ 
+        ...prev, 
+        searchQuery: promotion.conditions?.applicableProducts?.join(' ') || '',
+        category: undefined 
+      }))
+    }
+    // Scroll to products
+    document.querySelector('.product-grid')?.scrollIntoView({ behavior: 'smooth' })
+  }
+
+  const handleModalClose = () => {
+    setShowModal(false)
+    setCurrentModalPromotion(null)
+  }
+
+  const handleModalAction = (promotion: Promotion) => {
+    handleBannerAction(promotion)
+    handleModalClose()
+  }
+
+  const handleSendNotification = async (notificationData: NotificationData) => {
+    try {
+      await promotionService.sendNotification(notificationData)
+    } catch (error) {
+      console.error('Failed to send notification:', error)
+    }
+  }
+
   if (!selectedBranch) {
     return null
   }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 to-blue-50">
+      {/* Promotional Banners */}
+      {bannerPromotions
+        .filter(promo => !dismissedBanners.has(promo.id))
+        .map((promotion) => (
+          <PromoBanner
+            key={promotion.id}
+            promotion={promotion}
+            onDismiss={() => handleBannerDismiss(promotion.id)}
+            onAction={() => handleBannerAction(promotion)}
+          />
+        ))}
+
       {/* Header */}
       <div className="bg-white shadow-lg border-b sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 py-6">
@@ -572,6 +662,21 @@ const ProductCatalog: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Promotional Modal */}
+      {currentModalPromotion && (
+        <PromoModal
+          promotion={currentModalPromotion}
+          isOpen={showModal}
+          onClose={handleModalClose}
+          onAction={() => handleModalAction(currentModalPromotion)}
+        />
+      )}
+
+      {/* Push Notification Simulator */}
+      <PushNotificationSimulator
+        onSendNotification={handleSendNotification}
+      />
     </div>
   )
 }

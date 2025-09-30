@@ -52,3 +52,6 @@ const FallbackPOS: React.FC = () => {
 export default FallbackPOS;
 
 
+
+
+

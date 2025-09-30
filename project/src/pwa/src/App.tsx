@@ -14,6 +14,9 @@ import Checkout from './pages/Checkout'
 import OrderConfirmation from './pages/OrderConfirmation'
 import NotFound from './pages/NotFound'
 
+// Demo Components
+import PromoDemo from './components/promotions/PromoDemo'
+
 // Layouts
 import MainLayout from './layouts/MainLayout'
 import KioskLayout from './layouts/KioskLayout'
@@ -62,6 +65,13 @@ function App() {
                 <Route path="/order-confirmation/:orderId" element={
                   <MainLayout>
                     <OrderConfirmation />
+                  </MainLayout>
+                } />
+                
+                {/* Demo Routes */}
+                <Route path="/demo/promotions" element={
+                  <MainLayout>
+                    <PromoDemo />
                   </MainLayout>
                 } />
                 

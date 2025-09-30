@@ -144,3 +144,58 @@ export interface BranchContextType {
   refreshBranches: () => Promise<void>
   isBranchOpen: (branchId: string) => boolean
 }
+
+// Promotional types
+export interface Promotion {
+  id: string
+  title: string
+  description: string
+  imageUrl?: string
+  discountType: 'percentage' | 'fixed' | 'bogo' | 'free_shipping'
+  discountValue: number
+  validFrom: string
+  validUntil: string
+  isActive: boolean
+  targetAudience: 'all' | 'new_customers' | 'returning_customers' | 'specific_branch'
+  targetBranchIds?: string[]
+  conditions?: {
+    minOrderAmount?: number
+    applicableProducts?: string[]
+    maxUses?: number
+  }
+  displaySettings: {
+    showAsBanner: boolean
+    showAsModal: boolean
+    showAsNotification: boolean
+    bannerPosition: 'top' | 'bottom'
+    modalTrigger: 'immediate' | 'delay' | 'scroll' | 'exit_intent'
+    notificationTrigger: 'immediate' | 'delay' | 'user_action'
+  }
+  createdAt: string
+  updatedAt: string
+}
+
+export interface PromoBannerProps {
+  promotion: Promotion
+  onDismiss?: () => void
+  onAction?: () => void
+}
+
+export interface PromoModalProps {
+  promotion: Promotion
+  isOpen: boolean
+  onClose: () => void
+  onAction?: () => void
+}
+
+export interface NotificationData {
+  title: string
+  body: string
+  icon?: string
+  image?: string
+  badge?: string
+  tag?: string
+  data?: any
+  requireInteraction?: boolean
+  silent?: boolean
+}

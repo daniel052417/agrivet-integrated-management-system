@@ -102,3 +102,6 @@ Login Page → Authentication → Role Check → POS System
 **The POS system is now fully integrated and ready to use!** 🎉
 
 
+
+
+

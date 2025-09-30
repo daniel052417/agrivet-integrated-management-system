@@ -165,3 +165,6 @@ const ReceiptPrinter: React.FC<ReceiptPrinterProps> = ({
 export default ReceiptPrinter;
 
 
+
+
+

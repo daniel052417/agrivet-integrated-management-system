@@ -524,3 +524,6 @@ const InventoryScreen: React.FC = () => {
 export default InventoryScreen;
 
 
+
+
+
