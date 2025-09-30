@@ -215,7 +215,7 @@ const CheckoutForm: React.FC<CheckoutFormProps> = ({
           <div className="flex items-start space-x-2">
             <MapPin className="w-4 h-4 text-gray-500 mt-0.5" />
             <div>
-              <p className="font-medium text-gray-900">{branch.name}</p>
+              <p className="font-medium text-gray-900">{branch.branch_name}</p>
               <p className="text-sm text-gray-600">{branch.address}</p>
               {branch.phone && (
                 <p className="text-sm text-gray-600">{branch.phone}</p>

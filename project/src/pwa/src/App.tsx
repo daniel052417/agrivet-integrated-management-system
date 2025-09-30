@@ -16,6 +16,7 @@ import NotFound from './pages/NotFound'
 
 // Demo Components
 import PromoDemo from './components/promotions/PromoDemo'
+import CarouselDemo from './components/promotions/CarouselDemo'
 
 // Layouts
 import MainLayout from './layouts/MainLayout'
@@ -72,6 +73,12 @@ function App() {
                 <Route path="/demo/promotions" element={
                   <MainLayout>
                     <PromoDemo />
+                  </MainLayout>
+                } />
+                
+                <Route path="/demo/carousel" element={
+                  <MainLayout>
+                    <CarouselDemo />
                   </MainLayout>
                 } />
                 

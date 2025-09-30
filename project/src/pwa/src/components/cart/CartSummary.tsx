@@ -32,7 +32,7 @@ const CartSummary: React.FC<CartSummaryProps> = ({
           <div className="flex items-start space-x-2">
             <MapPin className="w-4 h-4 text-gray-500 mt-0.5" />
             <div>
-              <p className="text-sm font-medium text-gray-900">{branch.name}</p>
+              <p className="text-sm font-medium text-gray-900">{branch.branch_name}</p>
               <p className="text-xs text-gray-600">{branch.address}</p>
             </div>
           </div>

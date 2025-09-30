@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react'
 import { Branch, BranchContextType, BranchAvailability } from '../types'
 import { branchService } from '../services/branchService'
+import { initializeAnonymousSession } from '../services/supabase'
 
 const BranchContext = createContext<BranchContextType | undefined>(undefined)
 
@@ -35,9 +36,15 @@ export const BranchProvider: React.FC<BranchProviderProps> = ({ children }) => {
     }
   }, [selectedBranch])
 
-  // Load branches on mount
+  // Initialize anonymous session and load branches on mount
   useEffect(() => {
-    refreshBranches()
+    const initializeAndLoad = async () => {
+      console.log('🔐 BranchContext: Initializing anonymous session...')
+      await initializeAnonymousSession()
+      console.log('🔄 BranchContext: Loading branches...')
+      refreshBranches()
+    }
+    initializeAndLoad()
   }, [])
 
   const selectBranch = (branch: Branch) => {
@@ -50,14 +57,21 @@ export const BranchProvider: React.FC<BranchProviderProps> = ({ children }) => {
 
   const refreshBranches = async () => {
     try {
+      console.log('🔄 BranchContext: Starting refreshBranches...')
+      console.log('🔄 BranchContext: Calling branchService.getBranches()...')
       const branches = await branchService.getBranches()
+      console.log('📊 BranchContext: Branches received from service:', branches)
+      console.log('📊 BranchContext: Number of branches:', branches.length)
       setAvailableBranches(branches)
       
       // Load branch availability
+      console.log('🔄 BranchContext: Calling branchService.getBranchAvailability()...')
       const availability = await branchService.getBranchAvailability()
+      console.log('📊 BranchContext: Availability received from service:', availability)
       setBranchAvailability(availability)
+      console.log('✅ BranchContext: refreshBranches completed successfully')
     } catch (error) {
-      console.error('Error refreshing branches:', error)
+      console.error('❌ BranchContext: Error refreshing branches:', error)
     }
   }
 

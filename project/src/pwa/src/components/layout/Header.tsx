@@ -31,7 +31,7 @@ const Header: React.FC<HeaderProps> = ({ branch }) => {
             {branch && (
               <div className="hidden md:flex items-center space-x-2 text-sm text-gray-600">
                 <MapPin className="w-4 h-4" />
-                <span>{branch.name}</span>
+                <span>{branch.branch_name}</span>
               </div>
             )}
           </div>

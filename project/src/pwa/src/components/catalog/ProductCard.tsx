@@ -45,7 +45,7 @@ const ProductCard: React.FC<ProductCardProps> = ({
           
           <div className="flex-1 min-w-0">
             <h3 className="font-medium text-gray-900 truncate">
-              {product.name}
+              {product.variant_name}
             </h3>
             <p className="text-sm text-gray-600 truncate">
               {product.products?.name}
@@ -91,7 +91,7 @@ const ProductCard: React.FC<ProductCardProps> = ({
       
       <div className="mb-4">
         <h3 className="font-medium text-gray-900 text-sm mb-1 line-clamp-2">
-          {product.name}
+          {product.variant_name}
         </h3>
         <p className="text-xs text-gray-600 mb-2">
           {product.products?.name}

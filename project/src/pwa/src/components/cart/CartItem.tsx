@@ -31,7 +31,7 @@ const CartItem: React.FC<CartItemProps> = ({
         
         <div className="flex-1 min-w-0">
           <h3 className="font-medium text-gray-900 truncate">
-            {item.product.name}
+            {item.product.variant_name}
           </h3>
           <p className="text-sm text-gray-600 truncate">
             {item.product.products?.name}

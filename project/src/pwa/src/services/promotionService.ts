@@ -1,157 +1,84 @@
+import { supabase } from './supabase'
 import { Promotion, NotificationData } from '../types'
 
 class PromotionService {
   private readonly SESSION_STORAGE_KEY = 'agrivet-promo-session'
   private readonly MODAL_SHOWN_KEY = 'agrivet-modal-shown'
 
-  // Sample promotional data
-  private samplePromotions: Promotion[] = [
-    {
-      id: '1',
-      title: '10% Off All Feeds!',
-      description: 'Get 10% discount on all animal feeds this week. Limited time offer!',
-      imageUrl: '/images/promo-feeds.jpg',
-      discountType: 'percentage',
-      discountValue: 10,
-      validFrom: new Date().toISOString(),
-      validUntil: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-      isActive: true,
-      targetAudience: 'all',
-      conditions: {
-        minOrderAmount: 500,
-        maxUses: 1000
-      },
-      displaySettings: {
-        showAsBanner: true,
-        showAsModal: false,
-        showAsNotification: true,
-        bannerPosition: 'top',
-        modalTrigger: 'immediate',
-        notificationTrigger: 'user_action'
-      },
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    },
-    {
-      id: '2',
-      title: 'Free Shipping Weekend!',
-      description: 'Enjoy free shipping on all orders this weekend. No minimum purchase required.',
-      imageUrl: '/images/promo-shipping.jpg',
-      discountType: 'free_shipping',
-      discountValue: 0,
-      validFrom: new Date().toISOString(),
-      validUntil: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(),
-      isActive: true,
-      targetAudience: 'all',
-      displaySettings: {
-        showAsBanner: false,
-        showAsModal: true,
-        showAsNotification: true,
-        bannerPosition: 'top',
-        modalTrigger: 'delay',
-        notificationTrigger: 'user_action'
-      },
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    },
-    {
-      id: '3',
-      title: 'Buy 1 Get 1 on Seeds!',
-      description: 'Buy any seed packet and get another one free. Perfect for your garden!',
-      imageUrl: '/images/promo-seeds.jpg',
-      discountType: 'bogo',
-      discountValue: 1,
-      validFrom: new Date().toISOString(),
-      validUntil: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(),
-      isActive: true,
-      targetAudience: 'all',
-      conditions: {
-        applicableProducts: ['seeds', 'planting-materials']
-      },
-      displaySettings: {
-        showAsBanner: true,
-        showAsModal: false,
-        showAsNotification: true,
-        bannerPosition: 'top',
-        modalTrigger: 'immediate',
-        notificationTrigger: 'user_action'
-      },
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    },
-    {
-      id: '4',
-      title: '₱100 Off Orders Over ₱1000',
-      description: 'Save ₱100 on orders over ₱1000. Valid on all products!',
-      imageUrl: '/images/promo-fixed-discount.jpg',
-      discountType: 'fixed',
-      discountValue: 100,
-      validFrom: new Date().toISOString(),
-      validUntil: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString(),
-      isActive: true,
-      targetAudience: 'all',
-      conditions: {
-        minOrderAmount: 1000,
-        maxUses: 500
-      },
-      displaySettings: {
-        showAsBanner: false,
-        showAsModal: true,
-        showAsNotification: true,
-        bannerPosition: 'top',
-        modalTrigger: 'scroll',
-        notificationTrigger: 'user_action'
-      },
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    }
-  ]
-
-  // Get all active promotions
   async getActivePromotions(): Promise<Promotion[]> {
     try {
-      // Simulate API delay
-      await new Promise(resolve => setTimeout(resolve, 300))
-      
-      const now = new Date()
-      return this.samplePromotions.filter(promo => 
-        promo.isActive && 
-        new Date(promo.validFrom) <= now && 
-        new Date(promo.validUntil) >= now
-      )
+      const { data, error } = await supabase
+        .from('promotions')
+        .select('*')
+        .eq('is_active', true)
+        .gte('valid_until', new Date().toISOString())
+        .lte('valid_from', new Date().toISOString())
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+      return data || []
     } catch (error) {
       console.error('Error fetching promotions:', error)
       return []
     }
   }
 
-  // Get banner promotions
   async getBannerPromotions(): Promise<Promotion[]> {
-    const activePromotions = await this.getActivePromotions()
-    return activePromotions.filter(promo => promo.displaySettings.showAsBanner)
+    try {
+      const { data, error } = await supabase
+        .from('promotions')
+        .select('*')
+        .eq('is_active', true)
+        .eq('display_settings->>showAsBanner', 'true')
+        .gte('valid_until', new Date().toISOString())
+        .lte('valid_from', new Date().toISOString())
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+      return data || []
+    } catch (error) {
+      console.error('Error fetching banner promotions:', error)
+      return []
+    }
   }
 
-  // Get modal promotions
   async getModalPromotions(): Promise<Promotion[]> {
-    const activePromotions = await this.getActivePromotions()
-    return activePromotions.filter(promo => promo.displaySettings.showAsModal)
+    try {
+      const { data, error } = await supabase
+        .from('promotions')
+        .select('*')
+        .eq('is_active', true)
+        .eq('display_settings->>showAsModal', 'true')
+        .gte('valid_until', new Date().toISOString())
+        .lte('valid_from', new Date().toISOString())
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+      return data || []
+    } catch (error) {
+      console.error('Error fetching modal promotions:', error)
+      return []
+    }
   }
 
-  // Check if modal should be shown in this session
   shouldShowModal(): boolean {
+    if (typeof window === 'undefined') return false
+    
     const sessionId = this.getSessionId()
-    const modalShown = sessionStorage.getItem(`${this.MODAL_SHOWN_KEY}-${sessionId}`)
-    return !modalShown
+    const shown = sessionStorage.getItem(`${this.MODAL_SHOWN_KEY}-${sessionId}`)
+    return !shown
   }
 
-  // Mark modal as shown for this session
   markModalAsShown(): void {
+    if (typeof window === 'undefined') return
+    
     const sessionId = this.getSessionId()
     sessionStorage.setItem(`${this.MODAL_SHOWN_KEY}-${sessionId}`, 'true')
   }
 
-  // Get or create session ID
   private getSessionId(): string {
+    if (typeof window === 'undefined') return 'server'
+    
     let sessionId = sessionStorage.getItem(this.SESSION_STORAGE_KEY)
     if (!sessionId) {
       sessionId = `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
@@ -160,27 +87,23 @@ class PromotionService {
     return sessionId
   }
 
-  // Create notification data from promotion
   createNotificationFromPromotion(promotion: Promotion): NotificationData {
     return {
       title: promotion.title,
-      body: promotion.description,
+      body: promotion.description || '',
       icon: '/pwa-192x192.png',
       badge: '/pwa-192x192.png',
       tag: `promo-${promotion.id}`,
       data: {
         promotionId: promotion.id,
         type: 'promotion',
-        url: '/catalog',
-        discountType: promotion.discountType,
-        discountValue: promotion.discountValue
+        url: '/catalog'
       },
       requireInteraction: true,
       silent: false
     }
   }
 
-  // Send browser notification
   async sendNotification(notificationData: NotificationData): Promise<void> {
     try {
       // Check if notifications are supported
@@ -220,10 +143,18 @@ class PromotionService {
         notification.close()
       }
 
-      // Auto close after 10 seconds
-      setTimeout(() => {
-        notification.close()
-      }, 10000)
+      // Auto-close after 5 seconds if not requiring interaction
+      if (!notificationData.requireInteraction) {
+        setTimeout(() => {
+          notification.close()
+        }, 5000)
+      }
+
+      // Track notification in analytics
+      await this.trackEvent('notification_sent', {
+        promotion_id: notificationData.data?.promotionId,
+        notification_title: notificationData.title
+      })
 
     } catch (error) {
       console.error('Error sending notification:', error)
@@ -231,29 +162,118 @@ class PromotionService {
     }
   }
 
-  // Get promotion by ID
   async getPromotionById(id: string): Promise<Promotion | null> {
-    const promotions = await this.getActivePromotions()
-    return promotions.find(promo => promo.id === id) || null
+    try {
+      const { data, error } = await supabase
+        .from('promotions')
+        .select('*')
+        .eq('id', id)
+        .single()
+
+      if (error) throw error
+      return data
+    } catch (error) {
+      console.error('Error fetching promotion:', error)
+      return null
+    }
   }
 
-  // Check if promotion is valid for current user/branch
   isPromotionValid(promotion: Promotion, branchId?: string): boolean {
     const now = new Date()
-    const validFrom = new Date(promotion.validFrom)
-    const validUntil = new Date(promotion.validUntil)
+    const validFrom = new Date(promotion.valid_from)
+    const validUntil = new Date(promotion.valid_until)
 
-    // Check if promotion is active and within date range
-    if (!promotion.isActive || now < validFrom || now > validUntil) {
+    // Check date validity
+    if (now < validFrom || now > validUntil) {
+      return false
+    }
+
+    // Check if promotion is active
+    if (!promotion.is_active) {
       return false
     }
 
     // Check target audience
-    if (promotion.targetAudience === 'specific_branch' && branchId) {
-      return promotion.targetBranchIds?.includes(branchId) || false
+    if (promotion.target_audience === 'specific_branch' && branchId) {
+      const targetBranches = promotion.target_branch_ids || []
+      if (!targetBranches.includes(branchId)) {
+        return false
+      }
     }
 
     return true
+  }
+
+  async trackEvent(eventType: string, eventData: Record<string, any> = {}): Promise<void> {
+    try {
+      const sessionId = this.getSessionId()
+      
+      await supabase
+        .from('pwa_analytics')
+        .insert({
+          session_id: sessionId,
+          event_type: eventType,
+          event_data: eventData,
+          page_url: window.location.href,
+          user_agent: navigator.userAgent,
+          ip_address: null // Will be set by database trigger
+        })
+    } catch (error) {
+      console.error('Error tracking event:', error)
+    }
+  }
+
+  async createSession(branchId?: string): Promise<string> {
+    try {
+      const sessionId = this.getSessionId()
+      
+      const { data, error } = await supabase
+        .from('pwa_sessions')
+        .insert({
+          session_id: sessionId,
+          user_agent: navigator.userAgent,
+          ip_address: null, // Will be set by database trigger
+          branch_id: branchId,
+          is_active: true,
+          last_activity: new Date().toISOString()
+        })
+        .select('session_id')
+        .single()
+
+      if (error) throw error
+      return data.session_id
+    } catch (error) {
+      console.error('Error creating session:', error)
+      return this.getSessionId()
+    }
+  }
+
+  async updateSession(sessionId: string, branchId?: string): Promise<void> {
+    try {
+      await supabase
+        .from('pwa_sessions')
+        .update({
+          branch_id: branchId,
+          last_activity: new Date().toISOString()
+        })
+        .eq('session_id', sessionId)
+    } catch (error) {
+      console.error('Error updating session:', error)
+    }
+  }
+
+  async endSession(sessionId: string): Promise<void> {
+    try {
+      await supabase
+        .from('pwa_sessions')
+        .update({
+          is_active: false,
+          last_activity: new Date().toISOString()
+        })
+        .eq('session_id', sessionId)
+    } catch (error) {
+      console.error('Error ending session:', error)
+    }
   }
 }
 

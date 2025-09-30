@@ -11,7 +11,7 @@ const PromoDemo: React.FC = () => {
   const [bannerPromotions, setBannerPromotions] = useState<Promotion[]>([])
   const [modalPromotions, setModalPromotions] = useState<Promotion[]>([])
   const [showModal, setShowModal] = useState(false)
-  const [currentModalPromotion, setCurrentModalPromotion] = useState<Promotion | null>(null)
+  const [currentModalIndex, setCurrentModalIndex] = useState(0)
   const [dismissedBanners, setDismissedBanners] = useState<Set<string>>(new Set())
   const [isLoading, setIsLoading] = useState(true)
 
@@ -47,18 +47,23 @@ const PromoDemo: React.FC = () => {
   }
 
   const handleShowModal = (promotion: Promotion) => {
-    setCurrentModalPromotion(promotion)
+    const index = modalPromotions.findIndex(p => p.id === promotion.id)
+    setCurrentModalIndex(index >= 0 ? index : 0)
     setShowModal(true)
   }
 
   const handleModalClose = () => {
     setShowModal(false)
-    setCurrentModalPromotion(null)
+    setCurrentModalIndex(0)
   }
 
   const handleModalAction = (promotion: Promotion) => {
     console.log('Modal action clicked:', promotion.title)
     handleModalClose()
+  }
+
+  const handleModalIndexChange = (index: number) => {
+    setCurrentModalIndex(index)
   }
 
   const handleSendNotification = async (notificationData: NotificationData) => {
@@ -72,7 +77,7 @@ const PromoDemo: React.FC = () => {
   const resetDemo = () => {
     setDismissedBanners(new Set())
     setShowModal(false)
-    setCurrentModalPromotion(null)
+    setCurrentModalIndex(0)
     loadPromotions()
   }
 
@@ -256,12 +261,14 @@ const PromoDemo: React.FC = () => {
       </div>
 
       {/* Promotional Modal */}
-      {currentModalPromotion && (
+      {modalPromotions.length > 0 && (
         <PromoModal
-          promotion={currentModalPromotion}
+          promotions={modalPromotions}
           isOpen={showModal}
           onClose={handleModalClose}
-          onAction={() => handleModalAction(currentModalPromotion)}
+          onAction={handleModalAction}
+          currentIndex={currentModalIndex}
+          onIndexChange={handleModalIndexChange}
         />
       )}
 

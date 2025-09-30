@@ -262,7 +262,7 @@ const ProductCatalog: React.FC = () => {
   const [bannerPromotions, setBannerPromotions] = useState<Promotion[]>([])
   const [modalPromotions, setModalPromotions] = useState<Promotion[]>([])
   const [showModal, setShowModal] = useState(false)
-  const [currentModalPromotion, setCurrentModalPromotion] = useState<Promotion | null>(null)
+  const [currentModalIndex, setCurrentModalIndex] = useState(0)
   const [dismissedBanners, setDismissedBanners] = useState<Set<string>>(new Set())
 
   useEffect(() => {
@@ -285,8 +285,7 @@ const ProductCatalog: React.FC = () => {
   // Check for modal display
   useEffect(() => {
     if (modalPromotions.length > 0 && promotionService.shouldShowModal()) {
-      const firstModalPromotion = modalPromotions[0]
-      setCurrentModalPromotion(firstModalPromotion)
+      setCurrentModalIndex(0)
       setShowModal(true)
       promotionService.markModalAsShown()
     }
@@ -410,12 +409,16 @@ const ProductCatalog: React.FC = () => {
 
   const handleModalClose = () => {
     setShowModal(false)
-    setCurrentModalPromotion(null)
+    setCurrentModalIndex(0)
   }
 
   const handleModalAction = (promotion: Promotion) => {
     handleBannerAction(promotion)
     handleModalClose()
+  }
+
+  const handleModalIndexChange = (index: number) => {
+    setCurrentModalIndex(index)
   }
 
   const handleSendNotification = async (notificationData: NotificationData) => {
@@ -664,12 +667,14 @@ const ProductCatalog: React.FC = () => {
       </div>
 
       {/* Promotional Modal */}
-      {currentModalPromotion && (
+      {modalPromotions.length > 0 && (
         <PromoModal
-          promotion={currentModalPromotion}
+          promotions={modalPromotions}
           isOpen={showModal}
           onClose={handleModalClose}
-          onAction={() => handleModalAction(currentModalPromotion)}
+          onAction={handleModalAction}
+          currentIndex={currentModalIndex}
+          onIndexChange={handleModalIndexChange}
         />
       )}
 

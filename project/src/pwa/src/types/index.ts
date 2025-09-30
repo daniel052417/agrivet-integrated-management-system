@@ -1,11 +1,151 @@
-// Re-export shared types from main project
-export type { 
-  Branch, 
-  Product, 
-  ProductVariant, 
-  Category,
-  Customer 
-} from '@types/pos'
+// Base types - Updated to match provided database schema
+export interface Branch {
+  id: string
+  name: string
+  code: string
+  address: string
+  city: string
+  province: string
+  postal_code: string | null
+  phone: string | null
+  email: string | null
+  manager_id: string | null
+  is_active: boolean
+  operating_hours: BranchOperatingHours | null
+  created_at: string
+  branch_type: 'main' | 'satellite'
+  // Fields from the custom query
+  real_time_status?: string
+  payment_options?: string[]
+}
+
+export interface BranchOperatingHours {
+  // JSONB structure for operating_hours column
+  monday?: { open: string; close: string } | { closed: boolean }
+  tuesday?: { open: string; close: string } | { closed: boolean }
+  wednesday?: { open: string; close: string } | { closed: boolean }
+  thursday?: { open: string; close: string } | { closed: boolean }
+  friday?: { open: string; close: string } | { closed: boolean }
+  saturday?: { open: string; close: string } | { closed: boolean }
+  sunday?: { open: string; close: string } | { closed: boolean }
+}
+
+export interface Product {
+  id: string
+  sku: string
+  name: string
+  description: string | null
+  category_id: string | null
+  supplier_id: string | null
+  unit_of_measure: string
+  price: number
+  cost_price: number
+  stock_quantity: number
+  minimum_stock: number
+  maximum_stock: number | null
+  barcode: string | null
+  expiry_date: string | null
+  is_active: boolean
+  pos_pricing_type: string | null
+  weight_per_unit: number | null
+  bulk_discount_threshold: number | null
+  bulk_discount_percentage: number | null
+  requires_expiry_date: boolean
+  requires_batch_tracking: boolean
+  is_quick_sale: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface ProductVariant {
+  id: string
+  product_id: string
+  variant_name: string
+  sku: string
+  price: number
+  cost_price: number
+  stock_quantity: number
+  minimum_stock: number
+  maximum_stock: number | null
+  weight_kg: number | null
+  unit_of_measure: string
+  barcode: string | null
+  is_active: boolean
+  created_at: string
+  updated_at: string
+  // Joined data
+  products?: Product
+  categories?: Category
+}
+
+export interface Category {
+  id: string
+  name: string
+  description: string
+  parent_id: string | null
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface Customer {
+  id: string
+  customer_code: string
+  first_name: string
+  last_name: string
+  email: string | null
+  phone: string | null
+  address: string | null
+  city: string | null
+  customer_type: string
+  date_of_birth: string | null
+  registration_date: string
+  is_active: boolean
+  total_spent: number
+  last_purchase_date: string | null
+  loyalty_points: number | null
+  loyalty_tier: string | null
+  total_lifetime_spent: number | null
+  assigned_staff_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface Order {
+  id: string
+  order_number: string
+  customer_id: string | null
+  branch_id: string
+  order_type: string
+  status: string
+  total_amount: number
+  subtotal: number
+  tax_amount: number
+  discount_amount: number
+  payment_method: string
+  payment_status: string
+  notes: string | null
+  created_at: string
+  updated_at: string
+  // Joined data
+  customer?: Customer
+  branch?: Branch
+  order_items?: OrderItem[]
+}
+
+export interface OrderItem {
+  id: string
+  order_id: string
+  product_id: string
+  product_variant_id: string | null
+  quantity: number
+  unit_price: number
+  line_total: number
+  created_at: string
+  // Joined data
+  product?: Product
+  product_variant?: ProductVariant
+}
 
 // PWA-specific types
 export interface PWASettings {
@@ -182,10 +322,12 @@ export interface PromoBannerProps {
 }
 
 export interface PromoModalProps {
-  promotion: Promotion
+  promotions: Promotion[]
   isOpen: boolean
   onClose: () => void
-  onAction?: () => void
+  onAction?: (promotion: Promotion) => void
+  currentIndex?: number
+  onIndexChange?: (index: number) => void
 }
 
 export interface NotificationData {

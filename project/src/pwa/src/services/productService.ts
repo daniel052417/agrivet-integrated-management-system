@@ -9,84 +9,79 @@ class ProductService {
     limit: number = 20
   ): Promise<PaginatedResponse<ProductVariant>> {
     try {
-      // If Supabase is not available, return empty response
-      if (!supabase) {
-        console.warn('Supabase not available, returning empty products response')
-        return {
-          data: [],
-          pagination: {
-            page,
-            limit,
-            total: 0,
-            totalPages: 0
-          }
-        }
-      }
-
       let query = supabase
         .from('product_variants')
         .select(`
-          id,
-          name,
-          sku,
-          price,
-          cost,
-          weight_kg,
-          unit_of_measure,
-          is_active,
-          products!inner(
+          *,
+          products:product_id (
             id,
             name,
-            sku,
             description,
-            category_id,
-            supplier_id,
+            unit_of_measure,
+            barcode,
             is_active,
-            categories!inner(
+            categories:category_id (
               id,
-              name,
-              description
+              name
             )
           ),
-          inventory!inner(
+          inventory:inventory!product_variant_id (
+            id,
             branch_id,
+            product_variant_id,
+            quantity_on_hand,
+            quantity_reserved,
             quantity_available,
-            quantity_on_hand
+            reorder_level,
+            max_stock_level,
+            last_counted,
+            updated_at
           )
         `)
         .eq('is_active', true)
         .eq('products.is_active', true)
-        .eq('inventory.branch_id', branchId)
-        .gt('inventory.quantity_available', 0)
 
       // Apply filters
       if (filters.category) {
         query = query.eq('products.category_id', filters.category)
       }
 
-      if (filters.priceMin) {
+      if (filters.priceMin !== undefined) {
         query = query.gte('price', filters.priceMin)
       }
 
-      if (filters.priceMax) {
+      if (filters.priceMax !== undefined) {
         query = query.lte('price', filters.priceMax)
       }
 
-      if (filters.searchQuery) {
-        query = query.or(`name.ilike.%${filters.searchQuery}%,products.name.ilike.%${filters.searchQuery}%,products.description.ilike.%${filters.searchQuery}%`)
+      if (filters.inStock !== undefined) {
+        if (filters.inStock) {
+          query = query.gt('inventory.quantity_available', 0)
+        } else {
+          query = query.lte('inventory.quantity_available', 0)
+        }
       }
+
+      if (filters.searchQuery) {
+        query = query.or(`variant_name.ilike.%${filters.searchQuery}%,products.name.ilike.%${filters.searchQuery}%,sku.ilike.%${filters.searchQuery}%`)
+      }
+
+      // Apply branch filter
+      query = query.eq('inventory.branch_id', branchId)
+
+      // Get total count for pagination
+      const { count } = await query
+        .select('*', { count: 'exact', head: true })
 
       // Apply pagination
       const from = (page - 1) * limit
       const to = from + limit - 1
 
-      const { data, error, count } = await query
+      const { data, error } = await query
         .range(from, to)
-        .order('name')
+        .order('variant_name')
 
       if (error) throw error
-
-      const totalPages = Math.ceil((count || 0) / limit)
 
       return {
         data: data || [],
@@ -94,7 +89,7 @@ class ProductService {
           page,
           limit,
           total: count || 0,
-          totalPages
+          totalPages: Math.ceil((count || 0) / limit)
         }
       }
     } catch (error) {
@@ -108,32 +103,30 @@ class ProductService {
       const { data, error } = await supabase
         .from('product_variants')
         .select(`
-          id,
-          name,
-          sku,
-          price,
-          cost,
-          weight_kg,
-          unit_of_measure,
-          is_active,
-          products!inner(
+          *,
+          products:product_id (
             id,
             name,
-            sku,
             description,
-            category_id,
-            supplier_id,
+            unit_of_measure,
+            barcode,
             is_active,
-            categories!inner(
+            categories:category_id (
               id,
-              name,
-              description
+              name
             )
           ),
-          inventory!inner(
+          inventory:inventory!product_variant_id (
+            id,
             branch_id,
+            product_variant_id,
+            quantity_on_hand,
+            quantity_reserved,
             quantity_available,
-            quantity_on_hand
+            reorder_level,
+            max_stock_level,
+            last_counted,
+            updated_at
           )
         `)
         .eq('id', productId)
@@ -175,26 +168,38 @@ class ProductService {
       const { data, error } = await supabase
         .from('product_variants')
         .select(`
-          id,
-          name,
-          sku,
-          price,
-          products!inner(
+          *,
+          products:product_id (
             id,
             name,
-            description
+            description,
+            unit_of_measure,
+            barcode,
+            is_active,
+            categories:category_id (
+              id,
+              name
+            )
           ),
-          inventory!inner(
+          inventory:inventory!product_variant_id (
+            id,
             branch_id,
-            quantity_available
+            product_variant_id,
+            quantity_on_hand,
+            quantity_reserved,
+            quantity_available,
+            reorder_level,
+            max_stock_level,
+            last_counted,
+            updated_at
           )
         `)
         .eq('is_active', true)
         .eq('products.is_active', true)
         .eq('inventory.branch_id', branchId)
-        .gt('inventory.quantity_available', 0)
-        .or(`name.ilike.%${query}%,products.name.ilike.%${query}%,products.description.ilike.%${query}%`)
+        .or(`variant_name.ilike.%${query}%,products.name.ilike.%${query}%,sku.ilike.%${query}%`)
         .limit(limit)
+        .order('variant_name')
 
       if (error) throw error
       return data || []

@@ -26,9 +26,11 @@ A Progressive Web Application (PWA) for AgriVet's online kiosk system, enabling 
 ### Tech Stack
 - **Frontend**: React 18 + TypeScript + Tailwind CSS
 - **Backend**: Supabase (PostgreSQL + Real-time + Storage)
+- **Database**: PostgreSQL with provided schema
 - **PWA**: Vite PWA Plugin + Workbox
 - **State Management**: React Context + Hooks
 - **Routing**: React Router v6
+- **Consistency**: Same backend stack as main application
 
 ### Project Structure
 ```
