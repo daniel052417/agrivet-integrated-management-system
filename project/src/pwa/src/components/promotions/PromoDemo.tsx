@@ -4,7 +4,6 @@ import { promotionService } from '../../services/promotionService'
 import { Promotion, NotificationData } from '../../types'
 import PromoBanner from './PromoBanner'
 import PromoModal from './PromoModal'
-import PushNotificationSimulator from './PushNotificationSimulator'
 
 const PromoDemo: React.FC = () => {
   const [promotions, setPromotions] = useState<Promotion[]>([])
@@ -22,10 +21,22 @@ const PromoDemo: React.FC = () => {
   const loadPromotions = async () => {
     try {
       setIsLoading(true)
+      
+      // Get current session and targeting info
+      const sessionId = localStorage.getItem('pwa-session-id') || 'default-session'
+      const branchId = localStorage.getItem('selected-branch-id') || undefined
+      const customerId = localStorage.getItem('customer-id') || undefined
+      
+      const targeting = {
+        sessionId,
+        branchId,
+        customerId
+      }
+      
       const [allPromos, bannerPromos, modalPromos] = await Promise.all([
-        promotionService.getActivePromotions(),
-        promotionService.getBannerPromotions(),
-        promotionService.getModalPromotions()
+        promotionService.getActivePromotions(targeting),
+        promotionService.getBannerPromotions(targeting),
+        promotionService.getModalPromotions(targeting)
       ])
       
       setPromotions(allPromos)
@@ -38,27 +49,64 @@ const PromoDemo: React.FC = () => {
     }
   }
 
-  const handleBannerDismiss = (promotionId: string) => {
+  const handleBannerDismiss = async (promotionId: string) => {
     setDismissedBanners(prev => new Set([...prev, promotionId]))
+    
+    // Track dismissal in analytics
+    await promotionService.trackPromotionDismissal(promotionId)
+    promotionService.markBannerAsDismissed(promotionId)
   }
 
-  const handleBannerAction = (promotion: Promotion) => {
+  const handleBannerAction = async (promotion: Promotion) => {
     console.log('Banner action clicked:', promotion.title)
+    
+    // Track click in analytics
+    await promotionService.trackPromotionEvent({
+      promotionId: promotion.id,
+      eventType: 'click',
+      sessionId: localStorage.getItem('pwa-session-id') || 'default-session',
+      branchId: localStorage.getItem('selected-branch-id') || undefined,
+      customerId: localStorage.getItem('customer-id') || undefined
+    })
   }
 
-  const handleShowModal = (promotion: Promotion) => {
+  const handleShowModal = async (promotion: Promotion) => {
     const index = modalPromotions.findIndex(p => p.id === promotion.id)
     setCurrentModalIndex(index >= 0 ? index : 0)
     setShowModal(true)
+    
+    // Track modal view
+    await promotionService.trackPromotionEvent({
+      promotionId: promotion.id,
+      eventType: 'view',
+      sessionId: localStorage.getItem('pwa-session-id') || 'default-session',
+      branchId: localStorage.getItem('selected-branch-id') || undefined,
+      customerId: localStorage.getItem('customer-id') || undefined
+    })
   }
 
-  const handleModalClose = () => {
+  const handleModalClose = async () => {
     setShowModal(false)
     setCurrentModalIndex(0)
+    
+    // Mark modal as shown for current promotion
+    if (modalPromotions[currentModalIndex]) {
+      promotionService.markModalAsShown(modalPromotions[currentModalIndex].id)
+    }
   }
 
-  const handleModalAction = (promotion: Promotion) => {
+  const handleModalAction = async (promotion: Promotion) => {
     console.log('Modal action clicked:', promotion.title)
+    
+    // Track modal action
+    await promotionService.trackPromotionEvent({
+      promotionId: promotion.id,
+      eventType: 'click',
+      sessionId: localStorage.getItem('pwa-session-id') || 'default-session',
+      branchId: localStorage.getItem('selected-branch-id') || undefined,
+      customerId: localStorage.getItem('customer-id') || undefined
+    })
+    
     handleModalClose()
   }
 
@@ -66,13 +114,6 @@ const PromoDemo: React.FC = () => {
     setCurrentModalIndex(index)
   }
 
-  const handleSendNotification = async (notificationData: NotificationData) => {
-    try {
-      await promotionService.sendNotification(notificationData)
-    } catch (error) {
-      console.error('Failed to send notification:', error)
-    }
-  }
 
   const resetDemo = () => {
     setDismissedBanners(new Set())
@@ -272,10 +313,6 @@ const PromoDemo: React.FC = () => {
         />
       )}
 
-      {/* Push Notification Simulator */}
-      <PushNotificationSimulator
-        onSendNotification={handleSendNotification}
-      />
     </div>
   )
 }

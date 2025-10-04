@@ -20,6 +20,7 @@ const customerRoutes = require('./routes/customerRoutes');
 const orderRoutes = require('./routes/orderRoutes');
 const pwaRoutes = require('./routes/pwaRoutes');
 const promotionRoutes = require('./routes/promotionRoutes');
+const cartRoutes = require('./routes/cartRoutes');
 
 // Create Express app
 const app = express();
@@ -79,6 +80,7 @@ app.use('/api/customers', standardLimiter, customerRoutes);
 app.use('/api/orders', orderLimiter, orderRoutes);
 app.use('/api/pwa', pwaLimiter, pwaRoutes);
 app.use('/api/promotions', standardLimiter, promotionRoutes);
+app.use('/api', cartRoutes);
 
 // Root endpoint
 app.get('/', (req, res) => {
@@ -93,6 +95,8 @@ app.get('/', (req, res) => {
       orders: '/api/orders',
       pwa: '/api/pwa',
       promotions: '/api/promotions',
+      cart: '/api/cart',
+      pwaSessions: '/api/pwa-sessions',
       health: '/health'
     }
   });
@@ -151,4 +155,11 @@ process.on('SIGINT', () => {
 startServer();
 
 module.exports = app;
+
+
+
+
+
+
+
 

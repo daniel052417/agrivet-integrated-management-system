@@ -11,3 +11,10 @@ router.get('/:branchId/:productId/availability', productController.checkAvailabi
 
 module.exports = router;
 
+
+
+
+
+
+
+

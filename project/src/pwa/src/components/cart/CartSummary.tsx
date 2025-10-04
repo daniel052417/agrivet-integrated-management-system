@@ -56,11 +56,6 @@ const CartSummary: React.FC<CartSummaryProps> = ({
           <span className="text-gray-900">{formatPrice(cart.subtotal)}</span>
         </div>
         
-        <div className="flex justify-between text-sm">
-          <span className="text-gray-600">VAT (12%)</span>
-          <span className="text-gray-900">{formatPrice(cart.tax)}</span>
-        </div>
-        
         <div className="border-t border-gray-200 pt-2">
           <div className="flex justify-between">
             <span className="font-semibold text-gray-900">Total</span>

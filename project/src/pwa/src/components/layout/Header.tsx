@@ -1,7 +1,8 @@
 import React from 'react'
-import { ShoppingCart, MapPin, Menu } from 'lucide-react'
+import { ShoppingCart, MapPin, Menu, User } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useCart } from '../../contexts/CartContext'
+import { useAuth } from '../../contexts/AuthContext'
 import { Branch } from '../../types'
 
 interface HeaderProps {
@@ -11,6 +12,7 @@ interface HeaderProps {
 const Header: React.FC<HeaderProps> = ({ branch }) => {
   const navigate = useNavigate()
   const { getItemCount } = useCart()
+  const { isAuthenticated } = useAuth()
 
   return (
     <header className="bg-white shadow-sm border-b sticky top-0 z-50">
@@ -31,7 +33,7 @@ const Header: React.FC<HeaderProps> = ({ branch }) => {
             {branch && (
               <div className="hidden md:flex items-center space-x-2 text-sm text-gray-600">
                 <MapPin className="w-4 h-4" />
-                <span>{branch.branch_name}</span>
+                <span>{branch.name}</span>
               </div>
             )}
           </div>
@@ -55,6 +57,15 @@ const Header: React.FC<HeaderProps> = ({ branch }) => {
                 </span>
               )}
             </button>
+            {isAuthenticated && (
+              <button
+                onClick={() => navigate('/settings')}
+                className="text-gray-700 hover:text-agrivet-green transition-colors"
+                title="Settings"
+              >
+                <User className="w-5 h-5" />
+              </button>
+            )}
           </nav>
 
           {/* Mobile Menu */}
@@ -70,6 +81,16 @@ const Header: React.FC<HeaderProps> = ({ branch }) => {
                 </span>
               )}
             </button>
+            
+            {isAuthenticated && (
+              <button
+                onClick={() => navigate('/settings')}
+                className="p-2 text-gray-700 hover:text-agrivet-green transition-colors"
+                title="Settings"
+              >
+                <User className="w-5 h-5" />
+              </button>
+            )}
             
             <button className="p-2 text-gray-700 hover:text-agrivet-green transition-colors">
               <Menu className="w-5 h-5" />

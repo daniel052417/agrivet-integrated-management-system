@@ -22,21 +22,133 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   }
 })
 
-// Initialize anonymous session for RLS access
-export const initializeAnonymousSession = async () => {
+// Session management state
+let isInitializing = false
+let initPromise: Promise<boolean> | null = null
+
+// Retry configuration
+const MAX_RETRIES = 3
+const BASE_DELAY = 1000 // 1 second
+const MAX_DELAY = 10000 // 10 seconds
+
+// Exponential backoff delay calculation
+const getRetryDelay = (attempt: number): number => {
+  const delay = Math.min(BASE_DELAY * Math.pow(2, attempt), MAX_DELAY)
+  // Add jitter to prevent thundering herd
+  return delay + Math.random() * 1000
+}
+
+// Check if we already have a valid anonymous session
+const hasValidAnonymousSession = async (): Promise<boolean> => {
   try {
-    console.log('🔐 Initializing anonymous session for RLS access...')
-    const { data, error } = await supabase.auth.signInAnonymously()
+    const { data: { session }, error } = await supabase.auth.getSession()
     if (error) {
-      console.error('❌ Anonymous auth failed:', error)
+      console.warn('⚠️ Error checking existing session:', error)
       return false
     }
-    console.log('✅ Anonymous session established:', data.user?.id)
-    return true
+    
+    // Check if we have an anonymous session
+    if (session?.user && session.user.is_anonymous) {
+      console.log('✅ Found existing anonymous session:', session.user.id)
+      return true
+    }
+    
+    return false
   } catch (error) {
-    console.error('❌ Anonymous auth error:', error)
+    console.warn('⚠️ Error checking session:', error)
     return false
   }
+}
+
+// Initialize anonymous session with retry logic
+const initializeAnonymousSessionWithRetry = async (): Promise<boolean> => {
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    try {
+      console.log(`🔐 Attempting anonymous sign-in (attempt ${attempt + 1}/${MAX_RETRIES})...`)
+      
+      const { data, error } = await supabase.auth.signInAnonymously()
+      
+      if (error) {
+        console.error(`❌ Anonymous auth failed (attempt ${attempt + 1}):`, error)
+        
+        // If it's a rate limit error, wait longer before retrying
+        if (error.message?.includes('rate limit') || error.message?.includes('429')) {
+          const delay = getRetryDelay(attempt) * 2 // Double delay for rate limits
+          console.log(`⏳ Rate limited, waiting ${delay}ms before retry...`)
+          await new Promise(resolve => setTimeout(resolve, delay))
+          continue
+        }
+        
+        // For other errors, use normal retry delay
+        if (attempt < MAX_RETRIES - 1) {
+          const delay = getRetryDelay(attempt)
+          console.log(`⏳ Waiting ${delay}ms before retry...`)
+          await new Promise(resolve => setTimeout(resolve, delay))
+          continue
+        }
+        
+        return false
+      }
+      
+      if (data?.user) {
+        console.log('✅ Anonymous session established:', data.user.id)
+        return true
+      }
+      
+      return false
+    } catch (error) {
+      console.error(`❌ Anonymous auth error (attempt ${attempt + 1}):`, error)
+      
+      if (attempt < MAX_RETRIES - 1) {
+        const delay = getRetryDelay(attempt)
+        console.log(`⏳ Waiting ${delay}ms before retry...`)
+        await new Promise(resolve => setTimeout(resolve, delay))
+      }
+    }
+  }
+  
+  console.error('❌ Failed to initialize anonymous session after all retries')
+  return false
+}
+
+// Start guest session - only called when user explicitly chooses guest mode
+export const startGuestSession = async (): Promise<boolean> => {
+  // If currently initializing, wait for the existing promise
+  if (isInitializing && initPromise) {
+    console.log('⏳ Guest session initialization in progress, waiting...')
+    return await initPromise
+  }
+  
+  // Check if we already have a valid session
+  const hasValidSession = await hasValidAnonymousSession()
+  if (hasValidSession) {
+    console.log('✅ Reusing existing anonymous session')
+    return true
+  }
+  
+  // Start initialization
+  isInitializing = true
+  initPromise = initializeAnonymousSessionWithRetry()
+  
+  try {
+    const result = await initPromise
+    return result
+  } finally {
+    isInitializing = false
+    initPromise = null
+  }
+}
+
+// Check if we have a valid session (without creating one)
+export const hasValidSession = async (): Promise<boolean> => {
+  return await hasValidAnonymousSession()
+}
+
+// Reset initialization state (useful for testing or manual reset)
+export const resetGuestSession = () => {
+  isInitializing = false
+  initPromise = null
+  console.log('🔄 Guest session state reset')
 }
 
 // Debug the created client

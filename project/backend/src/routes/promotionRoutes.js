@@ -19,3 +19,10 @@ router.delete('/:id', promotionController.deletePromotion);
 
 module.exports = router;
 
+
+
+
+
+
+
+

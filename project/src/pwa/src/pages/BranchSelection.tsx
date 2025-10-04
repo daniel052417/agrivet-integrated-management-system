@@ -5,88 +5,15 @@ import {
   CreditCard, Smartphone, Banknote, Timer
 } from 'lucide-react'
 import { useBranch } from '../contexts/BranchContext'
+import { useAuth } from '../contexts/AuthContext'
 import { Branch } from '../types'
 import { branchService } from '../services/branchService'
+import { supabase } from '../services/supabase'
 import LoadingSpinner from '../components/common/LoadingSpinner'
 import ErrorMessage from '../components/common/ErrorMessage'
 import ClosedBranchModal from '../components/modals/ClosedBranchModal'
 import { getNextOpeningTime, isBranchClosed } from '../utils/branchUtils'
 
-// Sample data for testing the enhanced UI with actual JSONB operating_hours structure
-const sampleBranches: Branch[] = [
-  {
-    id: '1',
-    name: 'AgriVet Main Branch',
-    code: 'MAIN',
-    address: '123 Agricultural Road, Barangay Poblacion',
-    city: 'San Jose',
-    province: 'Nueva Ecija',
-    postal_code: '3100',
-    phone: '+63 44 123 4567',
-    email: 'main@agrivet.com',
-    manager_id: '1',
-    is_active: true,
-    operating_hours: {
-      monday: { open: '07:00', close: '19:00' },
-      tuesday: { open: '07:00', close: '19:00' },
-      wednesday: { open: '07:00', close: '19:00' },
-      thursday: { open: '07:00', close: '19:00' },
-      friday: { open: '07:00', close: '19:00' },
-      saturday: { open: '07:00', close: '19:00' },
-      sunday: { closed: true }
-    },
-    created_at: '2024-01-01T00:00:00Z',
-    branch_type: 'main'
-  },
-  {
-    id: '2',
-    name: 'AgriVet Cabanatuan',
-    code: 'CAB',
-    address: '456 Maharlika Highway, Barangay Sumacab',
-    city: 'Cabanatuan',
-    province: 'Nueva Ecija',
-    postal_code: '3100',
-    phone: '+63 44 234 5678',
-    email: 'cabanatuan@agrivet.com',
-    manager_id: '2',
-    is_active: true,
-    operating_hours: {
-      monday: { open: '08:00', close: '18:00' },
-      tuesday: { open: '08:00', close: '18:00' },
-      wednesday: { open: '08:00', close: '18:00' },
-      thursday: { open: '08:00', close: '18:00' },
-      friday: { open: '08:00', close: '18:00' },
-      saturday: { open: '08:00', close: '18:00' },
-      sunday: { closed: true }
-    },
-    created_at: '2024-01-01T00:00:00Z',
-    branch_type: 'satellite'
-  },
-  {
-    id: '3',
-    name: 'AgriVet Gapan',
-    code: 'GAP',
-    address: '789 National Road, Barangay San Vicente',
-    city: 'Gapan',
-    province: 'Nueva Ecija',
-    postal_code: '3105',
-    phone: '+63 44 345 6789',
-    email: 'gapan@agrivet.com',
-    manager_id: '3',
-    is_active: true,
-    operating_hours: {
-      monday: { open: '08:00', close: '17:00' },
-      tuesday: { open: '08:00', close: '17:00' },
-      wednesday: { open: '08:00', close: '17:00' },
-      thursday: { open: '08:00', close: '17:00' },
-      friday: { open: '08:00', close: '17:00' },
-      saturday: { open: '08:00', close: '17:00' },
-      sunday: { closed: true }
-    },
-    created_at: '2024-01-01T00:00:00Z',
-    branch_type: 'satellite'
-  }
-]
 
 const BranchSelection: React.FC = () => {
   const navigate = useNavigate()
@@ -94,6 +21,7 @@ const BranchSelection: React.FC = () => {
     selectBranch,
     refreshBranches
   } = useBranch()
+  const { user, isAuthenticated } = useAuth()
   
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -127,23 +55,23 @@ const BranchSelection: React.FC = () => {
         console.log('✅ BranchSelection: Using real database data')
         setBranches(branches)
       } else {
-        console.log('📊 BranchSelection: No real data, using sample data')
-        setBranches(sampleBranches)
+        console.log('⚠️ BranchSelection: No branches available')
+        setBranches([])
+        setError('No branches available. Please contact support.')
       }
       
       console.log('✅ BranchSelection: Branches loaded successfully')
     } catch (err) {
       console.error('❌ BranchSelection: Error loading branches:', err)
-      console.log('📊 BranchSelection: Falling back to sample data')
-      setBranches(sampleBranches)
-      setError('Using sample data. Real data will be available when connected to Supabase.')
+      setBranches([])
+      setError('Failed to load branches. Please try again.')
     } finally {
       console.log('🏁 BranchSelection: Loading process completed')
       setIsLoading(false)
     }
   }
 
-  const handleBranchSelect = (branch: Branch) => {
+  const handleBranchSelect = async (branch: Branch) => {
     console.log('🎯 BranchSelection: Branch selected:', branch)
     console.log('🎯 BranchSelection: Branch details:', {
       id: branch.id,
@@ -162,6 +90,27 @@ const BranchSelection: React.FC = () => {
       setSelectedClosedBranch(branch)
       setShowClosedModal(true)
       return
+    }
+    
+    // Save preferred branch for authenticated users
+    if (isAuthenticated && user) {
+      try {
+        const { error } = await supabase
+          .from('customers')
+          .update({
+            preferred_branch_id: branch.id,
+            updated_at: new Date().toISOString()
+          })
+          .eq('user_id', user.id)
+
+        if (error) {
+          console.error('Error saving preferred branch:', error)
+        } else {
+          console.log('✅ Preferred branch saved for user')
+        }
+      } catch (error) {
+        console.error('Error updating preferred branch:', error)
+      }
     }
     
     selectBranch(branch)
@@ -513,6 +462,7 @@ const BranchSelection: React.FC = () => {
       </div>
     )
   }
+
 
   return (
     <div className="min-h-screen bg-gray-50">

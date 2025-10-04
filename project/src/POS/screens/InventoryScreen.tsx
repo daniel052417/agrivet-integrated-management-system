@@ -529,3 +529,11 @@ export default InventoryScreen;
 
 
 
+
+
+
+
+
+
+
+

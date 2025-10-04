@@ -16,3 +16,10 @@ router.delete('/:id', customerController.deleteCustomer);
 
 module.exports = router;
 
+
+
+
+
+
+
+

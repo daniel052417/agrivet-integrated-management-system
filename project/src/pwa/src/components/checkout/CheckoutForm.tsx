@@ -1,240 +1,276 @@
 import React, { useState } from 'react'
-import { User, Mail, Phone, MapPin, Building, Hash } from 'lucide-react'
-import { Branch } from '../../types'
-
-interface CustomerInfo {
-  name: string
-  email: string
-  phone: string
-  address: string
-  city: string
-  postalCode: string
-  isGuest: boolean
-}
+import { CreditCard, User, MapPin, Phone, Mail, AlertCircle } from 'lucide-react'
+import { useCart } from '../../contexts/CartContext'
+import OrderService from '../../services/orderService'
+import MockOrderService from '../../services/mockOrderService'
 
 interface CheckoutFormProps {
-  initialData: CustomerInfo
-  onSubmit: (data: CustomerInfo) => void
-  branch: Branch
+  branchId: string
+  onOrderCreated: (orderId: string) => void
+  onError: (error: string) => void
+}
+
+interface CustomerInfo {
+  firstName: string
+  lastName: string
+  email?: string
+  phone?: string
 }
 
 const CheckoutForm: React.FC<CheckoutFormProps> = ({
-  initialData,
-  onSubmit,
-  branch
+  branchId,
+  onOrderCreated,
+  onError
 }) => {
-  const [formData, setFormData] = useState<CustomerInfo>(initialData)
-  const [errors, setErrors] = useState<Partial<CustomerInfo>>({})
-
-  const handleChange = (field: keyof CustomerInfo, value: string | boolean) => {
-    setFormData(prev => ({ ...prev, [field]: value }))
+  const { cart, clearCart } = useCart()
+  const [isProcessing, setIsProcessing] = useState(false)
+  const [customerInfo, setCustomerInfo] = useState<CustomerInfo>({
+    firstName: '',
+    lastName: '',
+    email: '',
+    phone: ''
+  })
+  const [paymentMethod, setPaymentMethod] = useState('cash')
+  const [notes, setNotes] = useState('')
+  const [orderService] = useState(() => {
+    const realService = new OrderService({
+      supabaseUrl: import.meta.env.VITE_SUPABASE_URL || '',
+      supabaseAnonKey: import.meta.env.VITE_SUPABASE_ANON_KEY || ''
+    })
     
-    // Clear error when user starts typing
-    if (errors[field]) {
-      setErrors(prev => ({ ...prev, [field]: undefined }))
+    // Use mock service if real service is not available
+    if (!realService.isAvailable()) {
+      console.log('🔄 Using MockOrderService for checkout')
+      return new MockOrderService({
+        supabaseUrl: '',
+        supabaseAnonKey: ''
+      })
     }
-  }
+    
+    return realService
+  })
 
-  const validateForm = (): boolean => {
-    const newErrors: Partial<CustomerInfo> = {}
-
-    if (!formData.name.trim()) {
-      newErrors.name = 'Name is required'
-    }
-
-    if (!formData.phone.trim()) {
-      newErrors.phone = 'Phone number is required'
-    } else if (!/^\+?[\d\s-()]+$/.test(formData.phone)) {
-      newErrors.phone = 'Please enter a valid phone number'
-    }
-
-    if (!formData.email.trim()) {
-      newErrors.email = 'Email is required'
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      newErrors.email = 'Please enter a valid email address'
-    }
-
-    if (!formData.address.trim()) {
-      newErrors.address = 'Address is required'
-    }
-
-    if (!formData.city.trim()) {
-      newErrors.city = 'City is required'
-    }
-
-    if (!formData.postalCode.trim()) {
-      newErrors.postalCode = 'Postal code is required'
-    }
-
-    setErrors(newErrors)
-    return Object.keys(newErrors).length === 0
-  }
-
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
-    if (validateForm()) {
-      onSubmit(formData)
+    if (!orderService.isAvailable()) {
+      onError('Order service is not available. Please try again later.')
+      return
+    }
+
+    if (cart.items.length === 0) {
+      onError('Your cart is empty')
+      return
+    }
+
+    setIsProcessing(true)
+
+    try {
+      const result = await orderService.createOrder({
+        cart,
+        branchId,
+        paymentMethod,
+        notes: notes.trim() || undefined,
+        customerInfo: {
+          firstName: customerInfo.firstName.trim(),
+          lastName: customerInfo.lastName.trim(),
+          email: customerInfo.email?.trim() || undefined,
+          phone: customerInfo.phone?.trim() || undefined
+        }
+      })
+
+      if (result.success && result.orderId) {
+        // Clear cart after successful order
+        await clearCart()
+        onOrderCreated(result.orderId)
+      } else {
+        onError(result.error || 'Failed to create order')
+      }
+    } catch (error) {
+      console.error('Checkout error:', error)
+      onError('An unexpected error occurred. Please try again.')
+    } finally {
+      setIsProcessing(false)
     }
   }
 
+  const formatPrice = (price: number) => {
+    return new Intl.NumberFormat('en-PH', {
+      style: 'currency',
+      currency: 'PHP'
+    }).format(price)
+  }
+
+  // Note: We now use MockOrderService when real service is not available
+  // so we don't need to show the warning message
+
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-      <div className="mb-6">
-        <h2 className="text-xl font-semibold text-gray-900 mb-2">
-          Customer Information
-        </h2>
-        <p className="text-gray-600">
-          Please provide your details for order processing and pickup.
-        </p>
-      </div>
-
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Personal Information */}
-        <div className="grid gap-4 md:grid-cols-2">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Full Name *
-            </label>
-            <div className="relative">
-              <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input
-                type="text"
-                value={formData.name}
-                onChange={(e) => handleChange('name', e.target.value)}
-                className={`input-field pl-10 ${errors.name ? 'border-red-500' : ''}`}
-                placeholder="Enter your full name"
-              />
-            </div>
-            {errors.name && (
-              <p className="text-red-600 text-sm mt-1">{errors.name}</p>
-            )}
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Phone Number *
-            </label>
-            <div className="relative">
-              <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input
-                type="tel"
-                value={formData.phone}
-                onChange={(e) => handleChange('phone', e.target.value)}
-                className={`input-field pl-10 ${errors.phone ? 'border-red-500' : ''}`}
-                placeholder="+63 912 345 6789"
-              />
-            </div>
-            {errors.phone && (
-              <p className="text-red-600 text-sm mt-1">{errors.phone}</p>
-            )}
+    <form onSubmit={handleSubmit} className="space-y-6">
+      {/* Service Status Indicator */}
+      {orderService instanceof MockOrderService && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+          <div className="flex items-center space-x-2">
+            <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+            <span className="text-blue-800 text-sm">
+              Demo Mode: Orders will be processed locally for testing
+            </span>
           </div>
         </div>
+      )}
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Email Address *
-          </label>
-          <div className="relative">
-            <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+      {/* Customer Information */}
+      <div className="bg-white rounded-lg shadow-sm border p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+          <User className="w-5 h-5 mr-2" />
+          Customer Information
+        </h3>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              First Name *
+            </label>
+            <input
+              type="text"
+              required
+              value={customerInfo.firstName}
+              onChange={(e) => setCustomerInfo(prev => ({ ...prev, firstName: e.target.value }))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Enter first name"
+            />
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Last Name *
+            </label>
+            <input
+              type="text"
+              required
+              value={customerInfo.lastName}
+              onChange={(e) => setCustomerInfo(prev => ({ ...prev, lastName: e.target.value }))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Enter last name"
+            />
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Email
+            </label>
             <input
               type="email"
-              value={formData.email}
-              onChange={(e) => handleChange('email', e.target.value)}
-              className={`input-field pl-10 ${errors.email ? 'border-red-500' : ''}`}
-              placeholder="your.email@example.com"
+              value={customerInfo.email}
+              onChange={(e) => setCustomerInfo(prev => ({ ...prev, email: e.target.value }))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Enter email (optional)"
             />
           </div>
-          {errors.email && (
-            <p className="text-red-600 text-sm mt-1">{errors.email}</p>
-          )}
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Phone
+            </label>
+            <input
+              type="tel"
+              value={customerInfo.phone}
+              onChange={(e) => setCustomerInfo(prev => ({ ...prev, phone: e.target.value }))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Enter phone (optional)"
+            />
+          </div>
         </div>
+      </div>
 
-        {/* Address Information */}
+      {/* Payment Method */}
+      <div className="bg-white rounded-lg shadow-sm border p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+          <CreditCard className="w-5 h-5 mr-2" />
+          Payment Method
+        </h3>
+        
+        <div className="space-y-3">
+          {[
+            { value: 'cash', label: 'Cash', description: 'Pay with cash at pickup' },
+            { value: 'gcash', label: 'GCash', description: 'Pay via GCash' },
+            { value: 'paymaya', label: 'PayMaya', description: 'Pay via PayMaya' }
+          ].map((method) => (
+            <label key={method.value} className="flex items-center space-x-3 cursor-pointer">
+              <input
+                type="radio"
+                name="paymentMethod"
+                value={method.value}
+                checked={paymentMethod === method.value}
+                onChange={(e) => setPaymentMethod(e.target.value)}
+                className="w-4 h-4 text-blue-600 focus:ring-blue-500"
+              />
+              <div>
+                <div className="font-medium text-gray-900">{method.label}</div>
+                <div className="text-sm text-gray-500">{method.description}</div>
+              </div>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      {/* Order Notes */}
+      <div className="bg-white rounded-lg shadow-sm border p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+          <MapPin className="w-5 h-5 mr-2" />
+          Additional Information
+        </h3>
+        
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Address *
+            Special Instructions
           </label>
-          <div className="relative">
-            <MapPin className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
-            <textarea
-              value={formData.address}
-              onChange={(e) => handleChange('address', e.target.value)}
-              className={`input-field pl-10 h-20 resize-none ${errors.address ? 'border-red-500' : ''}`}
-              placeholder="Enter your complete address"
-            />
-          </div>
-          {errors.address && (
-            <p className="text-red-600 text-sm mt-1">{errors.address}</p>
-          )}
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            rows={3}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="Any special instructions for your order..."
+          />
         </div>
+      </div>
 
-        <div className="grid gap-4 md:grid-cols-2">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              City *
-            </label>
-            <div className="relative">
-              <Building className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input
-                type="text"
-                value={formData.city}
-                onChange={(e) => handleChange('city', e.target.value)}
-                className={`input-field pl-10 ${errors.city ? 'border-red-500' : ''}`}
-                placeholder="Enter your city"
-              />
-            </div>
-            {errors.city && (
-              <p className="text-red-600 text-sm mt-1">{errors.city}</p>
-            )}
+      {/* Order Summary */}
+      <div className="bg-gray-50 rounded-lg p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Order Summary</h3>
+        
+        <div className="space-y-2">
+          <div className="flex justify-between text-sm">
+            <span className="text-gray-600">Items ({cart.itemCount})</span>
+            <span className="font-medium">{formatPrice(cart.subtotal)}</span>
           </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Postal Code *
-            </label>
-            <div className="relative">
-              <Hash className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input
-                type="text"
-                value={formData.postalCode}
-                onChange={(e) => handleChange('postalCode', e.target.value)}
-                className={`input-field pl-10 ${errors.postalCode ? 'border-red-500' : ''}`}
-                placeholder="1234"
-              />
-            </div>
-            {errors.postalCode && (
-              <p className="text-red-600 text-sm mt-1">{errors.postalCode}</p>
-            )}
-          </div>
-        </div>
-
-        {/* Pickup Location Info */}
-        <div className="bg-gray-50 rounded-lg p-4">
-          <h3 className="font-medium text-gray-900 mb-2">Pickup Location</h3>
-          <div className="flex items-start space-x-2">
-            <MapPin className="w-4 h-4 text-gray-500 mt-0.5" />
-            <div>
-              <p className="font-medium text-gray-900">{branch.branch_name}</p>
-              <p className="text-sm text-gray-600">{branch.address}</p>
-              {branch.phone && (
-                <p className="text-sm text-gray-600">{branch.phone}</p>
-              )}
+          <div className="border-t border-gray-200 pt-2">
+            <div className="flex justify-between font-semibold">
+              <span>Total</span>
+              <span>{formatPrice(cart.total)}</span>
             </div>
           </div>
         </div>
+      </div>
 
-        {/* Submit Button */}
-        <div className="flex justify-end">
-          <button
-            type="submit"
-            className="btn-primary px-8"
-          >
-            Continue to Payment
-          </button>
-        </div>
-      </form>
-    </div>
+      {/* Submit Button */}
+      <button
+        type="submit"
+        disabled={isProcessing || cart.items.length === 0}
+        className="w-full btn-primary flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        {isProcessing ? (
+          <>
+            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            <span>Processing Order...</span>
+          </>
+        ) : (
+          <>
+            <CreditCard className="w-4 h-4" />
+            <span>Place Order</span>
+          </>
+        )}
+      </button>
+    </form>
   )
 }
 

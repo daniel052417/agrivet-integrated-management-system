@@ -1,11 +1,11 @@
 import React from 'react'
-import { ProductVariant } from '../../types'
+import { ProductWithUnits } from '../../types'
 import ProductCard from './ProductCard'
 
 interface ProductGridProps {
-  products: ProductVariant[]
+  products: ProductWithUnits[]
   viewMode: 'grid' | 'list'
-  onProductClick?: (product: ProductVariant) => void
+  onProductClick?: (product: ProductWithUnits) => void
 }
 
 const ProductGrid: React.FC<ProductGridProps> = ({ 
