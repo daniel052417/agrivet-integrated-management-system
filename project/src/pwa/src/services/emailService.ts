@@ -1,4 +1,5 @@
 import { EmailTemplate, EmailNotification } from '../types'
+import { supabase } from './supabase'
 
 interface EmailServiceConfig {
   supabaseUrl: string
@@ -23,30 +24,9 @@ interface SendEmailResponse {
 
 class EmailService {
   private config: EmailServiceConfig
-  private supabase: any = null
 
   constructor(config: EmailServiceConfig) {
     this.config = config
-    this.initSupabase()
-  }
-
-  private async initSupabase() {
-    try {
-      if (!this.config.supabaseUrl || !this.config.supabaseAnonKey || 
-          this.config.supabaseUrl === 'https://your-project-id.supabase.co' ||
-          this.config.supabaseAnonKey === 'your-anon-key-here') {
-        console.warn('⚠️ Supabase configuration missing for EmailService')
-        this.supabase = null
-        return
-      }
-
-      const { createClient } = await import('@supabase/supabase-js')
-      this.supabase = createClient(this.config.supabaseUrl, this.config.supabaseAnonKey)
-      console.log('✅ EmailService Supabase client initialized')
-    } catch (error) {
-      console.error('Failed to initialize EmailService Supabase client:', error)
-      this.supabase = null
-    }
   }
 
   /**
@@ -54,11 +34,16 @@ class EmailService {
    */
   async getEmailTemplate(templateName: string): Promise<{ success: boolean; template?: EmailTemplate; error?: string }> {
     try {
-      if (!this.supabase) {
+      // Wait for Supabase client to be initialized
+      if (!supabase) {
+        await this.initSupabase()
+      }
+
+      if (!supabase) {
         throw new Error('Supabase client not initialized')
       }
 
-      const { data: template, error } = await this.supabase
+      const { data: template, error } = await supabase
         .from('email_templates')
         .select('*')
         .eq('name', templateName)
@@ -265,7 +250,12 @@ class EmailService {
     contentText?: string
   }): Promise<SendEmailResponse> {
     try {
-      if (!this.supabase) {
+      // Wait for Supabase client to be initialized
+      if (!supabase) {
+        await this.initSupabase()
+      }
+
+      if (!supabase) {
         throw new Error('Supabase client not initialized')
       }
 
@@ -283,7 +273,7 @@ class EmailService {
         created_at: new Date().toISOString()
       }
 
-      const { data: notification, error } = await this.supabase
+      const { data: notification, error } = await supabase
         .from('email_notifications')
         .insert(notificationData)
         .select()
@@ -316,11 +306,16 @@ class EmailService {
    */
   async markEmailAsSent(notificationId: string): Promise<{ success: boolean; error?: string }> {
     try {
-      if (!this.supabase) {
+      // Wait for Supabase client to be initialized
+      if (!supabase) {
+        await this.initSupabase()
+      }
+
+      if (!supabase) {
         throw new Error('Supabase client not initialized')
       }
 
-      const { error } = await this.supabase
+      const { error } = await supabase
         .from('email_notifications')
         .update({
           status: 'sent',
@@ -476,7 +471,7 @@ class EmailService {
    * Check if service is available
    */
   isAvailable(): boolean {
-    return !!this.supabase
+    return !!supabase
   }
 }
 

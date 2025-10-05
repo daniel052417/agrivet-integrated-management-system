@@ -215,6 +215,7 @@ export interface Order {
   order_number: string
   customer_id: string | null
   branch_id: string
+  user_id?: string | null
   order_type: string
   status: string
   total_amount: number

@@ -2,12 +2,12 @@ import React, { useState, useEffect } from 'react'
 import { CreditCard, User, MapPin, Phone, Mail, AlertCircle, CheckCircle, Clock, Truck } from 'lucide-react'
 import { useCart } from '../../contexts/CartContext'
 import { useBranch } from '../../contexts/BranchContext'
+import { useAuth } from '../../contexts/AuthContext'
 import OrderService from '../../services/orderService'
 import PaymentService from '../../services/paymentService'
 import EmailService from '../../services/emailService'
 import InventoryService from '../../services/inventoryService'
 import OrderTrackingService from '../../services/orderTrackingService'
-import MockOrderService from '../../services/mockOrderService'
 
 interface EnhancedCheckoutFormProps {
   onOrderCreated: (orderId: string) => void
@@ -33,14 +33,15 @@ const EnhancedCheckoutForm: React.FC<EnhancedCheckoutFormProps> = ({
 }) => {
   const { cart, clearCart } = useCart()
   const { selectedBranch } = useBranch()
+  const { user, isAuthenticated } = useAuth()
   
   const [isProcessing, setIsProcessing] = useState(false)
   const [currentStep, setCurrentStep] = useState<'customer' | 'payment' | 'processing' | 'confirmation'>('customer')
   
   const [customerInfo, setCustomerInfo] = useState<CustomerInfo>({
-    firstName: '',
-    lastName: '',
-    email: '',
+    firstName: user?.first_name || '',
+    lastName: user?.last_name || '',
+    email: user?.email || '',
     phone: ''
   })
   
@@ -51,14 +52,9 @@ const EnhancedCheckoutForm: React.FC<EnhancedCheckoutFormProps> = ({
   })
 
   const [orderService] = useState(() => {
-    const realService = new OrderService({
+    return new OrderService({
       supabaseUrl: import.meta.env.VITE_SUPABASE_URL || '',
       supabaseAnonKey: import.meta.env.VITE_SUPABASE_ANON_KEY || ''
-    })
-    
-    return realService.isAvailable() ? realService : new MockOrderService({
-      supabaseUrl: '',
-      supabaseAnonKey: ''
     })
   })
 
@@ -83,33 +79,29 @@ const EnhancedCheckoutForm: React.FC<EnhancedCheckoutFormProps> = ({
   }))
 
   const [availablePaymentMethods, setAvailablePaymentMethods] = useState<any[]>([])
-  const [isDemoMode, setIsDemoMode] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    // Check if we're in demo mode
-    setIsDemoMode(orderService instanceof MockOrderService)
-    
     // Load available payment methods
     loadPaymentMethods()
   }, [])
 
   const loadPaymentMethods = async () => {
-    if (paymentService.isAvailable()) {
-      try {
-        const result = await paymentService.getPaymentMethods()
-        if (result.success && result.methods) {
-          setAvailablePaymentMethods(result.methods)
-        }
-      } catch (error) {
-        console.error('Error loading payment methods:', error)
+    try {
+      const result = await paymentService.getPaymentMethods()
+      if (result.success && result.methods) {
+        // Filter to only show cash payments
+        const cashMethods = result.methods.filter(method => method.type === 'cash')
+        setAvailablePaymentMethods(cashMethods)
+      } else {
+        throw new Error(result.error || 'Failed to load payment methods')
       }
-    } else {
-      // Mock payment methods for demo
-      setAvailablePaymentMethods([
-        { id: 'cash', name: 'Cash', type: 'cash', is_active: true, requires_reference: false, processing_fee: 0 },
-        { id: 'gcash', name: 'GCash', type: 'digital_wallet', is_active: true, requires_reference: true, processing_fee: 0.02 },
-        { id: 'paymaya', name: 'PayMaya', type: 'digital_wallet', is_active: true, requires_reference: true, processing_fee: 0.02 }
-      ])
+    } catch (error) {
+      console.error('Error loading payment methods:', error)
+      setError('Failed to load payment methods. Please check your Supabase configuration.')
+    } finally {
+      setIsLoading(false)
     }
   }
 
@@ -127,11 +119,9 @@ const EnhancedCheckoutForm: React.FC<EnhancedCheckoutFormProps> = ({
   const handlePaymentSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     
-    if (paymentInfo.method === 'gcash' || paymentInfo.method === 'paymaya') {
-      if (!paymentInfo.referenceNumber?.trim()) {
-        onError('Please enter a reference number for digital payment')
-        return
-      }
+    if (paymentInfo.method !== 'cash') {
+      onError('Only cash payments are currently supported')
+      return
     }
 
     setCurrentStep('processing')
@@ -143,12 +133,34 @@ const EnhancedCheckoutForm: React.FC<EnhancedCheckoutFormProps> = ({
       onError('No branch selected')
       return
     }
-
+  
     setIsProcessing(true)
-
+  
     try {
+      // Look up customer_id if user is authenticated
+      let customerId: string | undefined = undefined
+      
+      if (user?.id) {
+        // Import supabase client
+        const { supabase } = await import('../../services/supabase')
+        
+        const { data: customer, error: customerError } = await supabase
+          .from('customers')
+          .select('id')
+          .eq('user_id', user.id)
+          .single()
+        
+        if (customer && !customerError) {
+          customerId = customer.id
+          console.log('Found customer ID:', customerId)
+        } else {
+          console.warn('No customer record found for authenticated user')
+        }
+      }
+  
       const result = await orderService.createOrder({
         cart,
+        customerId: customerId, // Now passing customers.id, not auth.users.id
         branchId: selectedBranch.id,
         paymentMethod: paymentInfo.method,
         notes: paymentInfo.notes?.trim() || undefined,
@@ -159,9 +171,8 @@ const EnhancedCheckoutForm: React.FC<EnhancedCheckoutFormProps> = ({
           phone: customerInfo.phone?.trim() || undefined
         }
       })
-
+  
       if (result.success && result.orderId) {
-        // Clear cart after successful order
         await clearCart()
         setCurrentStep('confirmation')
         onOrderCreated(result.orderId)
@@ -185,41 +196,36 @@ const EnhancedCheckoutForm: React.FC<EnhancedCheckoutFormProps> = ({
     }).format(price)
   }
 
-  const getServiceStatus = () => {
-    const services = [
-      { name: 'Order Service', available: orderService.isAvailable() },
-      { name: 'Payment Service', available: paymentService.isAvailable() },
-      { name: 'Email Service', available: emailService.isAvailable() },
-      { name: 'Inventory Service', available: inventoryService.isAvailable() },
-      { name: 'Tracking Service', available: trackingService.isAvailable() }
-    ]
 
-    return services
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center p-8">
+        <div className="text-center">
+          <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading checkout system...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="bg-red-50 border border-red-200 rounded-lg p-6">
+        <div className="flex items-center space-x-2 mb-3">
+          <AlertCircle className="w-5 h-5 text-red-600" />
+          <span className="text-red-800 font-medium">Configuration Error</span>
+        </div>
+        <p className="text-red-700">{error}</p>
+        <p className="text-sm text-red-600 mt-2">
+          Please ensure your Supabase environment variables are properly configured.
+        </p>
+      </div>
+    )
   }
 
   if (currentStep === 'customer') {
     return (
       <form onSubmit={handleCustomerSubmit} className="space-y-6">
-        {/* Service Status Indicator */}
-        {isDemoMode && (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <div className="flex items-center space-x-2 mb-3">
-              <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-              <span className="text-blue-800 font-medium">Demo Mode</span>
-            </div>
-            <div className="text-sm text-blue-700">
-              <p>Some services are not available. Order will be processed locally for testing.</p>
-              <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
-                {getServiceStatus().map(service => (
-                  <div key={service.name} className="flex items-center space-x-1">
-                    <div className={`w-2 h-2 rounded-full ${service.available ? 'bg-green-500' : 'bg-red-500'}`}></div>
-                    <span>{service.name}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* Customer Information */}
         <div className="bg-white rounded-lg shadow-sm border p-6">
@@ -353,29 +359,6 @@ const EnhancedCheckoutForm: React.FC<EnhancedCheckoutFormProps> = ({
           </div>
         </div>
 
-        {/* Reference Number for Digital Payments */}
-        {(paymentInfo.method === 'gcash' || paymentInfo.method === 'paymaya') && (
-          <div className="bg-white rounded-lg shadow-sm border p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Payment Reference</h3>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Reference Number *
-              </label>
-              <input
-                type="text"
-                required
-                value={paymentInfo.referenceNumber}
-                onChange={(e) => setPaymentInfo(prev => ({ ...prev, referenceNumber: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Enter payment reference number"
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                Enter the reference number from your {paymentInfo.method} transaction
-              </p>
-            </div>
-          </div>
-        )}
 
         {/* Order Notes */}
         <div className="bg-white rounded-lg shadow-sm border p-6">
@@ -533,7 +516,7 @@ const EnhancedCheckoutForm: React.FC<EnhancedCheckoutFormProps> = ({
         </div>
         
         <p className="text-sm text-gray-500">
-          {isDemoMode ? 'This is a demo order. In production, you would receive a confirmation email and tracking information.' : 'You will receive a confirmation email shortly with your order details and tracking information.'}
+          You will receive a confirmation email shortly with your order details and tracking information.
         </p>
       </div>
     )

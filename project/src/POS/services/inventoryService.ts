@@ -1,5 +1,5 @@
 import POSDatabaseService from './databaseService';
-import { ProductVariant, StockMovement, StockAdjustment } from '../../types/pos';
+import { Product, ProductVariant, StockMovement, StockAdjustment } from '../../types/pos';
 
 export class InventoryService {
   
@@ -8,12 +8,13 @@ export class InventoryService {
    */
   static async getLowStockProducts(branchId?: string, limit: number = 20) {
     try {
-      const products = await POSDatabaseService.getProductVariants({
-        inStockOnly: true
+      const products = await POSDatabaseService.getProducts({
+        inStockOnly: true,
+        branchId: branchId
       });
       
       return products
-        .filter(product => product.stock_quantity <= product.minimum_stock)
+        .filter(product => product.inventory && product.inventory.quantity_available <= product.inventory.reorder_level)
         .slice(0, limit);
     } catch (error) {
       console.error('Error getting low stock products:', error);
@@ -26,12 +27,13 @@ export class InventoryService {
    */
   static async getOutOfStockProducts(branchId?: string, limit: number = 20) {
     try {
-      const products = await POSDatabaseService.getProductVariants({
-        inStockOnly: false
+      const products = await POSDatabaseService.getProducts({
+        inStockOnly: false,
+        branchId: branchId
       });
       
       return products
-        .filter(product => product.stock_quantity <= 0)
+        .filter(product => !product.inventory || product.inventory.quantity_available <= 0)
         .slice(0, limit);
     } catch (error) {
       console.error('Error getting out of stock products:', error);
@@ -44,8 +46,9 @@ export class InventoryService {
    */
   static async getProductsByCategory(categoryId: string, branchId?: string) {
     try {
-      return await POSDatabaseService.getProductVariants({
-        categoryId: categoryId
+      return await POSDatabaseService.getProducts({
+        categoryId: categoryId,
+        branchId: branchId
       });
     } catch (error) {
       console.error('Error getting products by category:', error);
@@ -58,7 +61,7 @@ export class InventoryService {
    */
   static async searchProductByBarcode(barcode: string) {
     try {
-      return await POSDatabaseService.getProductVariantByBarcode(barcode);
+      return await POSDatabaseService.getProductByBarcode(barcode);
     } catch (error) {
       console.error('Error searching product by barcode:', error);
       throw error;
@@ -69,7 +72,7 @@ export class InventoryService {
    * Update product stock
    */
   static async updateStock(
-    productVariantId: string, 
+    productId: string, 
     newQuantity: number, 
     branchId: string, 
     userId: string,
@@ -77,17 +80,17 @@ export class InventoryService {
   ) {
     try {
       // Get current product
-      const product = await POSDatabaseService.getProductVariantById(productVariantId);
-      const oldQuantity = product.stock_quantity;
+      const product = await POSDatabaseService.getProductById(productId);
+      const oldQuantity = product.inventory?.quantity_on_hand || 0;
       const quantityDifference = newQuantity - oldQuantity;
 
       // Update stock quantity
-      await POSDatabaseService.updateProductVariantStock(productVariantId, newQuantity);
+      await POSDatabaseService.updateInventoryQuantity(productId, branchId, newQuantity);
 
       // Create stock movement record
       await POSDatabaseService.createStockMovement({
         branch_id: branchId,
-        product_variant_id: productVariantId,
+        product_id: productId,
         movement_type: quantityDifference > 0 ? 'in' : 'out',
         quantity: Math.abs(quantityDifference),
         reference_type: 'adjustment',
@@ -98,8 +101,8 @@ export class InventoryService {
       // Log inventory action
       await POSDatabaseService.logPOSAction({
         action: 'stock_updated',
-        entity_type: 'product_variant',
-        entity_id: productVariantId,
+        entity_type: 'product',
+        entity_id: productId,
         cashier_id: userId,
         old_value: oldQuantity.toString(),
         new_value: newQuantity.toString()
@@ -117,7 +120,7 @@ export class InventoryService {
    */
   static async processSaleStockReduction(
     items: Array<{
-      productVariantId: string;
+      productId: string;
       quantity: number;
       weight?: number;
     }>,
@@ -127,17 +130,18 @@ export class InventoryService {
   ) {
     try {
       for (const item of items) {
-        const product = await POSDatabaseService.getProductVariantById(item.productVariantId);
+        const product = await POSDatabaseService.getProductById(item.productId);
         const quantityToReduce = item.weight || item.quantity;
-        const newQuantity = product.stock_quantity - quantityToReduce;
+        const currentQuantity = product.inventory?.quantity_on_hand || 0;
+        const newQuantity = currentQuantity - quantityToReduce;
 
         // Update stock quantity
-        await POSDatabaseService.updateProductVariantStock(item.productVariantId, newQuantity);
+        await POSDatabaseService.updateInventoryQuantity(item.productId, branchId, newQuantity);
 
         // Create stock movement record
         await POSDatabaseService.createStockMovement({
           branch_id: branchId,
-          product_variant_id: item.productVariantId,
+          product_id: item.productId,
           movement_type: 'out',
           quantity: quantityToReduce,
           reference_type: 'order',
@@ -157,9 +161,9 @@ export class InventoryService {
   /**
    * Get stock movements for product
    */
-  static async getProductStockMovements(productVariantId: string, branchId?: string) {
+  static async getProductStockMovements(productId: string, branchId?: string) {
     try {
-      return await POSDatabaseService.getStockMovements(productVariantId, branchId);
+      return await POSDatabaseService.getStockMovements(productId, branchId);
     } catch (error) {
       console.error('Error getting product stock movements:', error);
       throw error;

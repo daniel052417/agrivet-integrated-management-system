@@ -15,6 +15,7 @@ import ProductCatalog from './pages/ProductCatalog'
 import ShoppingCart from './pages/ShoppingCart'
 import Checkout from './pages/Checkout'
 import OrderConfirmation from './pages/OrderConfirmation'
+import Orders from './pages/Orders'
 import UserSettings from './pages/UserSettings'
 import NotFound from './pages/NotFound'
 
@@ -29,6 +30,7 @@ import MultiUnitTestSuite from './components/catalog/MultiUnitTestSuite'
 import MultiUnitDemo from './components/catalog/MultiUnitDemo'
 import ImagePreviewDemo from './components/catalog/ImagePreviewDemo'
 import ImagePreviewTest from './components/catalog/ImagePreviewTest'
+import SupabaseConnectionTest from './components/debug/SupabaseConnectionTest'
 
 // Layouts
 import MainLayout from './layouts/MainLayout'
@@ -128,6 +130,12 @@ function App() {
                       </MainLayout>
                     } />
                     
+                    <Route path="/orders" element={
+                      <MainLayout>
+                        <Orders />
+                      </MainLayout>
+                    } />
+                    
                     <Route path="/settings" element={
                       <MainLayout>
                         <UserSettings />
@@ -192,6 +200,12 @@ function App() {
                     <Route path="/demo/image-preview-test" element={
                       <MainLayout>
                         <ImagePreviewTest />
+                      </MainLayout>
+                    } />
+                    
+                    <Route path="/debug/supabase" element={
+                      <MainLayout>
+                        <SupabaseConnectionTest />
                       </MainLayout>
                     } />
                     

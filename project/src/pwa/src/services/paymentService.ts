@@ -1,4 +1,5 @@
 import { PaymentMethod, PaymentTransaction, Payment } from '../types'
+import { supabase } from './supabase'
 
 interface PaymentServiceConfig {
   supabaseUrl: string
@@ -32,30 +33,9 @@ interface ProcessPaymentRequest {
 
 class PaymentService {
   private config: PaymentServiceConfig
-  private supabase: any = null
 
   constructor(config: PaymentServiceConfig) {
     this.config = config
-    this.initSupabase()
-  }
-
-  private async initSupabase() {
-    try {
-      if (!this.config.supabaseUrl || !this.config.supabaseAnonKey || 
-          this.config.supabaseUrl === 'https://your-project-id.supabase.co' ||
-          this.config.supabaseAnonKey === 'your-anon-key-here') {
-        console.warn('⚠️ Supabase configuration missing for PaymentService')
-        this.supabase = null
-        return
-      }
-
-      const { createClient } = await import('@supabase/supabase-js')
-      this.supabase = createClient(this.config.supabaseUrl, this.config.supabaseAnonKey)
-      console.log('✅ PaymentService Supabase client initialized')
-    } catch (error) {
-      console.error('Failed to initialize PaymentService Supabase client:', error)
-      this.supabase = null
-    }
   }
 
   /**
@@ -63,11 +43,16 @@ class PaymentService {
    */
   async getPaymentMethods(): Promise<{ success: boolean; methods?: PaymentMethod[]; error?: string }> {
     try {
-      if (!this.supabase) {
+      // Wait for Supabase client to be initialized
+      if (!supabase) {
+        await this.initSupabase()
+      }
+
+      if (!supabase) {
         throw new Error('Supabase client not initialized')
       }
 
-      const { data: methods, error } = await this.supabase
+      const { data: methods, error } = await supabase
         .from('payment_methods')
         .select('*')
         .eq('is_active', true)
@@ -96,14 +81,19 @@ class PaymentService {
    */
   async createPayment(request: CreatePaymentRequest): Promise<CreatePaymentResponse> {
     try {
-      if (!this.supabase) {
+      // Wait for Supabase client to be initialized
+      if (!supabase) {
+        await this.initSupabase()
+      }
+
+      if (!supabase) {
         throw new Error('Supabase client not initialized')
       }
 
       const { orderId, paymentMethodId, amount, referenceNumber, notes, processedBy } = request
 
       // Get payment method details to calculate processing fee
-      const { data: paymentMethod, error: methodError } = await this.supabase
+      const { data: paymentMethod, error: methodError } = await supabase
         .from('payment_methods')
         .select('*')
         .eq('id', paymentMethodId)
@@ -128,7 +118,7 @@ class PaymentService {
         created_at: new Date().toISOString()
       }
 
-      const { data: payment, error: paymentError } = await this.supabase
+      const { data: payment, error: paymentError } = await supabase
         .from('payments')
         .insert(paymentData)
         .select(`
@@ -162,14 +152,19 @@ class PaymentService {
    */
   async processPayment(request: ProcessPaymentRequest): Promise<CreatePaymentResponse> {
     try {
-      if (!this.supabase) {
+      // Wait for Supabase client to be initialized
+      if (!supabase) {
+        await this.initSupabase()
+      }
+
+      if (!supabase) {
         throw new Error('Supabase client not initialized')
       }
 
       const { orderId, paymentMethod, amount, referenceNumber, gatewayResponse, processedBy } = request
 
       // Find payment method by type
-      const { data: paymentMethodData, error: methodError } = await this.supabase
+      const { data: paymentMethodData, error: methodError } = await supabase
         .from('payment_methods')
         .select('*')
         .eq('type', paymentMethod)
@@ -195,7 +190,7 @@ class PaymentService {
         created_at: new Date().toISOString()
       }
 
-      const { data: transaction, error: transactionError } = await this.supabase
+      const { data: transaction, error: transactionError } = await supabase
         .from('payment_transactions')
         .insert(transactionData)
         .select()
@@ -234,7 +229,12 @@ class PaymentService {
    */
   async updatePaymentStatus(paymentId: string, status: string, gatewayStatus?: string): Promise<{ success: boolean; error?: string }> {
     try {
-      if (!this.supabase) {
+      // Wait for Supabase client to be initialized
+      if (!supabase) {
+        await this.initSupabase()
+      }
+
+      if (!supabase) {
         throw new Error('Supabase client not initialized')
       }
 
@@ -251,7 +251,7 @@ class PaymentService {
         updateData.completed_at = new Date().toISOString()
       }
 
-      const { error } = await this.supabase
+      const { error } = await supabase
         .from('payments')
         .update(updateData)
         .eq('id', paymentId)
@@ -276,11 +276,16 @@ class PaymentService {
    */
   async getPaymentByOrder(orderId: string): Promise<{ success: boolean; payment?: Payment; error?: string }> {
     try {
-      if (!this.supabase) {
+      // Wait for Supabase client to be initialized
+      if (!supabase) {
+        await this.initSupabase()
+      }
+
+      if (!supabase) {
         throw new Error('Supabase client not initialized')
       }
 
-      const { data: payment, error } = await this.supabase
+      const { data: payment, error } = await supabase
         .from('payments')
         .select(`
           *,
@@ -313,11 +318,16 @@ class PaymentService {
    */
   async getPaymentTransactions(orderId: string): Promise<{ success: boolean; transactions?: PaymentTransaction[]; error?: string }> {
     try {
-      if (!this.supabase) {
+      // Wait for Supabase client to be initialized
+      if (!supabase) {
+        await this.initSupabase()
+      }
+
+      if (!supabase) {
         throw new Error('Supabase client not initialized')
       }
 
-      const { data: transactions, error } = await this.supabase
+      const { data: transactions, error } = await supabase
         .from('payment_transactions')
         .select('*')
         .eq('order_id', orderId)
@@ -342,44 +352,65 @@ class PaymentService {
   }
 
   /**
-   * Simulate payment processing (for demo/testing)
+   * Process cash payment
    */
-  async simulatePayment(orderId: string, paymentMethod: string, amount: number): Promise<CreatePaymentResponse> {
+  async processCashPayment(orderId: string, amount: number, processedBy: string | null = null): Promise<CreatePaymentResponse> {
     try {
-      // Simulate processing delay
-      await new Promise(resolve => setTimeout(resolve, 2000))
-
-      // Simulate success/failure (90% success rate)
-      const isSuccess = Math.random() > 0.1
-
-      if (!isSuccess) {
-        throw new Error('Payment processing failed. Please try again.')
+      // Wait for Supabase client to be initialized
+      if (!supabase) {
+        await this.initSupabase()
       }
 
-      // Create mock payment data
-      const mockPayment: Payment = {
-        id: `payment-${Date.now()}`,
+      if (!supabase) {
+        throw new Error('Supabase client not initialized')
+      }
+
+      // Get cash payment method
+      const { data: cashMethod, error: methodError } = await supabase
+        .from('payment_methods')
+        .select('*')
+        .eq('type', 'cash')
+        .eq('is_active', true)
+        .single()
+
+      if (methodError) {
+        throw new Error(`Cash payment method not found: ${methodError.message}`)
+      }
+
+      // Create payment record
+      const paymentData = {
         order_id: orderId,
-        payment_method_id: `method-${paymentMethod}`,
+        payment_method_id: cashMethod.id,
         amount,
-        reference_number: `REF-${Date.now()}`,
-        status: 'completed',
-        payment_date: new Date().toISOString(),
-        processing_fee: amount * 0.02, // 2% processing fee
-        notes: 'Simulated payment',
-        processed_by: 'system',
-        created_at: new Date().toISOString(),
-        sales_transaction_id: null
+        reference_number: `CASH-${Date.now()}`,
+        status: 'completed', // Cash payments are immediately completed
+        processing_fee: 0, // No processing fee for cash
+        notes: 'Cash payment at pickup',
+        processed_by: processedBy, // null for customer-initiated payments
+        created_at: new Date().toISOString()
+      }
+
+      const { data: payment, error: paymentError } = await supabase
+        .from('payments')
+        .insert(paymentData)
+        .select(`
+          *,
+          payment_method:payment_methods(*)
+        `)
+        .single()
+
+      if (paymentError) {
+        throw new Error(`Failed to create cash payment: ${paymentError.message}`)
       }
 
       return {
         success: true,
-        payment: mockPayment,
-        paymentId: mockPayment.id
+        payment,
+        paymentId: payment.id
       }
 
     } catch (error) {
-      console.error('Error simulating payment:', error)
+      console.error('Error processing cash payment:', error)
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error'
@@ -409,7 +440,7 @@ class PaymentService {
    * Check if service is available
    */
   isAvailable(): boolean {
-    return !!this.supabase
+    return !!supabase
   }
 }
 

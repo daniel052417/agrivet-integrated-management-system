@@ -1,132 +1,170 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Search, 
-  Filter, 
-  Plus, 
   AlertTriangle, 
   Package, 
   Calendar,
   BarChart3,
-  Download,
-  Upload,
-  Edit,
-  Trash2,
-  Eye,
-  RefreshCw
+  Eye
 } from 'lucide-react';
 import TouchButton from '../components/shared/TouchButton';
 import Modal from '../components/shared/Modal';
-
-interface Product {
-  id: string;
-  name: string;
-  sku: string;
-  barcode?: string;
-  category: string;
-  price: number;
-  cost: number;
-  stock: number;
-  lowStockThreshold: number;
-  batchNumber?: string;
-  expiryDate?: string;
-  supplier: string;
-  lastUpdated: string;
-  status: 'active' | 'inactive' | 'discontinued';
-}
+import { supabase } from '../../lib/supabase';
+import { Product } from '../../types/pos';
 
 const InventoryScreen: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
-  const [sortBy, setSortBy] = useState('name');
-  const [showAddProductModal, setShowAddProductModal] = useState(false);
   const [showLowStockModal, setShowLowStockModal] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
+  const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
 
-  // Mock products data
-  const products: Product[] = [
-    {
-      id: '1',
-      name: 'Premium Chicken Feed 50kg',
-      sku: 'PCF-50',
-      barcode: '1234567890123',
-      category: 'Feed',
-      price: 1250.00,
-      cost: 1000.00,
-      stock: 25,
-      lowStockThreshold: 5,
-      batchNumber: 'B2024001',
-      expiryDate: '2025-12-31',
-      supplier: 'AgriFeed Corp',
-      lastUpdated: '2024-01-15',
-      status: 'active'
-    },
-    {
-      id: '2',
-      name: 'Vitamin Supplement 1L',
-      sku: 'VS-1L',
-      barcode: '1234567890124',
-      category: 'Supplements',
-      price: 450.00,
-      cost: 350.00,
-      stock: 3,
-      lowStockThreshold: 5,
-      batchNumber: 'B2024002',
-      expiryDate: '2025-06-30',
-      supplier: 'VitaCorp',
-      lastUpdated: '2024-01-14',
-      status: 'active'
-    },
-    {
-      id: '3',
-      name: 'Antibiotic Injection 10ml',
-      sku: 'AI-10',
-      barcode: '1234567890125',
-      category: 'Medication',
-      price: 85.00,
-      cost: 60.00,
-      stock: 50,
-      lowStockThreshold: 10,
-      batchNumber: 'B2024003',
-      expiryDate: '2025-03-31',
-      supplier: 'MediVet',
-      lastUpdated: '2024-01-13',
-      status: 'active'
-    },
-    {
-      id: '4',
-      name: 'Poultry Waterer 5L',
-      sku: 'PW-5L',
-      category: 'Equipment',
-      price: 180.00,
-      cost: 120.00,
-      stock: 2,
-      lowStockThreshold: 3,
-      supplier: 'FarmEquip',
-      lastUpdated: '2024-01-12',
-      status: 'active'
+  // Load products and categories from database
+  useEffect(() => {
+    loadProducts();
+    loadCategories();
+  }, []);
+
+  const loadProducts = async () => {
+    try {
+      setIsLoading(true);
+      const { data, error } = await supabase
+        .from('products')
+        .select(`
+          *,
+          categories:category_id (
+            id,
+            name
+          ),
+          inventory:inventory!product_id (
+            id,
+            branch_id,
+            product_id,
+            quantity_on_hand,
+            quantity_reserved,
+            quantity_available,
+            reorder_level,
+            max_stock_level,
+            last_counted,
+            updated_at,
+            base_unit
+          ),
+          product_units (
+            id,
+            unit_name,
+            unit_label,
+            price_per_unit,
+            is_base_unit,
+            is_sellable,
+            conversion_factor,
+            min_sellable_quantity
+          )
+        `)
+        .eq('is_active', true)
+        .order('name');
+
+      if (error) throw error;
+
+      // Transform the data to match the Product type with unit information
+      const transformedProducts: Product[] = data?.map((item: any) => {
+        // Get sellable units sorted by conversion factor (largest first)
+        const sellableUnits = (item.product_units || [])
+          .filter((unit: any) => unit.is_sellable)
+          .sort((a: any, b: any) => b.conversion_factor - a.conversion_factor);
+        
+        // Find base unit or primary display unit
+        const baseUnit = sellableUnits.find((unit: any) => unit.is_base_unit) || sellableUnits[0];
+        
+        return {
+          id: item.id,
+          name: item.name,
+          sku: item.sku,
+          barcode: item.barcode,
+          category_id: item.category_id,
+          unit_of_measure: item.unit_of_measure,
+          weight: item.weight,
+          is_prescription_required: item.is_prescription_required,
+          is_active: item.is_active,
+          created_at: item.created_at,
+          updated_at: item.updated_at,
+          supplier_id: item.supplier_id,
+          image_url: item.image_url,
+          unit_price: item.unit_price,
+          cost_price: item.cost_price,
+          expiry_date: item.expiry_date,
+          inventory: item.inventory?.[0] ? {
+            id: item.inventory[0].id,
+            branch_id: item.inventory[0].branch_id,
+            product_id: item.inventory[0].product_id,
+            quantity_on_hand: item.inventory[0].quantity_on_hand,
+            quantity_reserved: item.inventory[0].quantity_reserved,
+            quantity_available: item.inventory[0].quantity_available,
+            reorder_level: item.inventory[0].reorder_level,
+            max_stock_level: item.inventory[0].max_stock_level,
+            base_unit: item.inventory[0].base_unit
+          } : undefined,
+          category: item.categories ? {
+            id: item.categories.id,
+            name: item.categories.name,
+            sort_order: 0,
+            is_active: true,
+            created_at: new Date().toISOString()
+          } : undefined,
+          // Add unit information for display
+          productUnits: sellableUnits,
+          displayUnit: baseUnit
+        };
+      }) || [];
+
+      setProducts(transformedProducts);
+    } catch (error) {
+      console.error('Error loading products:', error);
+    } finally {
+      setIsLoading(false);
     }
-  ];
+  };
 
-  const categories = ['all', 'Feed', 'Supplements', 'Medication', 'Equipment', 'Tools'];
+  const loadCategories = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('categories')
+        .select('*')
+        .eq('is_active', true)
+        .order('name');
+
+      if (error) throw error;
+      setCategories(data || []);
+    } catch (error) {
+      console.error('Error loading categories:', error);
+    }
+  };
 
   const filteredProducts = products.filter(product => {
     const matchesSearch = product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          product.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          product.barcode?.includes(searchQuery);
-    const matchesCategory = selectedCategory === 'all' || product.category === selectedCategory;
+    const matchesCategory = selectedCategory === 'all' || product.category?.name === selectedCategory;
     return matchesSearch && matchesCategory;
   });
 
-  const lowStockProducts = products.filter(product => product.stock <= product.lowStockThreshold);
+  const lowStockProducts = products.filter(product => 
+    (product.inventory?.quantity_available || 0) <= (product.inventory?.reorder_level || 0)
+  );
 
-  const totalValue = products.reduce((total, product) => total + (product.stock * product.cost), 0);
+  const totalValue = products.reduce((total, product) => 
+    total + ((product.inventory?.quantity_available || 0) * (product.cost_price || 0)), 0
+  );
   const lowStockCount = lowStockProducts.length;
-  const outOfStockCount = products.filter(p => p.stock === 0).length;
+  const outOfStockCount = products.filter(p => (p.inventory?.quantity_available || 0) === 0).length;
 
   const getStockStatus = (product: Product) => {
-    if (product.stock === 0) return { status: 'Out of Stock', color: 'text-red-600 bg-red-100' };
-    if (product.stock <= product.lowStockThreshold) return { status: 'Low Stock', color: 'text-yellow-600 bg-yellow-100' };
+    const stock = product.inventory?.quantity_available || 0;
+    const reorderLevel = product.inventory?.reorder_level || 0;
+    if (stock === 0) return { status: 'Out of Stock', color: 'text-red-600 bg-red-100' };
+    if (stock <= reorderLevel) return { status: 'Low Stock', color: 'text-yellow-600 bg-yellow-100' };
     return { status: 'In Stock', color: 'text-green-600 bg-green-100' };
   };
 
@@ -136,6 +174,38 @@ const InventoryScreen: React.FC = () => {
     const thirtyDaysFromNow = new Date();
     thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
     return expiry <= thirtyDaysFromNow;
+  };
+
+  // Helper function to format stock display with contextual units
+  const formatStockDisplay = (product: any) => {
+    const stock = product.inventory?.quantity_available || 0;
+    const displayUnit = product.displayUnit;
+    
+    if (!displayUnit || stock === 0) {
+      return `${stock} ${product.unit_of_measure || 'units'}`;
+    }
+    
+    // Calculate how many of the display unit we have
+    const quantityInDisplayUnit = Math.floor(stock / displayUnit.conversion_factor);
+    const remainder = stock % displayUnit.conversion_factor;
+    
+    if (quantityInDisplayUnit > 0) {
+      if (remainder > 0) {
+        // Show both display unit and remainder
+        return `${quantityInDisplayUnit} ${displayUnit.unit_label}, ${remainder} ${product.unit_of_measure || 'units'}`;
+      } else {
+        // Show only display unit
+        return `${quantityInDisplayUnit} ${displayUnit.unit_label}`;
+      }
+    } else {
+      // Stock is less than one display unit
+      return `${stock} ${product.unit_of_measure || 'units'}`;
+    }
+  };
+
+  // Helper function to get the primary unit label for display
+  const getPrimaryUnitLabel = (product: any) => {
+    return product.displayUnit?.unit_label || product.unit_of_measure || 'units';
   };
 
   return (
@@ -161,9 +231,10 @@ const InventoryScreen: React.FC = () => {
               onChange={(e) => setSelectedCategory(e.target.value)}
               className="px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
             >
+              <option value="all">All Categories</option>
               {categories.map(category => (
-                <option key={category} value={category}>
-                  {category === 'all' ? 'All Categories' : category}
+                <option key={category.id} value={category.name}>
+                  {category.name}
                 </option>
               ))}
             </select>
@@ -178,14 +249,6 @@ const InventoryScreen: React.FC = () => {
               className="relative"
             >
               Low Stock ({lowStockCount})
-            </TouchButton>
-            
-            <TouchButton
-              onClick={() => setShowAddProductModal(true)}
-              variant="primary"
-              icon={Plus}
-            >
-              Add Product
             </TouchButton>
           </div>
         </div>
@@ -257,11 +320,17 @@ const InventoryScreen: React.FC = () => {
         </div>
 
         {/* Products Display */}
-        {viewMode === 'grid' ? (
+        {isLoading ? (
+          <div className="flex items-center justify-center h-64">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600"></div>
+          </div>
+        ) : viewMode === 'grid' ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {filteredProducts.map(product => {
               const stockStatus = getStockStatus(product);
-              const expiringSoon = isExpiringSoon(product.expiryDate);
+              const expiringSoon = isExpiringSoon(product.expiry_date);
+              const stockDisplay = formatStockDisplay(product);
+              const primaryUnitLabel = getPrimaryUnitLabel(product);
               
               return (
                 <div key={product.id} className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
@@ -281,13 +350,12 @@ const InventoryScreen: React.FC = () => {
                     <div className="space-y-2 mb-4">
                       <div className="text-xs text-gray-600">
                         <div>SKU: {product.sku}</div>
-                        <div>Category: {product.category}</div>
-                        <div>Stock: {product.stock} units</div>
-                        {product.batchNumber && <div>Batch: {product.batchNumber}</div>}
-                        {product.expiryDate && (
+                        <div>Category: {product.category?.name || 'Uncategorized'}</div>
+                        <div>Stock: {stockDisplay}</div>
+                        {product.expiry_date && (
                           <div className={`flex items-center ${expiringSoon ? 'text-red-600' : 'text-gray-600'}`}>
                             <Calendar className="w-3 h-3 mr-1" />
-                            Expires: {new Date(product.expiryDate).toLocaleDateString()}
+                            Expires: {new Date(product.expiry_date).toLocaleDateString()}
                           </div>
                         )}
                       </div>
@@ -295,29 +363,24 @@ const InventoryScreen: React.FC = () => {
                     
                     <div className="flex justify-between items-center mb-4">
                       <div>
-                        <div className="text-lg font-bold text-green-600">₱{product.price.toFixed(2)}</div>
-                        <div className="text-xs text-gray-500">Cost: ₱{product.cost.toFixed(2)}</div>
+                        <div className="text-lg font-bold text-green-600">
+                          ₱{((product as any).displayUnit?.price_per_unit || product.unit_price || 0).toFixed(2)}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          per {primaryUnitLabel} • Cost: ₱{(product.cost_price || 0).toFixed(2)}
+                        </div>
                       </div>
                     </div>
                     
-                    <div className="flex space-x-2">
+                    <div className="flex justify-center">
                       <TouchButton
                         onClick={() => setSelectedProduct(product)}
                         variant="outline"
                         size="sm"
                         icon={Eye}
-                        className="flex-1"
+                        className="w-full"
                       >
-                        View
-                      </TouchButton>
-                      <TouchButton
-                        onClick={() => console.log('Edit product:', product.id)}
-                        variant="outline"
-                        size="sm"
-                        icon={Edit}
-                        className="flex-1"
-                      >
-                        Edit
+                        View Details
                       </TouchButton>
                     </div>
                   </div>
@@ -343,42 +406,34 @@ const InventoryScreen: React.FC = () => {
                 <tbody className="bg-white divide-y divide-gray-200">
                   {filteredProducts.map(product => {
                     const stockStatus = getStockStatus(product);
+                    const stockDisplay = formatStockDisplay(product);
+                    const primaryUnitLabel = getPrimaryUnitLabel(product);
                     return (
                       <tr key={product.id} className="hover:bg-gray-50">
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="text-sm font-medium text-gray-900">{product.name}</div>
-                          <div className="text-sm text-gray-500">{product.supplier}</div>
+                          <div className="text-sm text-gray-500">{product.supplier_id || 'Unknown'}</div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{product.sku}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{product.category}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{product.stock}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">₱{product.price.toFixed(2)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{product.category?.name || 'Uncategorized'}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{stockDisplay}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          ₱{((product as any).displayUnit?.price_per_unit || product.unit_price || 0).toFixed(2)}
+                          <div className="text-xs text-gray-500">per {primaryUnitLabel}</div>
+                        </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className={`px-2 py-1 rounded-full text-xs font-medium ${stockStatus.color}`}>
                             {stockStatus.status}
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                          <div className="flex space-x-2">
-                            <button
-                              onClick={() => setSelectedProduct(product)}
-                              className="text-green-600 hover:text-green-900"
-                            >
-                              <Eye className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => console.log('Edit product:', product.id)}
-                              className="text-blue-600 hover:text-blue-900"
-                            >
-                              <Edit className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => console.log('Delete product:', product.id)}
-                              className="text-red-600 hover:text-red-900"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
+                          <button
+                            onClick={() => setSelectedProduct(product)}
+                            className="text-green-600 hover:text-green-900 flex items-center space-x-1"
+                          >
+                            <Eye className="w-4 h-4" />
+                            <span>View</span>
+                          </button>
                         </td>
                       </tr>
                     );
@@ -403,21 +458,22 @@ const InventoryScreen: React.FC = () => {
           </div>
           
           <div className="space-y-3">
-            {lowStockProducts.map(product => (
-              <div key={product.id} className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg border border-yellow-200">
-                <div>
-                  <div className="font-medium text-gray-900">{product.name}</div>
-                  <div className="text-sm text-gray-600">SKU: {product.sku} • Current: {product.stock} • Threshold: {product.lowStockThreshold}</div>
+            {lowStockProducts.map(product => {
+              const stockDisplay = formatStockDisplay(product);
+              const reorderLevel = product.inventory?.reorder_level || 0;
+              const reorderDisplay = `${reorderLevel} ${product.unit_of_measure || 'units'}`;
+              return (
+                <div key={product.id} className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg border border-yellow-200">
+                  <div>
+                    <div className="font-medium text-gray-900">{product.name}</div>
+                    <div className="text-sm text-gray-600">SKU: {product.sku} • Current: {stockDisplay} • Threshold: {reorderDisplay}</div>
+                  </div>
+                  <span className="text-sm text-gray-500">
+                    View Only
+                  </span>
                 </div>
-                <TouchButton
-                  onClick={() => console.log('Reorder product:', product.id)}
-                  variant="warning"
-                  size="sm"
-                >
-                  Reorder
-                </TouchButton>
-              </div>
-            ))}
+              );
+            })}
           </div>
           
           <div className="flex justify-end space-x-2 pt-4">
@@ -426,13 +482,6 @@ const InventoryScreen: React.FC = () => {
               variant="outline"
             >
               Close
-            </TouchButton>
-            <TouchButton
-              onClick={() => console.log('Generate reorder report')}
-              variant="primary"
-              icon={Download}
-            >
-              Generate Report
             </TouchButton>
           </div>
         </div>
@@ -454,47 +503,72 @@ const InventoryScreen: React.FC = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">Category</label>
-                <p className="mt-1 text-sm text-gray-900">{selectedProduct.category}</p>
+                <p className="mt-1 text-sm text-gray-900">{selectedProduct.category?.name || 'Uncategorized'}</p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">Current Stock</label>
-                <p className="mt-1 text-sm text-gray-900">{selectedProduct.stock} units</p>
+                <p className="mt-1 text-sm text-gray-900">{formatStockDisplay(selectedProduct)}</p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">Low Stock Threshold</label>
-                <p className="mt-1 text-sm text-gray-900">{selectedProduct.lowStockThreshold} units</p>
+                <p className="mt-1 text-sm text-gray-900">{selectedProduct.inventory?.reorder_level || 0} {selectedProduct.unit_of_measure || 'units'}</p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">Selling Price</label>
-                <p className="mt-1 text-sm text-gray-900">₱{selectedProduct.price.toFixed(2)}</p>
+                <p className="mt-1 text-sm text-gray-900">
+                  ₱{((selectedProduct as any).displayUnit?.price_per_unit || selectedProduct.unit_price || 0).toFixed(2)}
+                  {(selectedProduct as any).displayUnit && (
+                    <span className="text-gray-500"> per {(selectedProduct as any).displayUnit.unit_label}</span>
+                  )}
+                </p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">Cost Price</label>
-                <p className="mt-1 text-sm text-gray-900">₱{selectedProduct.cost.toFixed(2)}</p>
+                <p className="mt-1 text-sm text-gray-900">₱{(selectedProduct.cost_price || 0).toFixed(2)}</p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">Supplier</label>
-                <p className="mt-1 text-sm text-gray-900">{selectedProduct.supplier}</p>
+                <p className="mt-1 text-sm text-gray-900">{selectedProduct.supplier_id || 'Unknown'}</p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">Last Updated</label>
-                <p className="mt-1 text-sm text-gray-900">{new Date(selectedProduct.lastUpdated).toLocaleDateString()}</p>
+                <p className="mt-1 text-sm text-gray-900">{new Date(selectedProduct.updated_at).toLocaleDateString()}</p>
               </div>
             </div>
             
-            {selectedProduct.batchNumber && (
+            {/* Available Units Section */}
+            {(selectedProduct as any).productUnits && (selectedProduct as any).productUnits.length > 0 && (
               <div>
-                <label className="block text-sm font-medium text-gray-700">Batch Number</label>
-                <p className="mt-1 text-sm text-gray-900">{selectedProduct.batchNumber}</p>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Available Units</label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {(selectedProduct as any).productUnits.map((unit: any) => (
+                    <div key={unit.id} className="bg-gray-50 rounded-lg p-3">
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <div className="font-medium text-gray-900">{unit.unit_label}</div>
+                          <div className="text-sm text-gray-600">
+                            {unit.conversion_factor} {selectedProduct.unit_of_measure || 'units'} per {unit.unit_label}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-semibold text-green-600">₱{unit.price_per_unit.toFixed(2)}</div>
+                          {unit.is_base_unit && (
+                            <div className="text-xs text-blue-600">Base Unit</div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
             
-            {selectedProduct.expiryDate && (
+            {selectedProduct.expiry_date && (
               <div>
                 <label className="block text-sm font-medium text-gray-700">Expiry Date</label>
-                <p className={`mt-1 text-sm ${isExpiringSoon(selectedProduct.expiryDate) ? 'text-red-600' : 'text-gray-900'}`}>
-                  {new Date(selectedProduct.expiryDate).toLocaleDateString()}
-                  {isExpiringSoon(selectedProduct.expiryDate) && ' (Expiring Soon!)'}
+                <p className={`mt-1 text-sm ${isExpiringSoon(selectedProduct.expiry_date) ? 'text-red-600' : 'text-gray-900'}`}>
+                  {new Date(selectedProduct.expiry_date).toLocaleDateString()}
+                  {isExpiringSoon(selectedProduct.expiry_date) && ' (Expiring Soon!)'}
                 </p>
               </div>
             )}
@@ -505,13 +579,6 @@ const InventoryScreen: React.FC = () => {
                 variant="outline"
               >
                 Close
-              </TouchButton>
-              <TouchButton
-                onClick={() => console.log('Edit product:', selectedProduct.id)}
-                variant="primary"
-                icon={Edit}
-              >
-                Edit Product
               </TouchButton>
             </div>
           </div>

@@ -1,4 +1,5 @@
 import { OrderTracking } from '../types'
+import { supabase } from './supabase'
 
 interface OrderTrackingServiceConfig {
   supabaseUrl: string
@@ -32,30 +33,9 @@ interface UpdateTrackingRequest {
 
 class OrderTrackingService {
   private config: OrderTrackingServiceConfig
-  private supabase: any = null
 
   constructor(config: OrderTrackingServiceConfig) {
     this.config = config
-    this.initSupabase()
-  }
-
-  private async initSupabase() {
-    try {
-      if (!this.config.supabaseUrl || !this.config.supabaseAnonKey || 
-          this.config.supabaseUrl === 'https://your-project-id.supabase.co' ||
-          this.config.supabaseAnonKey === 'your-anon-key-here') {
-        console.warn('⚠️ Supabase configuration missing for OrderTrackingService')
-        this.supabase = null
-        return
-      }
-
-      const { createClient } = await import('@supabase/supabase-js')
-      this.supabase = createClient(this.config.supabaseUrl, this.config.supabaseAnonKey)
-      console.log('✅ OrderTrackingService Supabase client initialized')
-    } catch (error) {
-      console.error('Failed to initialize OrderTrackingService Supabase client:', error)
-      this.supabase = null
-    }
   }
 
   /**
@@ -63,7 +43,12 @@ class OrderTrackingService {
    */
   async createTracking(request: CreateTrackingRequest): Promise<CreateTrackingResponse> {
     try {
-      if (!this.supabase) {
+      // Wait for Supabase client to be initialized
+      if (!supabase) {
+        await this.initSupabase()
+      }
+
+      if (!supabase) {
         throw new Error('Supabase client not initialized')
       }
 
@@ -81,7 +66,7 @@ class OrderTrackingService {
         created_at: new Date().toISOString()
       }
 
-      const { data: tracking, error } = await this.supabase
+      const { data: tracking, error } = await supabase
         .from('order_tracking')
         .insert(trackingData)
         .select(`
@@ -114,7 +99,12 @@ class OrderTrackingService {
    */
   async updateTracking(request: UpdateTrackingRequest): Promise<{ success: boolean; tracking?: OrderTracking; error?: string }> {
     try {
-      if (!this.supabase) {
+      // Wait for Supabase client to be initialized
+      if (!supabase) {
+        await this.initSupabase()
+      }
+
+      if (!supabase) {
         throw new Error('Supabase client not initialized')
       }
 
@@ -140,7 +130,7 @@ class OrderTrackingService {
         updateData.actual_delivery = actualDelivery
       }
 
-      const { data: tracking, error } = await this.supabase
+      const { data: tracking, error } = await supabase
         .from('order_tracking')
         .update(updateData)
         .eq('id', trackingId)
@@ -173,11 +163,16 @@ class OrderTrackingService {
    */
   async getTrackingByOrder(orderId: string): Promise<{ success: boolean; tracking?: OrderTracking; error?: string }> {
     try {
-      if (!this.supabase) {
+      // Wait for Supabase client to be initialized
+      if (!supabase) {
+        await this.initSupabase()
+      }
+
+      if (!supabase) {
         throw new Error('Supabase client not initialized')
       }
 
-      const { data: tracking, error } = await this.supabase
+      const { data: tracking, error } = await supabase
         .from('order_tracking')
         .select(`
           *,
@@ -209,11 +204,16 @@ class OrderTrackingService {
    */
   async getTrackingByNumber(trackingNumber: string): Promise<{ success: boolean; tracking?: OrderTracking; error?: string }> {
     try {
-      if (!this.supabase) {
+      // Wait for Supabase client to be initialized
+      if (!supabase) {
+        await this.initSupabase()
+      }
+
+      if (!supabase) {
         throw new Error('Supabase client not initialized')
       }
 
-      const { data: tracking, error } = await this.supabase
+      const { data: tracking, error } = await supabase
         .from('order_tracking')
         .select(`
           *,
@@ -245,7 +245,12 @@ class OrderTrackingService {
    */
   async updateOrderStatus(orderId: string, status: string, notes?: string): Promise<{ success: boolean; error?: string }> {
     try {
-      if (!this.supabase) {
+      // Wait for Supabase client to be initialized
+      if (!supabase) {
+        await this.initSupabase()
+      }
+
+      if (!supabase) {
         throw new Error('Supabase client not initialized')
       }
 
@@ -387,7 +392,7 @@ class OrderTrackingService {
    * Check if service is available
    */
   isAvailable(): boolean {
-    return !!this.supabase
+    return !!supabase
   }
 }
 

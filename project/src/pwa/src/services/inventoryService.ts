@@ -1,4 +1,5 @@
 import { Inventory, InventoryTransaction } from '../types'
+import { supabase } from './supabase'
 
 interface InventoryServiceConfig {
   supabaseUrl: string
@@ -25,30 +26,9 @@ interface InventoryUpdateResponse {
 
 class InventoryService {
   private config: InventoryServiceConfig
-  private supabase: any = null
 
   constructor(config: InventoryServiceConfig) {
     this.config = config
-    this.initSupabase()
-  }
-
-  private async initSupabase() {
-    try {
-      if (!this.config.supabaseUrl || !this.config.supabaseAnonKey || 
-          this.config.supabaseUrl === 'https://your-project-id.supabase.co' ||
-          this.config.supabaseAnonKey === 'your-anon-key-here') {
-        console.warn('⚠️ Supabase configuration missing for InventoryService')
-        this.supabase = null
-        return
-      }
-
-      const { createClient } = await import('@supabase/supabase-js')
-      this.supabase = createClient(this.config.supabaseUrl, this.config.supabaseAnonKey)
-      console.log('✅ InventoryService Supabase client initialized')
-    } catch (error) {
-      console.error('Failed to initialize InventoryService Supabase client:', error)
-      this.supabase = null
-    }
   }
 
   /**
@@ -56,11 +36,16 @@ class InventoryService {
    */
   async getInventory(productId: string, branchId: string): Promise<{ success: boolean; inventory?: Inventory; error?: string }> {
     try {
-      if (!this.supabase) {
+      // Wait for Supabase client to be initialized
+      if (!supabase) {
+        await this.initSupabase()
+      }
+
+      if (!supabase) {
         throw new Error('Supabase client not initialized')
       }
 
-      const { data: inventory, error } = await this.supabase
+      const { data: inventory, error } = await supabase
         .from('inventory')
         .select('*')
         .eq('product_id', productId)
@@ -90,7 +75,12 @@ class InventoryService {
    */
   async updateInventory(request: InventoryUpdateRequest): Promise<InventoryUpdateResponse> {
     try {
-      if (!this.supabase) {
+      // Wait for Supabase client to be initialized
+      if (!supabase) {
+        await this.initSupabase()
+      }
+
+      if (!supabase) {
         throw new Error('Supabase client not initialized')
       }
 
@@ -113,7 +103,7 @@ class InventoryService {
       }
 
       // Update inventory
-      const { error: updateError } = await this.supabase
+      const { error: updateError } = await supabase
         .from('inventory')
         .update({
           quantity_on_hand: quantityAfter,
@@ -142,7 +132,7 @@ class InventoryService {
         created_at: new Date().toISOString()
       }
 
-      const { data: transaction, error: transactionError } = await this.supabase
+      const { data: transaction, error: transactionError } = await supabase
         .from('inventory_transactions')
         .insert(transactionData)
         .select()
@@ -187,8 +177,8 @@ class InventoryService {
           orderId,
           referenceNumber: `ORDER-${orderId}`,
           notes: `Deducted for order ${orderId}`,
-          createdBy,
-          createdByName: 'System'
+          createdBy: null, // Customer-initiated action, no staff user
+          createdByName: 'Customer Order'
         })
 
         if (!result.success) {
@@ -236,8 +226,8 @@ class InventoryService {
           orderId,
           referenceNumber: `CANCEL-${orderId}`,
           notes: `Restored for cancelled order ${orderId}`,
-          createdBy,
-          createdByName: 'System'
+          createdBy: null, // Customer-initiated action, no staff user
+          createdByName: 'Customer Cancellation'
         })
 
         if (!result.success) {
@@ -321,11 +311,16 @@ class InventoryService {
    */
   async getInventoryTransactions(productId: string, branchId?: string): Promise<{ success: boolean; transactions?: InventoryTransaction[]; error?: string }> {
     try {
-      if (!this.supabase) {
+      // Wait for Supabase client to be initialized
+      if (!supabase) {
+        await this.initSupabase()
+      }
+
+      if (!supabase) {
         throw new Error('Supabase client not initialized')
       }
 
-      let query = this.supabase
+      let query = supabase
         .from('inventory_transactions')
         .select('*')
         .eq('product_id', productId)
@@ -397,18 +392,23 @@ class InventoryService {
    */
   async getLowStockProducts(branchId: string): Promise<{ success: boolean; products?: any[]; error?: string }> {
     try {
-      if (!this.supabase) {
+      // Wait for Supabase client to be initialized
+      if (!supabase) {
+        await this.initSupabase()
+      }
+
+      if (!supabase) {
         throw new Error('Supabase client not initialized')
       }
 
-      const { data: products, error } = await this.supabase
+      const { data: products, error } = await supabase
         .from('inventory')
         .select(`
           *,
           product:products(*)
         `)
         .eq('branch_id', branchId)
-        .lte('quantity_on_hand', this.supabase.raw('reorder_level'))
+        .lte('quantity_on_hand', supabase.raw('reorder_level'))
         .order('quantity_on_hand', { ascending: true })
 
       if (error) {
@@ -433,7 +433,7 @@ class InventoryService {
    * Check if service is available
    */
   isAvailable(): boolean {
-    return !!this.supabase
+    return !!supabase
   }
 }
 

@@ -33,39 +33,88 @@ export interface Product {
   updated_at: string;
   barcode?: string;
   supplier_id?: string;
+  image_url?: string;
+  // POS-specific fields from the actual products table
+  unit_price?: number;
+  cost_price?: number;
+  expiry_date?: string;
+  // Inventory information (joined from inventory table)
+  inventory?: Inventory;
+  // Category information (joined from categories table)
+  category?: Category;
+  // Unit information for display (added for InventoryScreen)
+  productUnits?: Array<{
+    id: string;
+    unit_name: string;
+    unit_label: string;
+    price_per_unit: number;
+    is_base_unit: boolean;
+    is_sellable: boolean;
+    conversion_factor: number;
+    min_sellable_quantity: number;
+  }>;
+  displayUnit?: {
+    id: string;
+    unit_name: string;
+    unit_label: string;
+    price_per_unit: number;
+    is_base_unit: boolean;
+    is_sellable: boolean;
+    conversion_factor: number;
+    min_sellable_quantity: number;
+  };
 }
 
-export interface ProductVariant {
-  id: string;
-  product_id: string;
-  sku: string;
-  name: string;
-  description?: string;
-  variant_type: string;
-  variant_value: string;
-  price: number;
-  cost?: number;
-  is_active: boolean;
-  created_at: string;
-  pos_pricing_type: 'fixed' | 'weight_based' | 'bulk';
+// Keep ProductVariant for backward compatibility, but it now maps to Product
+export interface ProductVariant extends Product {
+  // POS-specific fields for backward compatibility
+  price?: number; // Will be set from unit_price
+  pos_pricing_type?: 'fixed' | 'weight_based' | 'bulk';
   weight_per_unit?: number;
   bulk_discount_threshold?: number;
   bulk_discount_percentage?: number;
-  requires_expiry_date: boolean;
-  requires_batch_tracking: boolean;
-  is_quick_sale: boolean;
-  barcode?: string;
-  expiry_date?: string;
+  // Additional POS fields
+  requires_expiry_date?: boolean;
+  requires_batch_tracking?: boolean;
+  is_quick_sale?: boolean;
   batch_number?: string;
-  image_url?: string;
-  // Inventory information (joined from inventory table)
-  inventory?: Inventory;
+  // For backward compatibility with existing POS code
+  products?: {
+    id: string;
+    name: string;
+    category_id: string;
+    is_active: boolean;
+  };
+  // Available units for grouped card design
+  availableUnits?: Array<{
+    id: string;
+    label: string;
+    price: number;
+    isBase: boolean;
+  }>;
+  // New structure for proper unit management
+  units?: Array<{
+    id: string;
+    unit_name: string;
+    unit_label: string;
+    price: number;
+    is_base_unit: boolean;
+    conversion_factor: number;
+    min_sellable_quantity: number;
+  }>;
+  selectedUnit?: {
+    id: string;
+    unit_name: string;
+    unit_label: string;
+    price: number;
+    is_base_unit: boolean;
+  } | null;
 }
 
 export interface Inventory {
   id: string;
   branch_id: string;
-  product_variant_id: string;
+  product_id: string; // Changed from product_variant_id to product_id
   quantity_on_hand: number;
   quantity_reserved: number;
   quantity_available: number; // Generated column
@@ -73,6 +122,7 @@ export interface Inventory {
   max_stock_level: number;
   last_counted?: string;
   updated_at?: string;
+  base_unit?: string;
 }
 
 
@@ -433,7 +483,7 @@ export interface UserSession {
 export interface StockMovement {
   id: string;
   branch_id: string;
-  product_variant_id: string;
+  product_id: string; // Changed from product_variant_id to product_id
   movement_type: 'in' | 'out' | 'adjustment' | 'transfer';
   quantity: number;
   reference_type: 'purchase_order' | 'order' | 'adjustment' | 'transfer' | 'initial';
@@ -494,7 +544,7 @@ export interface OnlineOrder {
   customer_address: string;
   branch_id: string;
   order_type: 'pickup' | 'delivery' | 'reservation';
-  status: 'pending' | 'confirmed' | 'ready' | 'completed' | 'cancelled';
+  status: 'pending_confirmation' | 'confirmed' | 'ready_for_pickup' | 'completed' | 'cancelled';
   payment_status: 'pending' | 'paid' | 'failed' | 'refunded';
   payment_method: 'cash' | 'digital' | 'card';
   subtotal: number;

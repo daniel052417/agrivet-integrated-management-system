@@ -1,5 +1,5 @@
 import React from 'react'
-import { ShoppingCart, MapPin, Menu, User } from 'lucide-react'
+import { ShoppingCart, MapPin, Menu, User, Package } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useCart } from '../../contexts/CartContext'
 import { useAuth } from '../../contexts/AuthContext'
@@ -47,6 +47,13 @@ const Header: React.FC<HeaderProps> = ({ branch }) => {
               Products
             </button>
             <button
+              onClick={() => navigate('/orders')}
+              className="text-gray-700 hover:text-agrivet-green transition-colors"
+              title="My Orders"
+            >
+              <Package className="w-5 h-5" />
+            </button>
+            <button
               onClick={() => navigate('/cart')}
               className="relative text-gray-700 hover:text-agrivet-green transition-colors"
             >
@@ -70,6 +77,13 @@ const Header: React.FC<HeaderProps> = ({ branch }) => {
 
           {/* Mobile Menu */}
           <div className="md:hidden flex items-center space-x-2">
+            <button
+              onClick={() => navigate('/orders')}
+              className="p-2 text-gray-700 hover:text-agrivet-green transition-colors"
+              title="My Orders"
+            >
+              <Package className="w-5 h-5" />
+            </button>
             <button
               onClick={() => navigate('/cart')}
               className="relative p-2 text-gray-700 hover:text-agrivet-green transition-colors"

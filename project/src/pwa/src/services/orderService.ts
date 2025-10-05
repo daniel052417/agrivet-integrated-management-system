@@ -1,4 +1,5 @@
-import { Cart, Order, OrderItem } from '../types'
+import { Cart, Order } from '../types'
+import { supabase } from './supabase'
 import PaymentService from './paymentService'
 import EmailService from './emailService'
 import InventoryService from './inventoryService'
@@ -31,52 +32,26 @@ interface CreateOrderResponse {
 }
 
 class OrderService {
-  private config: OrderServiceConfig
-  private supabase: any = null
   private paymentService: PaymentService
   private emailService: EmailService
   private inventoryService: InventoryService
   private trackingService: OrderTrackingService
 
   constructor(config: OrderServiceConfig) {
-    this.config = config
-    this.initSupabase()
-    
-    // Initialize other services
     this.paymentService = new PaymentService(config)
     this.emailService = new EmailService(config)
     this.inventoryService = new InventoryService(config)
     this.trackingService = new OrderTrackingService(config)
   }
 
-  private async initSupabase() {
-    try {
-      // Check if we have valid configuration
-      if (!this.config.supabaseUrl || !this.config.supabaseAnonKey || 
-          this.config.supabaseUrl === 'https://your-project-id.supabase.co' ||
-          this.config.supabaseAnonKey === 'your-anon-key-here') {
-        console.warn('⚠️ Supabase configuration missing or using placeholder values')
-        console.warn('⚠️ Order service will not be available')
-        this.supabase = null
-        return
-      }
-
-      // Dynamically import Supabase client
-      const { createClient } = await import('@supabase/supabase-js')
-      this.supabase = createClient(this.config.supabaseUrl, this.config.supabaseAnonKey)
-      console.log('✅ Supabase client initialized successfully')
-    } catch (error) {
-      console.error('Failed to initialize Supabase client:', error)
-      this.supabase = null
-    }
-  }
 
   /**
-   * Create order from cart and persist to Supabase
+   * Create PWA order (pending confirmation from POS)
+   * Does NOT deduct inventory or process payment
    */
   async createOrder(request: CreateOrderRequest): Promise<CreateOrderResponse> {
     try {
-      if (!this.supabase) {
+      if (!supabase) {
         throw new Error('Supabase client not initialized')
       }
 
@@ -85,13 +60,50 @@ class OrderService {
       // Generate order number
       const orderNumber = this.generateOrderNumber()
 
-      // Create order data with additional fields
+      // Get current user ID from Supabase auth
+      const { data: { user }, error: authError } = await supabase.auth.getUser()
+      const currentUserId = user?.id || null
+
+      console.log('Current user ID:', currentUserId)
+      console.log('Customer email:', customerInfo?.email)
+
+      // Get or use existing customer_id from customers table
+      let finalCustomerId = customerId
+
+      // If user is authenticated but no customerId provided, look up their customer record
+      if (currentUserId && !finalCustomerId) {
+        console.log('Looking up customer for user_id:', currentUserId)
+        
+        const { data: existingCustomer, error: customerError } = await supabase
+          .from('customers')
+          .select('id, user_id, email')
+          .eq('user_id', currentUserId)
+          .single()
+        
+        console.log('Customer lookup result:', { existingCustomer, customerError })
+        
+        if (existingCustomer && !customerError) {
+          finalCustomerId = existingCustomer.id
+          console.log('Found existing customer:', finalCustomerId)
+        } else {
+          console.warn('No customer record found for user_id:', currentUserId, 'Error:', customerError)
+          finalCustomerId = undefined
+        }
+      } else if (customerId) {
+        console.log('Using provided customerId:', customerId)
+      }
+      
+      console.log('Final customer_id for order:', finalCustomerId)
+
+      console.log('Creating order with customer_id:', finalCustomerId)
+
+      // Prepare order data
       const orderData = {
         order_number: orderNumber,
-        customer_id: customerId || null,
+        customer_id: finalCustomerId || null,
         branch_id: branchId,
         order_type: 'pickup',
-        status: 'pending',
+        status: 'pending_confirmation',
         payment_status: 'pending',
         subtotal: cart.subtotal,
         tax_amount: cart.tax,
@@ -100,42 +112,46 @@ class OrderService {
         payment_method: paymentMethod,
         payment_reference: null,
         payment_notes: notes || null,
-        estimated_ready_time: new Date(Date.now() + 30 * 60 * 1000).toISOString(), // 30 minutes from now
-        is_guest_order: !customerId,
+        estimated_ready_time: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+        is_guest_order: !finalCustomerId,
         customer_name: customerInfo ? `${customerInfo.firstName} ${customerInfo.lastName}` : null,
         customer_email: customerInfo?.email || null,
         customer_phone: customerInfo?.phone || null,
         special_instructions: notes || null,
+        notes: notes || null,
         confirmed_at: null,
         completed_at: null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       }
 
-      // Insert order
-      const { data: order, error: orderError } = await this.supabase
+      // Direct insert into orders table
+        const { data: order, error: orderError } = await supabase
         .from('orders')
         .insert(orderData)
         .select()
         .single()
 
       if (orderError) {
+        console.error('Order creation error:', orderError)
         throw new Error(`Failed to create order: ${orderError.message}`)
       }
 
-      // Create order items with unit information
+      console.log('Order created successfully:', order.id, 'with customer_id:', order.customer_id)
+
+      // Create order items
       const orderItems = cart.items.map(item => ({
         order_id: order.id,
         product_id: item.product.product_id,
         product_unit_id: item.product_unit?.id || null,
-        quantity: item.quantity, // Quantity in selected unit
-        base_unit_quantity: item.base_unit_quantity, // Quantity in base units for inventory
+        quantity: item.quantity,
+        base_unit_quantity: item.base_unit_quantity,
         unit_price: item.product_unit?.price_per_unit || item.unitPrice,
         line_total: item.lineTotal,
         product_name: item.product.name,
         product_sku: item.product.sku,
-        unit_name: item.product_unit?.unit_name || item.product.unit_name,
-        unit_label: item.product_unit?.unit_label || item.product.unit_label,
+        unit_name: item.product_unit?.unit_name || 'piece',
+        unit_label: item.product_unit?.unit_label || 'Piece',
         weight: item.weight || null,
         expiry_date: item.expiryDate || null,
         batch_number: item.batchNumber || null,
@@ -143,107 +159,26 @@ class OrderService {
         created_at: new Date().toISOString()
       }))
 
-      const { error: itemsError } = await this.supabase
+      const { error: itemsError } = await supabase
         .from('order_items')
         .insert(orderItems)
 
       if (itemsError) {
         // Rollback order if items fail
-        await this.supabase.from('orders').delete().eq('id', order.id)
+        await supabase.from('orders').delete().eq('id', order.id)
         throw new Error(`Failed to create order items: ${itemsError.message}`)
       }
 
-      // Deduct inventory using the new inventory service
-      if (this.inventoryService.isAvailable()) {
-        const inventoryResult = await this.inventoryService.deductInventoryForOrder(
-          order.id,
-          cart.items.map(item => ({
-            productId: item.product.product_id,
-            productUnitId: item.product_unit?.id || '',
-            quantity: item.quantity,
-            baseUnitQuantity: item.base_unit_quantity
-          })),
-          branchId,
-          'system'
-        )
-
-        if (!inventoryResult.success) {
-          console.error('Error deducting inventory:', inventoryResult.error)
-          // Note: We don't rollback here as the order is already created
-          // In production, you might want to implement a compensation transaction
-        }
-      } else {
-        console.warn('Inventory service not available, skipping inventory deduction')
+      // Create soft inventory reservations (optional - for display purposes only)
+      try {
+        await this.createSoftReservations(order.id, branchId, cart.items)
+      } catch (error) {
+        console.warn('Could not create soft reservations:', error)
+        // Non-critical, continue
       }
 
-      // If customer info provided but no customer ID, create customer record
-      if (customerInfo && !customerId) {
-        const customerData = {
-          customer_code: this.generateCustomerCode(),
-          first_name: customerInfo.firstName,
-          last_name: customerInfo.lastName,
-          email: customerInfo.email || null,
-          phone: customerInfo.phone || null,
-          customer_type: 'walk_in',
-          registration_date: new Date().toISOString(),
-          is_active: true,
-          total_spent: cart.total,
-          last_purchase_date: new Date().toISOString(),
-          loyalty_points: 0,
-          loyalty_tier: 'bronze',
-          total_lifetime_spent: cart.total,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        }
-
-        const { data: customer, error: customerError } = await this.supabase
-          .from('customers')
-          .insert(customerData)
-          .select()
-          .single()
-
-        if (!customerError && customer) {
-          // Update order with customer ID
-          await this.supabase
-            .from('orders')
-            .update({ customer_id: customer.id })
-            .eq('id', order.id)
-        }
-      }
-
-      // Process payment
-      if (this.paymentService.isAvailable()) {
-        try {
-          const paymentResult = await this.paymentService.simulatePayment(
-            order.id,
-            paymentMethod,
-            cart.total
-          )
-
-          if (paymentResult.success && paymentResult.payment) {
-            // Update order payment status
-            await this.updateOrderStatus(order.id, 'confirmed', 'paid')
-          }
-        } catch (error) {
-          console.error('Error processing payment:', error)
-        }
-      }
-
-      // Create order tracking
-      if (this.trackingService.isAvailable()) {
-        try {
-          await this.trackingService.createTracking({
-            orderId: order.id,
-            status: 'confirmed',
-            updateNotes: 'Order confirmed and payment processed'
-          })
-        } catch (error) {
-          console.error('Error creating order tracking:', error)
-        }
-      }
-
-      // Send email notification
-      if (this.emailService.isAvailable() && customerInfo?.email) {
+      // Send order notification (not confirmation yet)
+      if (customerInfo?.email) {
         try {
           await this.emailService.sendOrderConfirmation(
             order.id,
@@ -254,12 +189,12 @@ class OrderService {
               orderTotal: cart.total,
               customerName: `${customerInfo.firstName} ${customerInfo.lastName}`,
               orderDate: new Date().toLocaleDateString(),
-              branchName: 'AgriVet Branch', // You might want to fetch this from the branch
-              estimatedReadyTime: order.estimated_ready_time
+              branchName: 'Tiongson Agrivet',
+              message: 'Your order has been received and is awaiting confirmation from our staff.'
             }
           )
         } catch (error) {
-          console.error('Error sending order confirmation email:', error)
+          console.error('Error sending order received email:', error)
         }
       }
 
@@ -279,15 +214,199 @@ class OrderService {
   }
 
   /**
+   * Create soft inventory reservations (for display only, not actual deduction)
+   */
+  private async createSoftReservations(orderId: string, branchId: string, items: any[]) {
+    const reservations = items.map(item => ({
+      order_id: orderId,
+      product_id: item.product.product_id,
+      branch_id: branchId,
+      quantity_reserved: item.base_unit_quantity || item.quantity,
+      reserved_until: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      status: 'pending',
+      created_at: new Date().toISOString()
+    }))
+
+    await supabase
+      .from('inventory_reservations')
+      .insert(reservations)
+  }
+
+  /**
+   * Confirm order in POS (staff action)
+   * THIS is where inventory deduction and payment recording happens
+   */
+  async confirmOrderInPOS(orderId: string, staffUserId: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      if (!supabase) {
+        throw new Error('Supabase client not initialized')
+      }
+
+      // Get order details
+      const orderResult = await this.getOrder(orderId)
+      if (!orderResult.success || !orderResult.order) {
+        throw new Error('Order not found')
+      }
+
+      const order = orderResult.order
+
+      // 1. Deduct inventory (with staff user_id)
+      if (order.order_items) {
+        const inventoryResult = await this.inventoryService.deductInventoryForOrder(
+          orderId,
+          order.order_items.map(item => ({
+            productId: item.product_id,
+            productUnitId: item.product_unit_id || '',
+            quantity: item.quantity,
+            baseUnitQuantity: item.base_unit_quantity || item.quantity
+          })),
+          order.branch_id,
+          staffUserId
+        )
+
+        if (!inventoryResult.success) {
+          throw new Error(`Inventory deduction failed: ${inventoryResult.error}`)
+        }
+      }
+
+      // 2. Process payment (with staff user_id)
+      if (order.payment_method === 'cash') {
+        const paymentResult = await this.paymentService.processCashPayment(
+          order.id,
+          order.total_amount,
+          staffUserId
+        )
+
+        if (!paymentResult.success) {
+          throw new Error(`Payment processing failed: ${paymentResult.error}`)
+        }
+      }
+
+      // 3. Update order status to confirmed
+      await supabase
+        .from('orders')
+        .update({
+          status: 'confirmed',
+          payment_status: 'paid',
+          confirmed_at: new Date().toISOString(),
+          confirmed_by: staffUserId,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', orderId)
+
+      // 4. Update soft reservations to confirmed
+      await supabase
+        .from('inventory_reservations')
+        .update({ status: 'confirmed' })
+        .eq('order_id', orderId)
+
+      // 5. Create order tracking
+      await this.trackingService.createTracking({
+        orderId: order.id,
+        status: 'confirmed',
+        updateNotes: 'Order confirmed by staff. Payment processed.'
+      })
+
+      // 6. Send confirmation email
+      if (order.customer_email) {
+        await this.emailService.sendOrderConfirmation(
+          order.id,
+          order.customer_email,
+          order.customer_name || 'Customer',
+          {
+            orderNumber: order.order_number,
+            orderTotal: order.total_amount,
+            customerName: order.customer_name || 'Customer',
+            orderDate: new Date(order.created_at).toLocaleDateString(),
+            branchName: 'Tiongson Agrivet',
+            estimatedReadyTime: order.estimated_ready_time
+          }
+        )
+      }
+
+      return { success: true }
+
+    } catch (error) {
+      console.error('Error confirming order:', error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }
+    }
+  }
+
+  /**
+   * Reject order in POS (staff action)
+   */
+  async rejectOrderInPOS(orderId: string, staffUserId: string, reason: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      if (!supabase) {
+        throw new Error('Supabase client not initialized')
+      }
+
+      const orderResult = await this.getOrder(orderId)
+      if (!orderResult.success || !orderResult.order) {
+        throw new Error('Order not found')
+      }
+
+      const order = orderResult.order
+
+      await supabase
+        .from('orders')
+        .update({
+          status: 'cancelled',
+          payment_status: 'cancelled',
+          special_instructions: `${order.special_instructions || ''}\n\nREJECTED: ${reason}`,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', orderId)
+
+      await supabase
+        .from('inventory_reservations')
+        .update({ status: 'released' })
+        .eq('order_id', orderId)
+
+      await this.trackingService.createTracking({
+        orderId: order.id,
+        status: 'cancelled',
+        updateNotes: `Order rejected by staff. Reason: ${reason}`
+      })
+
+      if (order.customer_email) {
+        await this.emailService.sendOrderCancellation(
+          order.id,
+          order.customer_email,
+          order.customer_name || 'Customer',
+          {
+            orderNumber: order.order_number,
+            orderTotal: order.total_amount,
+            customerName: order.customer_name || 'Customer',
+            reason: reason
+          }
+        )
+      }
+
+      return { success: true }
+
+    } catch (error) {
+      console.error('Error rejecting order:', error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }
+    }
+  }
+
+  /**
    * Get order by ID
    */
   async getOrder(orderId: string): Promise<{ success: boolean; order?: Order; error?: string }> {
     try {
-      if (!this.supabase) {
+      if (!supabase) {
         throw new Error('Supabase client not initialized')
       }
 
-      const { data: order, error } = await this.supabase
+      const { data: order, error } = await supabase
         .from('orders')
         .select(`
           *,
@@ -325,7 +444,7 @@ class OrderService {
    */
   async updateOrderStatus(orderId: string, status: string, paymentStatus?: string): Promise<{ success: boolean; error?: string }> {
     try {
-      if (!this.supabase) {
+      if (!supabase) {
         throw new Error('Supabase client not initialized')
       }
 
@@ -338,67 +457,19 @@ class OrderService {
         updateData.payment_status = paymentStatus
       }
 
-      // Add timestamp fields based on status
-      if (status === 'confirmed') {
-        updateData.confirmed_at = new Date().toISOString()
+      if (status === 'ready_for_pickup') {
+        updateData.ready_at = new Date().toISOString()
       } else if (status === 'completed') {
         updateData.completed_at = new Date().toISOString()
       }
 
-      const { error } = await this.supabase
+      const { error } = await supabase
         .from('orders')
         .update(updateData)
         .eq('id', orderId)
 
       if (error) {
         throw new Error(`Failed to update order: ${error.message}`)
-      }
-
-      // Update order tracking
-      if (this.trackingService.isAvailable()) {
-        try {
-          await this.trackingService.updateOrderStatus(orderId, status, `Order status updated to ${status}`)
-        } catch (error) {
-          console.error('Error updating order tracking:', error)
-        }
-      }
-
-      // Send email notifications based on status
-      if (this.emailService.isAvailable()) {
-        try {
-          const orderResult = await this.getOrder(orderId)
-          if (orderResult.success && orderResult.order) {
-            const order = orderResult.order
-            
-            if (status === 'ready' && order.customer_email) {
-              await this.emailService.sendOrderReady(
-                orderId,
-                order.customer_email,
-                order.customer_name || 'Customer',
-                {
-                  orderNumber: order.order_number,
-                  orderTotal: order.total_amount,
-                  customerName: order.customer_name || 'Customer',
-                  branchName: 'AgriVet Branch',
-                  estimatedReadyTime: order.estimated_ready_time
-                }
-              )
-            } else if (status === 'cancelled' && order.customer_email) {
-              await this.emailService.sendOrderCancellation(
-                orderId,
-                order.customer_email,
-                order.customer_name || 'Customer',
-                {
-                  orderNumber: order.order_number,
-                  orderTotal: order.total_amount,
-                  customerName: order.customer_name || 'Customer'
-                }
-              )
-            }
-          }
-        } catch (error) {
-          console.error('Error sending status email:', error)
-        }
       }
 
       return { success: true }
@@ -415,19 +486,10 @@ class OrderService {
   /**
    * Mark order as ready for pickup
    */
-  async markOrderReady(orderId: string): Promise<{ success: boolean; error?: string }> {
+  async markOrderReady(orderId: string, staffUserId?: string): Promise<{ success: boolean; error?: string }> {
     try {
-      // Update order status
-      const statusResult = await this.updateOrderStatus(orderId, 'ready')
-      
-      if (!statusResult.success) {
-        return statusResult
-      }
-
-      // Update tracking
-      if (this.trackingService.isAvailable()) {
-        await this.trackingService.markOrderReady(orderId)
-      }
+      await this.updateOrderStatus(orderId, 'ready_for_pickup')
+      await this.trackingService.markOrderReady(orderId, staffUserId)
 
       return { success: true }
 
@@ -443,19 +505,10 @@ class OrderService {
   /**
    * Mark order as completed
    */
-  async markOrderCompleted(orderId: string): Promise<{ success: boolean; error?: string }> {
+  async markOrderCompleted(orderId: string, staffUserId?: string): Promise<{ success: boolean; error?: string }> {
     try {
-      // Update order status
-      const statusResult = await this.updateOrderStatus(orderId, 'completed')
-      
-      if (!statusResult.success) {
-        return statusResult
-      }
-
-      // Update tracking
-      if (this.trackingService.isAvailable()) {
-        await this.trackingService.markOrderCompleted(orderId)
-      }
+      await this.updateOrderStatus(orderId, 'completed')
+      await this.trackingService.markOrderCompleted(orderId, staffUserId)
 
       return { success: true }
 
@@ -469,15 +522,14 @@ class OrderService {
   }
 
   /**
-   * Cancel order and restore inventory
+   * Cancel order (customer-initiated before confirmation)
    */
   async cancelOrder(orderId: string, reason?: string): Promise<{ success: boolean; error?: string }> {
     try {
-      if (!this.supabase) {
+      if (!supabase) {
         throw new Error('Supabase client not initialized')
       }
 
-      // Get order details
       const orderResult = await this.getOrder(orderId)
       if (!orderResult.success || !orderResult.order) {
         throw new Error('Order not found')
@@ -485,31 +537,16 @@ class OrderService {
 
       const order = orderResult.order
 
-      // Restore inventory if available
-      if (this.inventoryService.isAvailable() && order.order_items) {
-        const inventoryResult = await this.inventoryService.restoreInventoryForOrder(
-          orderId,
-          order.order_items.map(item => ({
-            productId: item.product_id,
-            productUnitId: item.product_unit_id || '',
-            quantity: item.quantity,
-            baseUnitQuantity: item.base_unit_quantity || item.quantity
-          })),
-          order.branch_id,
-          'system'
-        )
-
-        if (!inventoryResult.success) {
-          console.error('Error restoring inventory:', inventoryResult.error)
-        }
+      if (order.status !== 'pending_confirmation') {
+        throw new Error('Order has already been confirmed and cannot be cancelled')
       }
 
-      // Update order status
-      const statusResult = await this.updateOrderStatus(orderId, 'cancelled')
-      
-      if (!statusResult.success) {
-        return statusResult
-      }
+      await supabase
+        .from('inventory_reservations')
+        .update({ status: 'released' })
+        .eq('order_id', orderId)
+
+      await this.updateOrderStatus(orderId, 'cancelled')
 
       return { success: true }
 
@@ -532,19 +569,10 @@ class OrderService {
   }
 
   /**
-   * Generate unique customer code
-   */
-  private generateCustomerCode(): string {
-    const timestamp = Date.now().toString()
-    const random = Math.random().toString(36).substr(2, 3).toUpperCase()
-    return `CUST-${timestamp.slice(-6)}-${random}`
-  }
-
-  /**
    * Check if Supabase is available
    */
   isAvailable(): boolean {
-    return !!this.supabase
+    return !!supabase
   }
 
   /**
