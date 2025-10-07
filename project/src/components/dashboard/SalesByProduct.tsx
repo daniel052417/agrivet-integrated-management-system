@@ -46,10 +46,10 @@ const SalesByProduct: React.FC = () => {
           id, 
           name, 
           category_id,
-          product_variants!inner(
+          product_units!inner(
             id,
-            name,
-            price
+            unit_name,
+            price_per_unit
           )
         `)
         .eq('is_active', true);
@@ -87,9 +87,9 @@ const SalesByProduct: React.FC = () => {
       const mockItems = transactionsData?.map((tx, index) => ({
         product_id: productsData?.[index % productsData.length]?.id || '',
         quantity: Math.floor(Math.random() * 5) + 1,
-        unit_price: productsData?.[index % productsData.length]?.product_variants?.[0]?.price || 0,
+        unit_price: productsData?.[index % productsData.length]?.product_units?.[0]?.price_per_unit || 0,
         discount_amount: 0,
-        line_total: (Math.floor(Math.random() * 5) + 1) * (productsData?.[index % productsData.length]?.product_variants?.[0]?.price || 0),
+        line_total: (Math.floor(Math.random() * 5) + 1) * (productsData?.[index % productsData.length]?.product_units?.[0]?.price_per_unit || 0),
         created_at: tx.transaction_date
       })) || [];
 

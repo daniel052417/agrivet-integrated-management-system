@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import SimplifiedSidebar from '../shared/layout/SimplifiedSidebar';
 import Header from '../shared/layout/Header';
-import { SimplifiedUser } from '../../lib/simplifiedAuth';
+import { CustomUser } from '../../lib/customAuth';
 
 // POS-specific components
 import POSInterface from '../pos/POSInterface';
@@ -12,7 +12,7 @@ import ProductSalesReport from '../sales/ProductSalesReport';
 import SalesValue from '../sales/SalesValue';
 
 interface POSDashboardProps {
-  user: SimplifiedUser;
+  user: CustomUser;
   onLogout: () => void;
 }
 

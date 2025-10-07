@@ -1,6 +1,9 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { Users, UserPlus, Database, Settings, Search, Filter, Download, SortAsc, SortDesc, MoreVertical, Edit, Eye, X, AlertCircle, Trash, CheckCircle, PauseCircle, Ban, Activity as ActivityIcon, Mail, Phone, Calendar, Building } from 'lucide-react';
+import { Users, UserPlus, Database, Settings, Search, Filter, Download, SortAsc, SortDesc, MoreVertical, Edit, Eye, X, AlertCircle, Trash, CheckCircle, PauseCircle, Ban, Activity as ActivityIcon, Mail, Phone, Calendar, Building, Clock, UserCheck, UserX } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { accountRequestApi, AccountRequest } from '../../lib/accountRequestApi';
+import { emailService } from '../../lib/emailService';
+import { XCircle } from "lucide-react";
 
 interface AccountRow {
   id: string;
@@ -38,6 +41,7 @@ interface AuditEntry {
 const UserAccounts: React.FC = () => {
   const [accounts, setAccounts] = useState<AccountRow[]>([]);
   const [auditLog, setAuditLog] = useState<AuditEntry[]>([]);
+  const [accountRequests, setAccountRequests] = useState<AccountRequest[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState<string>('');
@@ -48,6 +52,10 @@ const UserAccounts: React.FC = () => {
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [selectedAccount, setSelectedAccount] = useState<AccountRow | null>(null);
   const [showAccountModal, setShowAccountModal] = useState<boolean>(false);
+  const [activeTab, setActiveTab] = useState<'accounts' | 'requests'>('accounts');
+  const [selectedRequest, setSelectedRequest] = useState<AccountRequest | null>(null);
+  const [showRequestModal, setShowRequestModal] = useState<boolean>(false);
+  const [rejectionReason, setRejectionReason] = useState<string>('');
   const [showAuditModal, setShowAuditModal] = useState<boolean>(false);
   const [showCreateModal, setShowCreateModal] = useState<boolean>(false);
   const [newAccount, setNewAccount] = useState<Partial<AccountRow>>({
@@ -286,16 +294,39 @@ const UserAccounts: React.FC = () => {
     }
   ];
 
-  const mockBranches = [
-    'Main Branch',
-    'Downtown Branch',
-    'Mall Branch',
-    'Airport Branch'
-  ];
+  const [branches, setBranches] = useState<Array<{ id: string; name: string }>>([]);
+
+  // Load branches from database
+  useEffect(() => {
+    const loadBranches = async () => {
+      try {
+        const { data: branchesData, error } = await supabase
+          .from('branches')
+          .select('id, name')
+          .eq('is_active', true)
+          .order('name', { ascending: true });
+        
+        if (error) throw error;
+        setBranches(branchesData || []);
+      } catch (err) {
+        console.error('Error loading branches:', err);
+        // Fallback to mock data if branches table doesn't exist
+        setBranches([
+          { id: '1', name: 'Main Branch' },
+          { id: '2', name: 'Downtown Branch' },
+          { id: '3', name: 'Mall Branch' },
+          { id: '4', name: 'Airport Branch' }
+        ]);
+      }
+    };
+
+    loadBranches();
+  }, []);
 
   useEffect(() => {
     loadAccounts();
     loadAuditLog();
+    loadAccountRequests();
   }, []);
 
   const loadAccounts = async () => {
@@ -303,7 +334,7 @@ const UserAccounts: React.FC = () => {
       setLoading(true);
       setError(null);
 
-      // Load users with their roles and branch information
+      // Load users from the users table
       const { data: usersData, error: usersError } = await supabase
         .from('users')
         .select(`
@@ -312,30 +343,25 @@ const UserAccounts: React.FC = () => {
           first_name,
           last_name,
           phone,
-          account_status,
+          is_active,
           role,
+          account_status,
+          last_login,
+          last_activity,
+          status,
           mfa_enabled,
           last_password_reset,
-          last_login,
           created_at,
           updated_at,
           branches:branch_id (
             id,
-            name,
-            code
-          ),
-          user_roles (
-            roles:role_id (
-              id,
-              name,
-              display_name
-            )
+            name
           )
         `);
 
       if (usersError) throw usersError;
 
-      // Load staff data with user links
+      // Load staff data
       const { data: staffData, error: staffError } = await supabase
         .from('staff')
         .select(`
@@ -349,100 +375,94 @@ const UserAccounts: React.FC = () => {
           hire_date,
           salary,
           phone,
-          staff_user_link (
-            user_id,
-            is_primary
+          branch_id,
+          is_active,
+          role,
+          created_at,
+          updated_at,
+          branches:branch_id (
+            id,
+            name
           )
         `);
 
       if (staffError) throw staffError;
 
-      // Load user invites
+      // Load user invites (if email_invitations table exists)
       const { data: invitesData, error: invitesError } = await supabase
-        .from('user_invites')
+        .from('email_invitations')
         .select(`
           id,
           email,
-          role,
-          invite_sent_at,
           status,
-          branches:branch_id (
-            id,
-            name
-          )
+          sent_at,
+          accepted_at,
+          expires_at,
+          created_at
         `)
         .eq('status', 'pending');
 
-      if (invitesError) throw invitesError;
+      if (invitesError) {
+        console.warn('Error loading invites:', invitesError);
+        // Continue without invites if table doesn't exist
+      }
 
       // Process users with accounts
-      const userAccounts: AccountRow[] = usersData?.map(user => {
-        const staffLink = staffData?.find(s => 
-          s.staff_user_link?.some(link => link.user_id === user.id && link.is_primary)
-        );
-        const userRole = user.user_roles?.[0]?.roles?.name || user.role || 'staff';
-        
-        return {
-          id: user.id,
-          name: `${user.first_name} ${user.last_name}`.trim(),
-          email: user.email,
-          role: userRole as any,
-          status: user.account_status as any || 'active',
-          branch: user.branches?.name || 'Unknown Branch',
-          createdAt: user.created_at,
-          lastLoginAt: user.last_login,
-          lastPasswordReset: user.last_password_reset,
-          phone: staffLink?.phone || user.phone,
-          position: staffLink?.position,
-          department: staffLink?.department,
-          hireDate: staffLink?.hire_date,
-          employeeId: staffLink?.employee_id,
-          salary: staffLink?.salary,
-          accountType: staffLink ? 'staff' : 'user',
-          hasMFA: user.mfa_enabled || false,
-          isFirstLogin: !user.last_login
-        };
-      }) || [];
+      const userAccounts: AccountRow[] = usersData?.map(user => ({
+        id: user.id,
+        name: `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'Unknown User',
+        email: user.email,
+        role: user.role as any || 'Staff',
+        status: user.account_status as any || (user.is_active ? 'active' : 'inactive'),
+        branch: (user.branches as any)?.name || 'Unknown Branch',
+        createdAt: user.created_at,
+        lastLoginAt: user.last_login,
+        lastPasswordReset: user.last_password_reset,
+        phone: user.phone,
+        accountType: 'user' as any,
+        hasMFA: user.mfa_enabled || false,
+        isFirstLogin: !user.last_login
+      })) || [];
 
-      // Process staff without accounts
-      const staffWithoutAccounts: AccountRow[] = staffData
-        ?.filter(staff => !staff.staff_user_link?.some(link => link.is_primary))
-        .map(staff => ({
-          id: staff.id,
-          name: `${staff.first_name} ${staff.last_name}`.trim(),
-          email: staff.email,
-          role: 'Staff' as any,
-          status: 'no_account' as any,
-          branch: 'Unknown Branch',
-          createdAt: new Date().toISOString(),
-          phone: staff.phone,
-          position: staff.position,
-          department: staff.department,
-          hireDate: staff.hire_date,
-          employeeId: staff.employee_id,
-          salary: staff.salary,
-          accountType: 'staff' as any,
-          hasMFA: false,
-          isFirstLogin: true
-        })) || [];
+      // Process staff members
+      const staffAccounts: AccountRow[] = staffData?.map(staff => ({
+        id: staff.id,
+        name: `${staff.first_name || ''} ${staff.last_name || ''}`.trim() || 'Unknown Staff',
+        email: staff.email,
+        role: staff.role as any || 'Staff',
+        status: staff.is_active ? 'active' : 'inactive',
+        branch: (staff.branches as any)?.name || 'Unknown Branch',
+        createdAt: staff.created_at,
+        lastLoginAt: undefined, // Staff don't have direct login tracking
+        lastPasswordReset: undefined,
+        phone: staff.phone,
+        position: staff.position,
+        department: staff.department,
+        hireDate: staff.hire_date,
+        employeeId: staff.employee_id,
+        salary: staff.salary,
+        accountType: 'staff' as any,
+        hasMFA: false,
+        isFirstLogin: true // Staff accounts are typically created without user accounts initially
+      })) || [];
 
       // Process pending invites
       const inviteAccounts: AccountRow[] = invitesData?.map(invite => ({
         id: invite.id,
         name: 'Pending Invite',
         email: invite.email,
-        role: invite.role as any,
+        role: 'Staff' as any,
         status: 'invite_sent' as any,
-        branch: invite.branches?.name || 'Unknown Branch',
-        createdAt: invite.invite_sent_at,
-        inviteSentAt: invite.invite_sent_at,
+        branch: 'Unknown Branch',
+        createdAt: invite.created_at,
+        inviteSentAt: invite.sent_at,
         accountType: 'user' as any,
         hasMFA: false,
         isFirstLogin: true
       })) || [];
 
       // Combine all accounts
-      const allAccounts = [...userAccounts, ...staffWithoutAccounts, ...inviteAccounts];
+      const allAccounts = [...userAccounts, ...staffAccounts, ...inviteAccounts];
       setAccounts(allAccounts);
     } catch (err: any) {
       console.error('Error loading accounts:', err);
@@ -487,6 +507,125 @@ const UserAccounts: React.FC = () => {
     }
   };
 
+  const loadAccountRequests = async () => {
+    try {
+      const requests = await accountRequestApi.getAccountRequests();
+      setAccountRequests(requests);
+    } catch (err: any) {
+      console.error('Error loading account requests:', err);
+      setAccountRequests([]);
+    }
+  };
+
+  const handleApproveRequest = async (requestId: string) => {
+    try {
+      setLoading(true);
+      const result = await accountRequestApi.approveAndCreateAccount(requestId);
+      
+      // Send activation email
+      try {
+        const emailResult = await emailService.sendActivationEmail({
+          to: result.user.email,
+          name: `${result.user.first_name} ${result.user.last_name}`,
+          activationToken: result.activationToken
+        });
+
+        if (emailResult.success) {
+          // Update the account request to mark email as sent
+          await accountRequestApi.updateAccountRequestStatus(requestId, {
+            status: 'approved',
+            notes: 'Activation email sent successfully'
+          });
+        }
+      } catch (emailError) {
+        console.error('Error sending activation email:', emailError);
+        // Don't fail the approval if email fails
+      }
+      
+      await loadAccountRequests();
+      await loadAccounts(); // Refresh accounts list
+      alert(`Account request approved and user account created successfully! Activation email has been sent to ${result.user.email}.`);
+    } catch (err: any) {
+      console.error('Error approving request:', err);
+      alert(err.message || 'Failed to approve request');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRejectRequest = async (requestId: string) => {
+    if (!rejectionReason.trim()) {
+      alert('Please provide a reason for rejection');
+      return;
+    }
+
+    try {
+      await accountRequestApi.updateAccountRequestStatus(requestId, {
+        status: 'rejected',
+        rejection_reason: rejectionReason
+      });
+      await loadAccountRequests();
+      setShowRequestModal(false);
+      setSelectedRequest(null);
+      setRejectionReason('');
+      alert('Account request rejected successfully!');
+    } catch (err: any) {
+      console.error('Error rejecting request:', err);
+      alert(err.message || 'Failed to reject request');
+    }
+  };
+
+  const handleResendInvite = async (accountId: string, email: string, name: string) => {
+    try {
+      setLoading(true);
+      
+      // Get the user's verification token
+      const { data: userData, error } = await supabase
+        .from('users')
+        .select('verification_token, account_status')
+        .eq('id', accountId)
+        .single();
+
+      if (error || !userData) {
+        alert('User not found');
+        return;
+      }
+
+      if (userData.account_status !== 'pending_activation') {
+        alert('User account is not in pending activation status');
+        return;
+      }
+
+      if (!userData.verification_token) {
+        alert('No activation token found for this user');
+        return;
+      }
+
+      // Send activation email
+      const emailResult = await emailService.sendActivationEmail({
+        to: email,
+        name: name,
+        activationToken: userData.verification_token
+      });
+
+      if (emailResult.success) {
+        alert('Activation email has been resent successfully!');
+      } else {
+        alert('Failed to resend activation email. Please try again.');
+      }
+    } catch (err: any) {
+      console.error('Error resending invite:', err);
+      alert(err.message || 'Failed to resend invite');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleViewRequest = (request: AccountRequest) => {
+    setSelectedRequest(request);
+    setShowRequestModal(true);
+  };
+
   const filteredAccounts = useMemo(() => {
     return accounts.filter(account => {
       const matchesSearch = account.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -527,7 +666,7 @@ const UserAccounts: React.FC = () => {
         case 'activate':
           await supabase
             .from('users')
-            .update({ account_status: 'active' })
+            .update({ is_active: true })
             .eq('id', accountId);
           
           // Log to audit_logs
@@ -535,13 +674,10 @@ const UserAccounts: React.FC = () => {
             .from('audit_logs')
             .insert({
               user_id: 'current-user-id', // You'll need to get this from auth context
-              actor_email: 'current-user@example.com', // You'll need to get this from auth context
               action: 'user_activated',
               target_user_id: accountId,
               target_user_email: account.email,
               details: `User account activated`,
-              table_name: 'users',
-              record_id: accountId,
               entity_type: 'user',
               entity_id: accountId
             });
@@ -550,7 +686,7 @@ const UserAccounts: React.FC = () => {
         case 'deactivate':
           await supabase
             .from('users')
-            .update({ account_status: 'inactive' })
+            .update({ is_active: false })
             .eq('id', accountId);
           
           // Log to audit_logs
@@ -558,22 +694,20 @@ const UserAccounts: React.FC = () => {
             .from('audit_logs')
             .insert({
               user_id: 'current-user-id',
-              actor_email: 'current-user@example.com',
               action: 'user_deactivated',
               target_user_id: accountId,
               target_user_email: account.email,
               details: `User account deactivated`,
-              table_name: 'users',
-              record_id: accountId,
               entity_type: 'user',
               entity_id: accountId
             });
           break;
           
         case 'suspend':
+          // For suspend, we'll use a custom status field or just deactivate
           await supabase
             .from('users')
-            .update({ account_status: 'suspended' })
+            .update({ is_active: false })
             .eq('id', accountId);
           
           // Log to audit_logs
@@ -581,13 +715,10 @@ const UserAccounts: React.FC = () => {
             .from('audit_logs')
             .insert({
               user_id: 'current-user-id',
-              actor_email: 'current-user@example.com',
               action: 'user_suspended',
               target_user_id: accountId,
               target_user_email: account.email,
               details: `User account suspended`,
-              table_name: 'users',
-              record_id: accountId,
               entity_type: 'user',
               entity_id: accountId
             });
@@ -599,15 +730,14 @@ const UserAccounts: React.FC = () => {
           expiresAt.setDate(expiresAt.getDate() + 7); // 7 days expiry
           
           const { data: inviteData, error: inviteError } = await supabase
-            .from('user_invites')
+            .from('email_invitations')
             .insert({
+              staff_id: accountId,
               email: account.email,
-              role: account.role.toLowerCase(),
-              branch_id: null, // You might want to get this from the account
-              invite_token: inviteToken,
-              invited_by: 'current-user-id', // You'll need to get this from auth
+              invitation_token: inviteToken,
+              status: 'pending',
               expires_at: expiresAt.toISOString(),
-              status: 'pending'
+              created_by: 'current-user-id' // You'll need to get this from auth
             })
             .select()
             .single();
@@ -619,12 +749,9 @@ const UserAccounts: React.FC = () => {
             .from('audit_logs')
             .insert({
               user_id: 'current-user-id',
-              actor_email: 'current-user@example.com',
               action: 'invite_sent',
               target_user_email: account.email,
               details: `Invite sent to ${account.email} for ${account.role} role`,
-              table_name: 'user_invites',
-              record_id: inviteData.id,
               entity_type: 'invite',
               entity_id: inviteData.id
             });
@@ -632,9 +759,9 @@ const UserAccounts: React.FC = () => {
           
         case 'resend_invite':
           await supabase
-            .from('user_invites')
+            .from('email_invitations')
             .update({ 
-              invite_sent_at: new Date().toISOString(),
+              sent_at: new Date().toISOString(),
               status: 'pending'
             })
             .eq('email', account.email)
@@ -645,52 +772,28 @@ const UserAccounts: React.FC = () => {
             .from('audit_logs')
             .insert({
               user_id: 'current-user-id',
-              actor_email: 'current-user@example.com',
               action: 'invite_sent',
               target_user_email: account.email,
               details: `Invite resent to ${account.email}`,
-              table_name: 'user_invites',
               entity_type: 'invite'
             });
           break;
           
         case 'reset_password':
-          const resetToken = Math.random().toString(36).substring(2, 15);
-          const resetExpiresAt = new Date();
-          resetExpiresAt.setHours(resetExpiresAt.getHours() + 1); // 1 hour expiry
-          
-          const { data: resetData, error: resetError } = await supabase
-            .from('password_resets')
-            .insert({
-              user_id: accountId,
-              reset_token: resetToken,
-              expires_at: resetExpiresAt.toISOString(),
-              is_used: false
-            })
-            .select()
-            .single();
-
-          if (resetError) throw resetError;
-          
-          await supabase
-            .from('users')
-            .update({ last_password_reset: new Date().toISOString() })
-            .eq('id', accountId);
+          // For password reset, we'll just log the action since we don't have a password_resets table
+          // In a real implementation, you'd create a password reset token and send an email
           
           // Log to audit_logs
           await supabase
             .from('audit_logs')
             .insert({
               user_id: 'current-user-id',
-              actor_email: 'current-user@example.com',
               action: 'password_reset_requested',
               target_user_id: accountId,
               target_user_email: account.email,
               details: `Password reset requested for ${account.email}`,
-              table_name: 'password_resets',
-              record_id: resetData.id,
               entity_type: 'password_reset',
-              entity_id: resetData.id
+              entity_id: accountId
             });
           break;
       }
@@ -735,17 +838,17 @@ const UserAccounts: React.FC = () => {
         .single();
 
       // Create user invite
-      const { error: inviteError } = await supabase
-        .from('user_invites')
+      const { data: inviteData, error: inviteError } = await supabase
+        .from('email_invitations')
         .insert({
           email: newAccount.email,
-          role: (newAccount.role || 'Staff').toLowerCase(),
-          branch_id: branchData?.id || null,
-          invite_token: inviteToken,
-          invited_by: 'current-user-id', // You'll need to get this from auth context
+          invitation_token: inviteToken,
+          status: 'pending',
           expires_at: expiresAt.toISOString(),
-          status: 'pending'
-        });
+          created_by: 'current-user-id' // You'll need to get this from auth context
+        })
+        .select()
+        .single();
 
       if (inviteError) throw inviteError;
 
@@ -754,12 +857,9 @@ const UserAccounts: React.FC = () => {
         .from('audit_logs')
         .insert({
           user_id: 'current-user-id',
-          actor_email: 'current-user@example.com',
           action: 'invite_sent',
           target_user_email: newAccount.email,
           details: `New invite sent to ${newAccount.email} for ${newAccount.role} role`,
-          table_name: 'user_invites',
-          record_id: inviteData.id,
           entity_type: 'invite',
           entity_id: inviteData.id
         });
@@ -987,6 +1087,41 @@ const UserAccounts: React.FC = () => {
           </div>
         </div>
 
+        {/* Tabs */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-6">
+          <div className="border-b border-gray-200">
+            <nav className="-mb-px flex space-x-8 px-6">
+              <button
+                onClick={() => setActiveTab('accounts')}
+                className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === 'accounts'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                <Users className="w-4 h-4 inline mr-2" />
+                User Accounts
+              </button>
+              <button
+                onClick={() => setActiveTab('requests')}
+                className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === 'requests'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                <Clock className="w-4 h-4 inline mr-2" />
+                Account Requests
+                {accountRequests.filter(r => r.status === 'pending').length > 0 && (
+                  <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                    {accountRequests.filter(r => r.status === 'pending').length}
+                  </span>
+                )}
+              </button>
+            </nav>
+          </div>
+        </div>
+
         {/* Filters and Controls */}
         <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 mb-6">
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between space-y-4 lg:space-y-0">
@@ -1033,8 +1168,8 @@ const UserAccounts: React.FC = () => {
                 className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="all">All Branches</option>
-                {mockBranches.map(branch => (
-                  <option key={branch} value={branch}>{branch}</option>
+                {branches.map(branch => (
+                  <option key={branch.id} value={branch.name}>{branch.name}</option>
                 ))}
               </select>
             </div>
@@ -1138,8 +1273,11 @@ const UserAccounts: React.FC = () => {
           </div>
         </div>
 
-        {/* Accounts Table */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+        {/* Main Content */}
+        {activeTab === 'accounts' && (
+          <>
+            {/* Accounts Table */}
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
@@ -1345,16 +1483,142 @@ const UserAccounts: React.FC = () => {
           </div>
         </div>
 
-        {filteredAccounts.length === 0 && (
-          <div className="text-center py-12">
-            <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No Accounts Found</h3>
-            <p className="text-gray-500">
-              {searchTerm || statusFilter !== 'all' || roleFilter !== 'all' || branchFilter !== 'all'
-                ? 'No accounts match your filter criteria.'
-                : 'No accounts found in the system.'
-              }
-            </p>
+            {filteredAccounts.length === 0 && (
+              <div className="text-center py-12">
+                <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">No Accounts Found</h3>
+                <p className="text-gray-500">
+                  {searchTerm || statusFilter !== 'all' || roleFilter !== 'all' || branchFilter !== 'all'
+                    ? 'No accounts match your filter criteria.'
+                    : 'No accounts found in the system.'
+                  }
+                </p>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Account Requests Tab */}
+        {activeTab === 'requests' && (
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-900">Account Requests</h3>
+              <p className="text-sm text-gray-600">Review and manage account requests from HR</p>
+            </div>
+            
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Staff Member
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Requested By
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Role
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Status
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Requested At
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {accountRequests.map((request) => (
+                    <tr key={request.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center">
+                          <div className="flex-shrink-0 h-10 w-10">
+                            <div className="h-10 w-10 rounded-full bg-gray-300 flex items-center justify-center">
+                              <span className="text-sm font-medium text-gray-700">
+                                {request.staff_name.split(' ').map(n => n[0]).join('').substring(0, 2)}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="ml-4">
+                            <div className="text-sm font-medium text-gray-900">
+                              {request.staff_name}
+                            </div>
+                            <div className="text-sm text-gray-500">{request.staff_email}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {request.requested_by_name}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                          {request.role || 'Not specified'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          request.status === 'pending' 
+                            ? 'bg-yellow-100 text-yellow-800'
+                            : request.status === 'approved'
+                            ? 'bg-green-100 text-green-800'
+                            : 'bg-red-100 text-red-800'
+                        }`}>
+                          {request.status === 'pending' && <Clock className="w-3 h-3 mr-1" />}
+                          {request.status === 'approved' && <CheckCircle className="w-3 h-3 mr-1" />}
+                          {request.status === 'rejected' && <XCircle className="w-3 h-3 mr-1" />}
+                          <span className="capitalize">{request.status}</span>
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {new Date(request.created_at).toLocaleDateString()}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        <div className="flex space-x-2">
+                          <button
+                            onClick={() => handleViewRequest(request)}
+                            className="text-blue-600 hover:text-blue-900"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          {request.status === 'pending' && (
+                            <>
+                              <button
+                                onClick={() => handleApproveRequest(request.id)}
+                                className="text-green-600 hover:text-green-900"
+                                title="Approve Request"
+                              >
+                                <UserCheck className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setSelectedRequest(request);
+                                  setShowRequestModal(true);
+                                }}
+                                className="text-red-600 hover:text-red-900"
+                                title="Reject Request"
+                              >
+                                <UserX className="w-4 h-4" />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            
+            {accountRequests.length === 0 && (
+              <div className="text-center py-12">
+                <div className="text-gray-400 text-4xl mb-4">📋</div>
+                <h3 className="text-lg font-medium text-gray-900 mb-2">No account requests</h3>
+                <p className="text-gray-500">No account requests have been submitted yet</p>
+              </div>
+            )}
           </div>
         )}
 
@@ -1410,8 +1674,8 @@ const UserAccounts: React.FC = () => {
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
                       <option value="">Select Branch</option>
-                      {mockBranches.map(branch => (
-                        <option key={branch} value={branch}>{branch}</option>
+                      {branches.map(branch => (
+                        <option key={branch.id} value={branch.name}>{branch.name}</option>
                       ))}
                     </select>
                   </div>
@@ -1519,8 +1783,111 @@ const UserAccounts: React.FC = () => {
             </div>
           </div>
         )}
+
+        {/* Request Details Modal */}
+        {showRequestModal && selectedRequest && (
+          <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+            <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+              <div className="mt-3">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-medium text-gray-900">Account Request Details</h3>
+                  <button
+                    onClick={() => {
+                      setShowRequestModal(false);
+                      setSelectedRequest(null);
+                      setRejectionReason('');
+                    }}
+                    className="text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="w-6 h-6" />
+                  </button>
+                </div>
+                
+                <div className="space-y-4">
+                  <div className="bg-gray-50 p-4 rounded-md">
+                    <h4 className="font-medium text-gray-900 mb-2">Staff Information</h4>
+                    <div className="space-y-2 text-sm">
+                      <div><span className="font-medium">Name:</span> {selectedRequest.staff_name}</div>
+                      <div><span className="font-medium">Email:</span> {selectedRequest.staff_email}</div>
+                      <div><span className="font-medium">Requested By:</span> {selectedRequest.requested_by_name}</div>
+                      <div><span className="font-medium">Role:</span> 
+                        <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                          {selectedRequest.role || 'Not specified'}
+                        </span>
+                      </div>
+                      <div><span className="font-medium">Status:</span> 
+                        <span className={`ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          selectedRequest.status === 'pending' 
+                            ? 'bg-yellow-100 text-yellow-800'
+                            : selectedRequest.status === 'approved'
+                            ? 'bg-green-100 text-green-800'
+                            : 'bg-red-100 text-red-800'
+                        }`}>
+                          {selectedRequest.status === 'pending' && <Clock className="w-3 h-3 mr-1" />}
+                          {selectedRequest.status === 'approved' && <CheckCircle className="w-3 h-3 mr-1" />}
+                          {selectedRequest.status === 'rejected' && <XCircle className="w-3 h-3 mr-1" />}
+                          <span className="capitalize">{selectedRequest.status}</span>
+                        </span>
+                      </div>
+                      <div><span className="font-medium">Requested At:</span> {new Date(selectedRequest.created_at).toLocaleString()}</div>
+                      {selectedRequest.rejection_reason && (
+                        <div><span className="font-medium">Rejection Reason:</span> {selectedRequest.rejection_reason}</div>
+                      )}
+                    </div>
+                  </div>
+                  
+                  {selectedRequest.status === 'pending' && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Rejection Reason (if rejecting)
+                      </label>
+                      <textarea
+                        value={rejectionReason}
+                        onChange={(e) => setRejectionReason(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        rows={3}
+                        placeholder="Enter reason for rejection..."
+                      />
+                    </div>
+                  )}
+                </div>
+                
+                <div className="flex justify-end space-x-3 mt-6">
+                  <button
+                    onClick={() => {
+                      setShowRequestModal(false);
+                      setSelectedRequest(null);
+                      setRejectionReason('');
+                    }}
+                    className="px-4 py-2 text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
+                  >
+                    Close
+                  </button>
+                  {selectedRequest.status === 'pending' && (
+                    <>
+                      <button
+                        onClick={() => handleApproveRequest(selectedRequest.id)}
+                        className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
+                      >
+                        <UserCheck className="w-4 h-4 inline mr-1" />
+                        Approve
+                      </button>
+                      <button
+                        onClick={() => handleRejectRequest(selectedRequest.id)}
+                        className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
+                      >
+                        <UserX className="w-4 h-4 inline mr-1" />
+                        Reject
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
-  );
-};
+    );
+  };
 
 export default UserAccounts;

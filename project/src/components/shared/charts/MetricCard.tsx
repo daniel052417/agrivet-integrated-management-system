@@ -100,15 +100,16 @@ const MetricCard: React.FC<MetricCardProps> = ({
             .select(`
               quantity_on_hand, 
               reorder_level,
-              product_variants!inner(
-                products!inner(
-                  is_active
+              products!inner(
+                is_active,
+                product_units!inner(
+                  id
                 )
               )
             `)
             .not('quantity_on_hand', 'is', null)
             .not('reorder_level', 'is', null)
-            .eq('product_variants.products.is_active', true);
+            .eq('products.is_active', true);
           
           // Filter client-side for low stock items
           const lowStockCount = lowStockData?.filter(item => 

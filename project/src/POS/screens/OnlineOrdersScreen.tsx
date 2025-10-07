@@ -21,7 +21,7 @@ import {
 import { OnlineOrder, OnlineOrderFilters } from '../../types/pos';
 import Modal from '../components/shared/Modal';
 import { OnlineOrdersService } from '../services/onlineOrdersService';
-import { simplifiedAuth } from '../../lib/simplifiedAuth';
+import { customAuth } from '../../lib/customAuth';
 import { OrderCancellationDialog } from '../components/OrderCancellationDialog';
 
 // Order status constants (matching the actual database values)
@@ -64,7 +64,7 @@ const OnlineOrdersScreen: React.FC<OnlineOrdersScreenProps> = (props) => {
       return propBranchId;
     }
     
-    const currentUser = simplifiedAuth.getCurrentUser();
+    const currentUser = customAuth.getCurrentUser();
     
     if (currentUser?.branch_id) {
       console.log('Using user branch ID:', currentUser.branch_id, 'for user:', currentUser.email);

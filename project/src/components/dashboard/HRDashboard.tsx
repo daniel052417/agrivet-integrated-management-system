@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import SimplifiedSidebar from '../shared/layout/SimplifiedSidebar';
 import Header from '../shared/layout/Header';
-import { SimplifiedUser } from '../../lib/simplifiedAuth';
+import { CustomUser } from '../../lib/customAuth';
 
 // HR-specific components
-import HRDashboard from '../../components/hr/HRDashboard';
+import HRDashboardContent from '../../components/hr/HRDashboard';
+import StaffList from '../../components/hr/StaffList';
 import AttendanceDashboard from '../../components/hr/AttendanceDashboard';
 import LeaveManagement from '../../components/hr/LeaveManagement';
 import HRAnalytics from '../../components/hr/HRAnalytics';
@@ -18,7 +19,7 @@ import UserRolesOverview from '../users/UserRolesOverview';
 import UserPermissions from '../users/UserPermissions';
 
 interface HRDashboardProps {
-  user: SimplifiedUser;
+  user: CustomUser;
   onLogout: () => void;
 }
 
@@ -28,7 +29,9 @@ const HRDashboardComponent: React.FC<HRDashboardProps> = ({ user, onLogout }) =>
   const renderContent = () => {
     switch (activeSection) {
       case 'hr-dashboard':
-        return <HRDashboard />;
+        return <HRDashboardContent />;
+      case 'staff':
+        return <StaffList />;
       case 'attendance-dashboard':
         return <AttendanceDashboard />;
       case 'leave-management':
@@ -40,7 +43,7 @@ const HRDashboardComponent: React.FC<HRDashboardProps> = ({ user, onLogout }) =>
       case 'user-accounts':
         return <UserAccounts />;
       case 'add-staff':
-        return <AddStaff onBack={() => setActiveSection('user-accounts')} />;
+        return <AddStaff onBack={() => setActiveSection('staff')} />;
       case 'roles-permissions':
         return <RolesPermissions />;
       case 'activity-logs':

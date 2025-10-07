@@ -24,7 +24,7 @@ import MobileBottomSheet from '../components/shared/MobileBottomSheet';
 import FloatingActionButton from '../components/shared/FloatingActionButton';
 import { ProductVariant, CartItem, Customer } from '../../types/pos';
 import { supabase } from '../../lib/supabase';
-import { simplifiedAuth } from '../../lib/simplifiedAuth';
+import { customAuth } from '../../lib/customAuth';
 
 const CashierScreen: React.FC = () => {
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -42,7 +42,7 @@ const CashierScreen: React.FC = () => {
   const barcodeInputRef = useRef<HTMLInputElement>(null);
 
   const getCurrentBranchId = () => {
-    const currentUser = simplifiedAuth.getCurrentUser();
+    const currentUser = customAuth.getCurrentUser();
     
     if (currentUser?.branch_id) {
       console.log('Using user branch ID:', currentUser.branch_id, 'for user:', currentUser.email);

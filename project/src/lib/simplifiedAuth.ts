@@ -49,21 +49,21 @@ export const ROLE_SIDEBAR_CONFIG = {
       'overview', 'sales-value', 'inventory-summary',
       'inventory-management', 'all-products', 'categories', 'low-stock',
       'sales-pos', 'sales-records', 'sales-dashboard', 'daily-sales', 'product-sales',
-      'staff-user-management', 'user-accounts', 'session-history', 'user-roles-overview', 'add-staff', 'roles-permissions', 'activity-logs',
-      'hr', 'hr-dashboard', 'attendance-dashboard', 'leave-management', 'hr-analytics', 'payroll',
+      'staff-user-management', 'user-accounts', 'session-history', 'user-roles-overview', 'roles-permissions', 'activity-logs',
+      'hr', 'hr-dashboard', 'staff', 'attendance-dashboard', 'leave-management', 'hr-analytics', 'payroll',
       'marketing', 'marketing-dashboard', 'campaigns', 'templates', 'analytics', 'notifications',
       'reports', 'exports', 'claims', 'settings'
     ]
   },
   [SYSTEM_ROLES.HR_ADMIN]: {
     sections: [
-      'overview', 'hr', 'hr-dashboard', 'attendance-dashboard', 'leave-management', 'hr-analytics', 'payroll',
-      'staff-user-management', 'user-accounts', 'add-staff', 'roles-permissions', 'activity-logs'
+      'overview', 'hr', 'hr-dashboard', 'staff', 'attendance-dashboard', 'leave-management', 'hr-analytics', 'payroll',
+      'staff-user-management', 'user-accounts', 'roles-permissions', 'activity-logs'
     ]
   },
   [SYSTEM_ROLES.HR_STAFF]: {
     sections: [
-      'overview', 'hr', 'hr-dashboard', 'attendance-dashboard', 'leave-management', 'hr-analytics'
+      'overview', 'hr', 'hr-dashboard', 'staff', 'attendance-dashboard', 'leave-management', 'hr-analytics'
     ]
   },
   [SYSTEM_ROLES.MARKETING_ADMIN]: {

@@ -13,14 +13,14 @@ import {
   ShoppingBag
 } from 'lucide-react';
 import logo from '../../assets/logo.png';
-import { SimplifiedUser } from '../../lib/simplifiedAuth';
+import { CustomUser } from '../../lib/customAuth';
 
 interface POSLayoutProps {
   children: React.ReactNode;
   currentScreen: string;
   onScreenChange: (screen: string) => void;
   onLogout: () => void;
-  user?: SimplifiedUser;
+  user: CustomUser;
   onlineOrdersCount?: number;
 }
 

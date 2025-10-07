@@ -1,6 +1,6 @@
 import { OnlineOrder, OnlineOrderFilters } from '../../types/pos';
 import { supabase } from '../../lib/supabase';
-import { simplifiedAuth } from '../../lib/simplifiedAuth';
+import { customAuth } from '../../lib/customAuth';
 
 export class OnlineOrdersService {
   static async getOrders(filters?: OnlineOrderFilters, branchId?: string): Promise<OnlineOrder[]> {
@@ -637,7 +637,7 @@ export class OnlineOrdersService {
     _metadata?: any
   ): Promise<boolean> {
     try {
-      const currentUser = simplifiedAuth.getCurrentUser();
+      const currentUser = customAuth.getCurrentUser();
       
       // For now, just log to console since order_status_history table might not exist
       console.log(`📝 Order Status Change:`, {
@@ -719,7 +719,7 @@ export class OnlineOrdersService {
     missingItems?: string[];
   }> {
     try {
-      const currentUser = simplifiedAuth.getCurrentUser();
+      const currentUser = customAuth.getCurrentUser();
       if (!currentUser?.id) {
         throw new Error('User not authenticated');
       }
@@ -829,7 +829,7 @@ export class OnlineOrdersService {
     message: string;
   }> {
     try {
-      const currentUser = simplifiedAuth.getCurrentUser();
+      const currentUser = customAuth.getCurrentUser();
       if (!currentUser?.id) {
         throw new Error('User not authenticated');
       }
@@ -899,7 +899,7 @@ export class OnlineOrdersService {
     message: string;
   }> {
     try {
-      const currentUser = simplifiedAuth.getCurrentUser();
+      const currentUser = customAuth.getCurrentUser();
       if (!currentUser?.id) {
         throw new Error('User not authenticated');
       }
@@ -968,7 +968,7 @@ export class OnlineOrdersService {
     message: string;
   }> {
     try {
-      const currentUser = simplifiedAuth.getCurrentUser();
+      const currentUser = customAuth.getCurrentUser();
       if (!currentUser?.id) {
         throw new Error('User not authenticated');
       }

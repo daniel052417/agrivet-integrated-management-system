@@ -8,10 +8,10 @@ import {
   Clock
 } from 'lucide-react';
 import logo from '../../../assets/logo.png';
-import { SimplifiedUser } from '../../../lib/simplifiedAuth';
+import { CustomUser } from '../../../lib/customAuth';
 
 interface SimplifiedSidebarProps {
-  user: SimplifiedUser;
+  user: CustomUser;
   activeSection: string;
   onSectionChange: (section: string) => void;
   onLogout: () => void;
@@ -76,7 +76,7 @@ const SimplifiedSidebar: React.FC<SimplifiedSidebarProps> = ({ user, activeSecti
       category: 'HR',
       children: [
         { id: 'hr-dashboard', label: 'HR Dashboard', icon: Users, category: 'HR' },
-        { id: 'add-staff', label: 'Add Staff', icon: UserCheck, category: 'HR' },
+        { id: 'staff', label: 'Staff', icon: UserCheck, category: 'HR' },
         { id: 'attendance-dashboard', label: 'Attendance Dashboard', icon: Clock, category: 'HR' },
         { id: 'leave-management', label: 'Leave Management', icon: Calendar, category: 'HR' },
         { id: 'hr-analytics', label: 'HR Analytics', icon: BarChart3, category: 'HR' },

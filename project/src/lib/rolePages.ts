@@ -31,7 +31,8 @@ export type RoleName = keyof typeof ROLE_PAGES;
  * @param roleName - The role name
  * @returns The React component for that role's dashboard
  */
-export function getDashboardForRole(roleName: string) {
+export function getDashboardForRole(roleName: string | undefined) {
+  if (!roleName) return ROLE_PAGES.user;
   return ROLE_PAGES[roleName as RoleName] || ROLE_PAGES.user;
 }
 

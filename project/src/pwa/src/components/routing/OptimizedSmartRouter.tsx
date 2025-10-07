@@ -135,3 +135,6 @@ const OptimizedSmartRouter: React.FC<OptimizedSmartRouterProps> = ({ children })
 
 export default OptimizedSmartRouter
 
+
+
+

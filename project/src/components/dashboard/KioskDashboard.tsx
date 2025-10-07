@@ -1,14 +1,14 @@
 import React, { useState } from 'react';
 import SimplifiedSidebar from '../shared/layout/SimplifiedSidebar';
 import Header from '../shared/layout/Header';
-import { SimplifiedUser } from '../../lib/simplifiedAuth';
+import { CustomUser } from '../../lib/customAuth';
 
 // Kiosk-specific components (simplified interface for public use)
 import POSInterface from '../pos/POSInterface';
 import InventorySummaryPage from '../inventory/InventorySummaryPage';
 
 interface KioskDashboardProps {
-  user: SimplifiedUser;
+  user: CustomUser;
   onLogout: () => void;
 }
 

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { AlertTriangle, Package, TrendingDown, Clock, Truck, Search, Filter, Download, RefreshCw, ShoppingCart, Phone, Mail, Calendar, BarChart3, ChevronDown, ChevronRight, MoreVertical, User, AlertCircle } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { LowStockItem, InventoryMetrics } from '../../types/inventory';
 
 const LowStockAlerts: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -9,30 +10,10 @@ const LowStockAlerts: React.FC = () => {
   const [showOnlyCritical, setShowOnlyCritical] = useState(false);
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
 
-  type LowItem = {
-    id: string;
-    name: string;
-    sku: string;
-    category: string;
-    currentStock: number;
-    minimumStock: number;
-    reorderLevel: number;
-    unitPrice: number;
-    totalValue: number;
-    supplier: string;
-    supplierContact: string;
-    supplierEmail: string;
-    lastOrderDate: string;
-    leadTime: string;
-    urgency: 'Critical' | 'High' | 'Medium' | 'Low';
-    daysUntilEmpty: number;
-    avgDailyUsage: number;
-  };
-  const [lowStockItems, setLowStockItems] = useState<LowItem[]>([]);
+  const [lowStockItems, setLowStockItems] = useState<LowStockItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  type AlertMetric = { title: string; value: string; description: string; color: string; bgColor: string; icon: any };
-  const [alertMetrics, setAlertMetrics] = useState<AlertMetric[]>([]);
+  const [alertMetrics, setAlertMetrics] = useState<InventoryMetrics[]>([]);
 
   type CategoryAgg = { category: string; items: number; value: number; urgency: 'Critical'|'High'|'Medium'|'Low'; color: string };
   const [categoryBreakdown, setCategoryBreakdown] = useState<CategoryAgg[]>([]);
@@ -52,36 +33,18 @@ const LowStockAlerts: React.FC = () => {
       setLoading(true);
       setError(null);
 
-      // Use RPC function to get inventory data with proper joins
-      const { data: inventoryData, error: inventoryError } = await supabase.rpc('get_inventory_with_details', {
-        branch_filter: null // Get all branches for low stock alerts
-      });
+      // Get low stock items from the view
+      const { data: inventoryData, error: inventoryError } = await supabase
+        .from('inventory_management_view')
+        .select('*')
+        .in('stock_status', ['Low Stock', 'Out of Stock']);
       
       if (inventoryError) throw inventoryError;
 
-      // Get categories and suppliers for additional info
-      const [{ data: categories, error: cErr }, { data: suppliers, error: sErr }] = await Promise.all([
-        supabase.from('categories').select('id, name').eq('is_active', true),
-        supabase.from('suppliers').select('id, name, email, phone').eq('is_active', true),
-      ]);
-      
-      if (cErr) throw cErr; 
-      if (sErr) throw sErr;
-
-      const categoryIdToName = new Map<string, string>();
-      (categories || []).forEach((c: any) => categoryIdToName.set(c.id, c.name));
-      const supplierIdToInfo = new Map<string, { name: string; email: string; phone: string }>();
-      (suppliers || []).forEach((s: any) => supplierIdToInfo.set(s.id, { name: s.name, email: s.email, phone: s.phone }));
-
-      // Filter for low stock items using inventory table data
-      const transformedItems: LowItem[] = (inventoryData || [])
-        .filter((item: any) => {
-          const qty = Number(item.quantity_on_hand || 0);
-          const reorderLevel = Number(item.reorder_level || 0);
-          return reorderLevel > 0 && qty > 0 && qty <= reorderLevel;
-        })
+      // Transform the data to match our interface
+      const transformedItems: LowStockItem[] = (inventoryData || [])
         .map((item: any) => {
-          const currentStock = Number(item.quantity_on_hand || 0);
+          const currentStock = Number(item.quantity_available || 0);
           const minimumStock = Number(item.reorder_level || 0);
           const avgDailyUsage = Math.max(1, Math.round(currentStock / 14));
           const daysUntilEmpty = Math.max(1, Math.ceil(currentStock / avgDailyUsage));
@@ -99,21 +62,22 @@ const LowStockAlerts: React.FC = () => {
           return {
             id: item.product_id,
             name: item.product_name,
-            sku: item.variant_name, // Using variant name as SKU
-            category: categoryIdToName.get(item.category_id || '') || 'Uncategorized',
+            sku: item.sku,
+            category: item.category_name,
             currentStock,
             minimumStock,
             reorderLevel: Math.max(minimumStock, Math.ceil(minimumStock * 1.5)),
-            unitPrice: Number(item.price || 0),
-            totalValue: currentStock * Number(item.price || 0),
-            supplier: 'Unknown', // Will be populated if needed
+            unitPrice: Number(item.price_per_unit || 0),
+            totalValue: item.inventory_value || 0,
+            supplier: 'Unknown', // Not available in view
             supplierContact: 'N/A',
             supplierEmail: 'N/A',
-            lastOrderDate: item.updated_at || 'Never',
+            lastOrderDate: item.last_updated || 'Never',
             leadTime: '7 days',
             urgency,
             daysUntilEmpty,
-            avgDailyUsage
+            avgDailyUsage,
+            unitLabel: item.unit_label || 'pcs'
           };
         });
 

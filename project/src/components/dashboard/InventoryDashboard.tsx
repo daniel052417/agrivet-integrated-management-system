@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import SimplifiedSidebar from '../shared/layout/SimplifiedSidebar';
 import Header from '../shared/layout/Header';
-import { SimplifiedUser } from '../../lib/simplifiedAuth';
+import { CustomUser } from '../../lib/customAuth';
 
 // Inventory-specific components
 import InventorySummaryPage from '../inventory/InventorySummaryPage';
@@ -10,7 +10,7 @@ import Categories from '../inventory/Categories';
 import LowStockAlerts from '../inventory/LowStockAlerts';
 
 interface InventoryDashboardProps {
-  user: SimplifiedUser;
+  user: CustomUser;
   onLogout: () => void;
 }
 

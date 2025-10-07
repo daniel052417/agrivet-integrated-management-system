@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import SimplifiedSidebar from '../shared/layout/SimplifiedSidebar';
 import Header from '../shared/layout/Header';
-import { SimplifiedUser } from '../../lib/simplifiedAuth';
+import { CustomUser } from '../../lib/customAuth';
 
 // Import all admin components for super admin access
 import Overview from '../dashboard/Overview';
@@ -31,6 +31,7 @@ import UserActivity from '../users/UserActivity';
 import SessionHistory from '../users/SessionHistory';
 import UserRolesOverview from '../users/UserRolesOverview';
 import AddStaff from '../hr/AddStaff';
+import StaffList from '../hr/StaffList';
 import UserPermissions from '../users/UserPermissions';
 import HRDashboard from '../hr/HRDashboard';
 import AttendanceDashboard from '../hr/AttendanceDashboard';
@@ -39,7 +40,7 @@ import HRAnalytics from '../hr/HRAnalytics';
 import PayrollCompensation from '../hr/PayrollCompensation';
 
 interface SuperAdminDashboardProps {
-  user: SimplifiedUser;
+  user: CustomUser;
   onLogout: () => void;
 }
 
@@ -94,7 +95,7 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, onLogou
       // Legacy staff management routes (for backward compatibility)
       case 'staff':
       case 'staff-management':
-        return <UserAccounts />;
+        return <StaffList />;
       case 'attendance':
         return <AttendanceTimesheet />;
       case 'leave':

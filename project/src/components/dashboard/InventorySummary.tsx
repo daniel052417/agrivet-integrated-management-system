@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Package, AlertTriangle, CheckCircle } from 'lucide-react';
+import { Package, AlertTriangle } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 type ProductRow = {
@@ -43,21 +43,10 @@ const InventorySummary: React.FC = () => {
       setLoading(true);
       setError(null);
 
-      // Load inventory with product variants and products
+      // Load inventory data from the management view
       const { data: inventoryData, error: inventoryError } = await supabase
-        .from('inventory')
-        .select(`
-          quantity_on_hand,
-          product_variants!inner(
-            price,
-            cost,
-            product_id,
-            products!inner(
-              category_id,
-              name
-            )
-          )
-        `);
+        .from('inventory_management_view')
+        .select('*');
 
       if (inventoryError) throw inventoryError;
 
@@ -70,10 +59,10 @@ const InventorySummary: React.FC = () => {
 
       // Transform inventory data to match expected format
       const transformedProducts = inventoryData?.map(item => ({
-        category_id: item.product_variants.products.category_id,
-        stock_quantity: item.quantity_on_hand,
-        unit_price: item.product_variants.price,
-        cost_price: item.product_variants.cost || 0,
+        category_id: item.category_id,
+        stock_quantity: item.quantity_available,
+        unit_price: item.price_per_unit || 0,
+        cost_price: item.cost || 0,
         minimum_stock: 0 // Default since reorder_level is in inventory table
       })) || [];
 

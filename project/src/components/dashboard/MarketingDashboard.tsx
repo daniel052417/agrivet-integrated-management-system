@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import SimplifiedSidebar from '../shared/layout/SimplifiedSidebar';
 import Header from '../shared/layout/Header';
-import { SimplifiedUser } from '../../lib/simplifiedAuth';
+import { CustomUser } from '../../lib/customAuth';
 
 // Marketing-specific components
 import MarketingDashboard from '../marketing/MarketingDashboard';
@@ -11,7 +11,7 @@ import CampaignAnalytics from '../marketing/CampaignAnalytics';
 import ClientNotifications from '../marketing/ClientNotifications';
 
 interface MarketingDashboardProps {
-  user: SimplifiedUser;
+  user: CustomUser;
   onLogout: () => void;
 }
 

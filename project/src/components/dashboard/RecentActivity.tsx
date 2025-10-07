@@ -66,17 +66,17 @@ const RecentActivity: React.FC = () => {
         .select(`
           quantity_on_hand,
           reorder_level,
-          product_variants!inner(
+          products!inner(
             name,
-            products!inner(
-              name,
-              is_active
+            is_active,
+            product_units!inner(
+              unit_name
             )
           )
         `)
         .not('quantity_on_hand', 'is', null)
         .not('reorder_level', 'is', null)
-        .eq('product_variants.products.is_active', true)
+        .eq('products.is_active', true)
         .limit(50); // Get more data to filter client-side
 
       if (!stockError && lowStock) {
@@ -87,11 +87,11 @@ const RecentActivity: React.FC = () => {
         
         lowStockItems.slice(0, 3).forEach(item => {
           activityList.push({
-            id: `stock-${item.product_variants.id}`,
+            id: `stock-${item.products.id}`,
             time: new Date().toISOString(),
             type: 'alert',
             title: 'Low Stock Alert',
-            description: `${item.product_variants.products.name} is running low (${item.quantity_on_hand} remaining)`
+            description: `${item.products.name} is running low (${item.quantity_on_hand} remaining)`
           });
         });
       }

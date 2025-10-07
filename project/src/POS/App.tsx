@@ -6,11 +6,11 @@ import CustomerScreen from './screens/CustomerScreen';
 import UserManagementScreen from './screens/UserManagementScreen';
 import ReportsScreen from './screens/ReportsScreen';
 import OnlineOrdersScreen from './screens/OnlineOrdersScreen';
-import { simplifiedAuth, SimplifiedUser } from '../lib/simplifiedAuth';
+import { customAuth, CustomUser } from '../lib/customAuth';
 import { OnlineOrdersService } from './services/onlineOrdersService';
 
 interface POSAppProps {
-  user?: SimplifiedUser;
+  user: CustomUser;
   onLogout?: () => void;
 }
 
@@ -50,7 +50,7 @@ const POSApp: React.FC<POSAppProps> = ({ user, onLogout }) => {
       if (onLogout) {
         onLogout();
       } else {
-        await simplifiedAuth.signOut();
+        await customAuth.signOut();
         // Redirect to login or home page
         window.location.href = '/';
       }
@@ -79,7 +79,7 @@ const POSApp: React.FC<POSAppProps> = ({ user, onLogout }) => {
   };
 
   // Get current user from auth service if not provided
-  const currentUser = user || simplifiedAuth.getCurrentUser();
+  const currentUser = user || customAuth.getCurrentUser();
 
   // If no user is available, show a loading or error state
   if (!currentUser) {

@@ -88,7 +88,7 @@ const ProductSalesReport: React.FC = () => {
           startDate = new Date(now.getFullYear(), now.getMonth(), 1);
       }
 
-      // Load products (without pricing info - that's in product_variants)
+      // Load products (without pricing info - that's in product_units)
       const { data: productsData, error: productsError } = await supabase
         .from('products')
         .select('id, sku, name, category_id')
@@ -96,13 +96,13 @@ const ProductSalesReport: React.FC = () => {
 
       if (productsError) throw productsError;
 
-      // Load product variants for pricing information
-      const { data: variantsData, error: variantsError } = await supabase
-        .from('product_variants')
-        .select('id, product_id, name, price, price')
-        .eq('is_active', true);
+      // Load product units for pricing information
+      const { data: unitsData, error: unitsError } = await supabase
+        .from('product_units')
+        .select('id, product_id, unit_name, price_per_unit')
+        .eq('is_sellable', true);
 
-      if (variantsError) throw variantsError;
+      if (unitsError) throw unitsError;
 
       // Load categories
       const { data: categoriesData, error: categoriesError } = await supabase
@@ -121,22 +121,22 @@ const ProductSalesReport: React.FC = () => {
       if (itemsError) throw itemsError;
 
       setProducts(productsData || []);
-      setVariants(variantsData || []);
+      setVariants(unitsData || []);
       setCategories(categoriesData || []);
       setItems(itemsData || []);
 
       // Calculate product metrics
       const metrics: ProductMetric[] = productsData?.map(product => {
         const productItems = itemsData?.filter(item => item.product_id === product.id) || [];
-        const productVariants = variantsData?.filter(v => v.product_id === product.id) || [];
+        const productUnits = unitsData?.filter(v => v.product_id === product.id) || [];
         const category = categoriesData?.find(c => c.id === product.category_id);
         
-        // Get average pricing from variants (or use first variant if available)
-        const avgPrice = productVariants.length > 0 
-          ? productVariants.reduce((sum, v) => sum + v.price, 0) / productVariants.length 
+        // Get average pricing from units (or use first unit if available)
+        const avgPrice = productUnits.length > 0 
+          ? productUnits.reduce((sum, v) => sum + v.price_per_unit, 0) / productUnits.length 
           : 0;
-        const avgCostPrice = productVariants.length > 0 
-          ? productVariants.reduce((sum, v) => sum + (v.price || 0), 0) / productVariants.length 
+        const avgCostPrice = productUnits.length > 0 
+          ? productUnits.reduce((sum, v) => sum + (v.price_per_unit || 0), 0) / productUnits.length 
           : 0;
         
         const totalSold = productItems.reduce((sum, item) => sum + item.quantity, 0);
