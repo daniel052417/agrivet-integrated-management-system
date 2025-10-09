@@ -8,7 +8,7 @@ interface MetricCardProps {
   change?: string;
   isPositive?: boolean;
   color: 'green' | 'blue' | 'orange' | 'purple';
-  metricType?: 'todays_sales' | 'products_in_stock' | 'active_orders' | 'low_stock_alerts';
+  metricType?: 'todays_sales' | 'products_in_stock' | 'active_orders' | 'low_stock_alerts' | 'total_transactions' | 'active_sessions' | 'total_branches' | 'active_cashiers';
   leftIcon?: React.ReactNode;
   rightIcon?: React.ReactNode;
   className?: string;
@@ -62,17 +62,71 @@ const MetricCard: React.FC<MetricCardProps> = ({
     
     setIsLoading(true);
     try {
+      // Get today's date for cases that need it
+      const today = new Date().toISOString().split('T')[0];
+      
       switch (metricType) {
         case 'todays_sales':
-          const today = new Date().toISOString().split('T')[0];
-          const { data: salesData } = await supabase
-            .from('sales_transactions')
-            .select('total_amount')
-            .gte('transaction_date', `${today}T00:00:00`)
-            .lt('transaction_date', `${today}T23:59:59`);
-          
-          const totalSales = salesData?.reduce((sum, item) => sum + (item.total_amount || 0), 0) || 0;
-          setMetricValue(`₱${totalSales.toLocaleString()}`);
+          // First try the strict filter, then fallback to more lenient filters
+          let todaysSalesData = null;
+          let salesError = null;
+
+          // Try strict filter first
+          const { data: strictData, error: strictError } = await supabase
+            .from('pos_transactions')
+            .select('total_amount, transaction_type, payment_status, status, transaction_date')
+            .eq('transaction_type', 'sale')
+            .eq('payment_status', 'completed')
+            .eq('status', 'active')
+            .gte('transaction_date', today + 'T00:00:00')
+            .lte('transaction_date', today + 'T23:59:59');
+
+          if (strictError) {
+            console.error('Strict filter error:', strictError);
+            salesError = strictError;
+          } else if (strictData && strictData.length > 0) {
+            todaysSalesData = strictData;
+          } else {
+            // Fallback: try without status filter
+            const { data: fallbackData, error: fallbackError } = await supabase
+              .from('pos_transactions')
+              .select('total_amount, transaction_type, payment_status, status, transaction_date')
+              .eq('transaction_type', 'sale')
+              .eq('payment_status', 'completed')
+              .gte('transaction_date', today + 'T00:00:00')
+              .lte('transaction_date', today + 'T23:59:59');
+
+            if (fallbackError) {
+              console.error('Fallback filter error:', fallbackError);
+              salesError = fallbackError;
+            } else if (fallbackData && fallbackData.length > 0) {
+              todaysSalesData = fallbackData;
+            } else {
+              // Final fallback: try with just transaction_type
+              const { data: finalData, error: finalError } = await supabase
+                .from('pos_transactions')
+                .select('total_amount, transaction_type, payment_status, status, transaction_date')
+                .eq('transaction_type', 'sale')
+                .gte('transaction_date', today + 'T00:00:00')
+                .lte('transaction_date', today + 'T23:59:59');
+
+              if (finalError) {
+                console.error('Final filter error:', finalError);
+                salesError = finalError;
+              } else {
+                todaysSalesData = finalData;
+              }
+            }
+          }
+
+          if (salesError) {
+            console.error('Error fetching today\'s sales:', salesError);
+            setMetricValue('Error');
+          } else {
+            const totalSales = todaysSalesData?.reduce((sum, item) => sum + (item.total_amount || 0), 0) || 0;
+            console.log('Today\'s sales data:', { count: todaysSalesData?.length || 0, total: totalSales });
+            setMetricValue('₱' + totalSales.toLocaleString());
+          }
           break;
           
         case 'products_in_stock':
@@ -85,11 +139,12 @@ const MetricCard: React.FC<MetricCardProps> = ({
           break;
           
         case 'active_orders':
-          // Since sales_orders doesn't exist, we'll count pending sales transactions
+          // Count pending POS transactions
           const { data: pendingTransactions } = await supabase
-            .from('sales_transactions')
+            .from('pos_transactions')
             .select('id')
-            .eq('payment_status', 'pending');
+            .eq('payment_status', 'pending')
+            .eq('status', 'active');
           
           setMetricValue((pendingTransactions?.length || 0).toString());
           break;
@@ -101,10 +156,7 @@ const MetricCard: React.FC<MetricCardProps> = ({
               quantity_on_hand, 
               reorder_level,
               products!inner(
-                is_active,
-                product_units!inner(
-                  id
-                )
+                is_active
               )
             `)
             .not('quantity_on_hand', 'is', null)
@@ -117,6 +169,100 @@ const MetricCard: React.FC<MetricCardProps> = ({
           ).length || 0;
           
           setMetricValue(lowStockCount.toString());
+          break;
+
+        case 'total_transactions':
+          // Get today's transaction count with fallback logic
+          let todaysTransactionsData = null;
+          let transactionsError = null;
+
+          // Try strict filter first
+          const { data: strictTxData, error: strictTxError } = await supabase
+            .from('pos_transactions')
+            .select('id, transaction_type, payment_status, status, transaction_date')
+            .eq('transaction_type', 'sale')
+            .eq('payment_status', 'completed')
+            .eq('status', 'active')
+            .gte('transaction_date', today + 'T00:00:00')
+            .lte('transaction_date', today + 'T23:59:59');
+
+          if (strictTxError) {
+            console.error('Strict transaction filter error:', strictTxError);
+            transactionsError = strictTxError;
+          } else if (strictTxData && strictTxData.length > 0) {
+            todaysTransactionsData = strictTxData;
+          } else {
+            // Fallback: try without status filter
+            const { data: fallbackTxData, error: fallbackTxError } = await supabase
+              .from('pos_transactions')
+              .select('id, transaction_type, payment_status, status, transaction_date')
+              .eq('transaction_type', 'sale')
+              .eq('payment_status', 'completed')
+              .gte('transaction_date', today + 'T00:00:00')
+              .lte('transaction_date', today + 'T23:59:59');
+
+            if (fallbackTxError) {
+              console.error('Fallback transaction filter error:', fallbackTxError);
+              transactionsError = fallbackTxError;
+            } else if (fallbackTxData && fallbackTxData.length > 0) {
+              todaysTransactionsData = fallbackTxData;
+            } else {
+              // Final fallback: try with just transaction_type
+              const { data: finalTxData, error: finalTxError } = await supabase
+                .from('pos_transactions')
+                .select('id, transaction_type, payment_status, status, transaction_date')
+                .eq('transaction_type', 'sale')
+                .gte('transaction_date', today + 'T00:00:00')
+                .lte('transaction_date', today + 'T23:59:59');
+
+              if (finalTxError) {
+                console.error('Final transaction filter error:', finalTxError);
+                transactionsError = finalTxError;
+              } else {
+                todaysTransactionsData = finalTxData;
+              }
+            }
+          }
+
+          if (transactionsError) {
+            console.error('Error fetching today\'s transactions:', transactionsError);
+            setMetricValue('Error');
+          } else {
+            const transactionCount = todaysTransactionsData?.length || 0;
+            console.log('Today\'s transactions data:', { count: transactionCount });
+            setMetricValue(transactionCount.toString());
+          }
+          break;
+
+        case 'active_sessions':
+          // Count open POS sessions
+          const { data: openSessions } = await supabase
+            .from('pos_sessions')
+            .select('id')
+            .eq('status', 'open');
+          
+          setMetricValue((openSessions?.length || 0).toString());
+          break;
+
+        case 'total_branches':
+          // Count active branches
+          const { data: branches } = await supabase
+            .from('branches')
+            .select('id')
+            .eq('is_active', true);
+          
+          setMetricValue((branches?.length || 0).toString());
+          break;
+
+        case 'active_cashiers':
+          // Count active cashiers (users with cashier role)
+          const { data: cashiers } = await supabase
+            .from('users')
+            .select('id')
+            .eq('role', 'cashier')
+            .eq('is_active', true);
+          
+          setMetricValue((cashiers?.length || 0).toString());
           break;
       }
     } catch (error) {

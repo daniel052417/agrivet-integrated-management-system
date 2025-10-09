@@ -136,6 +136,15 @@ export interface CartItem {
   lineTotal: number;
   expiryDate?: string;
   batchNumber?: string;
+  isBaseUnit?: boolean; // Flag to distinguish base units from sub-units
+  selectedUnit?: {
+    id: string;
+    unit_name: string;
+    unit_label: string;
+    price: number;
+    is_base_unit: boolean;
+    conversion_factor: number;
+  };
 }
 
 export interface Customer {

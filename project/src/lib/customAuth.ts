@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import bcrypt from 'bcryptjs';
+import { posSessionService } from './posSessionService';
 
 // Custom user interface based on your actual users table schema
 export interface CustomUser {
@@ -79,7 +80,7 @@ export type SystemRole = typeof SYSTEM_ROLES[keyof typeof SYSTEM_ROLES];
 export const ROLE_SIDEBAR_CONFIG = {
   [SYSTEM_ROLES.SUPER_ADMIN]: {
     sections: [
-      'overview', 'sales-value', 'inventory-summary',
+      'overview',
       'inventory-management', 'all-products', 'categories', 'low-stock',
       'sales-pos', 'sales-records', 'sales-dashboard', 'daily-sales', 'product-sales',
       'staff-user-management', 'user-accounts', 'add-staff', 'roles-permissions', 'activity-logs', 'session-history', 'user-roles-overview', 'user-permissions',
@@ -298,6 +299,53 @@ class CustomAuthService {
         // 8. Update last login and activity
         await this.updateLastLogin(customUser.id);
 
+        // 9. Create POS session if user is a cashier
+        if (defaultRole.name === 'cashier' && customUser.branch_id) {
+          try {
+            console.log('🔄 [POS Session] Validating POS session creation for cashier:', customUser.id);
+            
+            // Validate if cashier can start a new session
+            const validation = await posSessionService.canStartNewSession(
+              customUser.id, 
+              customUser.branch_id
+            );
+
+            if (!validation.canStart) {
+              console.warn('⚠️ [POS Session] Cannot create new session:', validation.reason);
+              
+              // If there's an existing session, attach it to the user
+              if (validation.existingSession) {
+                (customUser as any).current_pos_session = validation.existingSession;
+                console.log('✅ [POS Session] Attached existing session to user:', validation.existingSession.id);
+              }
+            } else {
+              // Get available terminal for the branch
+              const terminalId = await posSessionService.getAvailableTerminalForBranch(
+                customUser.branch_id, 
+                customUser.id
+              );
+
+              // Create POS session
+              const posSession = await posSessionService.createSession({
+                cashier_id: customUser.id,
+                branch_id: customUser.branch_id,
+                terminal_id: terminalId || undefined,
+                starting_cash: 0.00,
+                notes: `Session started by ${customUser.first_name} ${customUser.last_name}`
+              });
+
+              console.log('✅ [POS Session] POS session created successfully:', posSession.id);
+              
+              // Store POS session info in the user object for easy access
+              (customUser as any).current_pos_session = posSession;
+            }
+          } catch (posError) {
+            console.error('⚠️ [POS Session] Failed to create POS session:', posError);
+            // Don't fail the login if POS session creation fails
+            // Just log the error and continue
+          }
+        }
+
         return customUser;
       }
 
@@ -346,6 +394,53 @@ class CustomAuthService {
 
       // 8. Update last login and activity
       await this.updateLastLogin(customUser.id);
+
+      // 9. Create POS session if user is a cashier
+      if (userRole.name === 'cashier' && customUser.branch_id) {
+        try {
+          console.log('🔄 [POS Session] Validating POS session creation for cashier:', customUser.id);
+          
+          // Validate if cashier can start a new session
+          const validation = await posSessionService.canStartNewSession(
+            customUser.id, 
+            customUser.branch_id
+          );
+
+          if (!validation.canStart) {
+            console.warn('⚠️ [POS Session] Cannot create new session:', validation.reason);
+            
+            // If there's an existing session, attach it to the user
+            if (validation.existingSession) {
+              (customUser as any).current_pos_session = validation.existingSession;
+              console.log('✅ [POS Session] Attached existing session to user:', validation.existingSession.id);
+            }
+          } else {
+            // Get available terminal for the branch
+            const terminalId = await posSessionService.getAvailableTerminalForBranch(
+              customUser.branch_id, 
+              customUser.id
+            );
+
+            // Create POS session
+            const posSession = await posSessionService.createSession({
+              cashier_id: customUser.id,
+              branch_id: customUser.branch_id,
+              terminal_id: terminalId || undefined,
+              starting_cash: 0.00,
+              notes: `Session started by ${customUser.first_name} ${customUser.last_name}`
+            });
+
+            console.log('✅ [POS Session] POS session created successfully:', posSession.id);
+            
+            // Store POS session info in the user object for easy access
+            (customUser as any).current_pos_session = posSession;
+          }
+        } catch (posError) {
+          console.error('⚠️ [POS Session] Failed to create POS session:', posError);
+          // Don't fail the login if POS session creation fails
+          // Just log the error and continue
+        }
+      }
 
       return customUser;
 

@@ -40,10 +40,12 @@ const TopPerformers: React.FC = () => {
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
         const { data: txData, error: txError } = await supabase
-          .from('sales_transactions')
-          .select('created_by_user_id, total_amount, transaction_date')
-          .gte('transaction_date', thirtyDaysAgo.toISOString())
-          .eq('status', 'completed');
+          .from('pos_transactions')
+          .select('cashier_id, total_amount, transaction_date')
+          .eq('transaction_type', 'sale')
+          .eq('payment_status', 'completed')
+          .eq('status', 'active')
+          .gte('transaction_date', thirtyDaysAgo.toISOString());
 
         if (txError) throw txError;
 
@@ -67,11 +69,11 @@ const TopPerformers: React.FC = () => {
     const staffSales = new Map<string, { totalSales: number; orderCount: number }>();
     
     transactions.forEach(tx => {
-      if (tx.created_by_user_id) {
-        const current = staffSales.get(tx.created_by_user_id) || { totalSales: 0, orderCount: 0 };
+      if (tx.cashier_id) {
+        const current = staffSales.get(tx.cashier_id) || { totalSales: 0, orderCount: 0 };
         current.totalSales += tx.total_amount || 0;
         current.orderCount += 1;
-        staffSales.set(tx.created_by_user_id, current);
+        staffSales.set(tx.cashier_id, current);
       }
     });
 

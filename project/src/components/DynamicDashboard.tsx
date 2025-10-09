@@ -3,12 +3,10 @@ import { useState } from 'react';
 import Sidebar from '../Admin/components/Layout/Sidebar';
 import Header from '../Admin/components/Layout/Header';
 import Overview from '../Admin/components/Dashboard/Overview';
-import SalesValue from '../Admin/components/Sales/SalesValue';
 import AllSalesRecords from '../Admin/components/Sales/AllSalesRecords';
 import SalesDashboard from '../Admin/components/Sales/SalesDashboard';
 import DailySalesSummary from '../Admin/components/Sales/DailySalesSummary';
 import ProductSalesReport from '../Admin/components/Sales/ProductSalesReport';
-import InventorySummaryPage from '../Admin/components/Inventory/InventorySummaryPage';
 import InventoryManagement from '../Admin/components/Inventory/InventoryManagement';
 import AttendanceTimesheet from '../Admin/components/Staff/AttendanceTimesheet';
 import RolesPermissions from '../Admin/components/Staff/RolesPermissions';
@@ -48,8 +46,6 @@ function AdminDashboard({onLogout}: AdminDashboardProps) {
     switch (activeSection) {
       case 'overview':
         return <Overview />;
-      case 'sales-value':
-        return <SalesValue />;
       case 'sales-records':
         return <AllSalesRecords />;
       case 'sales-dashboard':
@@ -58,8 +54,6 @@ function AdminDashboard({onLogout}: AdminDashboardProps) {
         return <DailySalesSummary />;
       case 'product-sales':
         return <ProductSalesReport />;
-      case 'inventory-summary':
-        return <InventorySummaryPage />;
       case 'inventory-management':
       case 'all-products':
         return <InventoryManagement />;

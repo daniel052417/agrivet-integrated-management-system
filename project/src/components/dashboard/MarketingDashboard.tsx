@@ -4,7 +4,7 @@ import Header from '../shared/layout/Header';
 import { CustomUser } from '../../lib/customAuth';
 
 // Marketing-specific components
-import MarketingDashboard from '../marketing/MarketingDashboard';
+import MarketingDashboardMain from '../marketing/MarketingDashboard';
 import CampaignManagement from '../marketing/CampaignManagement';
 import TemplateManagement from '../marketing/TemplateManagement';
 import CampaignAnalytics from '../marketing/CampaignAnalytics';
@@ -21,7 +21,7 @@ const MarketingDashboardComponent: React.FC<MarketingDashboardProps> = ({ user, 
   const renderContent = () => {
     switch (activeSection) {
       case 'marketing-dashboard':
-        return <MarketingDashboard />;
+        return <MarketingDashboardMain />;
       case 'campaigns':
         return <CampaignManagement />;
       case 'templates':

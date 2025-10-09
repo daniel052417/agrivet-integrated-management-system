@@ -46,7 +46,7 @@ export type SystemRole = typeof SYSTEM_ROLES[keyof typeof SYSTEM_ROLES];
 export const ROLE_SIDEBAR_CONFIG = {
   [SYSTEM_ROLES.SUPER_ADMIN]: {
     sections: [
-      'overview', 'sales-value', 'inventory-summary',
+      'overview',
       'inventory-management', 'all-products', 'categories', 'low-stock',
       'sales-pos', 'sales-records', 'sales-dashboard', 'daily-sales', 'product-sales',
       'staff-user-management', 'user-accounts', 'session-history', 'user-roles-overview', 'roles-permissions', 'activity-logs',
@@ -78,15 +78,15 @@ export const ROLE_SIDEBAR_CONFIG = {
   },
   [SYSTEM_ROLES.CASHIER]: {
     sections: [
-      'overview', 'sales-pos', 'sales-records', 'sales-dashboard', 'daily-sales', 'product-sales', 'sales-value'
+      'overview', 'sales-pos', 'sales-records', 'sales-dashboard', 'daily-sales', 'product-sales'
     ]
   },
   [SYSTEM_ROLES.INVENTORY_CLERK]: {
     sections: [
-      'overview', 'inventory-summary', 'inventory-management', 'all-products', 'categories', 'low-stock'
+      'overview', 'inventory-management', 'all-products', 'categories', 'low-stock'
     ]
   },
-} as const;
+};
 
 class SimplifiedAuthService {
   private static instance: SimplifiedAuthService;

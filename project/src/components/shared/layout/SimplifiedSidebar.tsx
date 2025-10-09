@@ -32,8 +32,6 @@ const SimplifiedSidebar: React.FC<SimplifiedSidebarProps> = ({ user, activeSecti
 
   const menuItems: MenuItem[] = [
     { id: 'overview', label: 'Overview', icon: Home, category: 'Default' },
-    { id: 'sales-value', label: 'Sales Value', icon: DollarSign, category: 'Default' },
-    { id: 'inventory-summary', label: 'Inventory Summary', icon: Package, category: 'Default' },
     
     { 
       id: 'inventory-management', 

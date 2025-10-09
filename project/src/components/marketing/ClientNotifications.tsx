@@ -1,380 +1,517 @@
 import React, { useState } from 'react';
-import { Plus, Edit, Trash2, Eye, Bell, Send, Users, Clock, Target, MessageSquare, Mail, Smartphone, Filter, Download, CheckCircle, AlertCircle } from 'lucide-react';
+import { 
+  Plus, 
+  Search, 
+  Filter, 
+  Send, 
+  Clock, 
+  CheckCircle, 
+  XCircle, 
+  AlertCircle,
+  Mail,
+  MessageSquare,
+  Bell,
+  Users,
+  Calendar,
+  Edit,
+  Trash2,
+  Eye,
+  MoreHorizontal,
+  Target,
+  TrendingUp
+} from 'lucide-react';
+
+// Mock data for notifications
+const mockNotifications = [
+  {
+    id: 1,
+    title: "Summer Sale Promotion",
+    message: "Get up to 30% off on all fertilizers! Limited time offer.",
+    type: "promotion",
+    channel: "email",
+    status: "sent",
+    scheduledDate: "2025-01-15T09:00:00Z",
+    sentDate: "2025-01-15T09:00:00Z",
+    recipients: 1250,
+    opened: 890,
+    clicked: 234,
+    conversions: 45,
+    createdBy: "John Doe",
+    createdAt: "2025-01-14T14:30:00Z"
+  },
+  {
+    id: 2,
+    title: "New Product Alert",
+    message: "Check out our latest premium seeds collection!",
+    type: "product",
+    channel: "sms",
+    status: "sent",
+    scheduledDate: "2025-01-18T10:00:00Z",
+    sentDate: "2025-01-18T10:00:00Z",
+    recipients: 890,
+    opened: 567,
+    clicked: 123,
+    conversions: 23,
+    createdBy: "Jane Smith",
+    createdAt: "2025-01-17T16:45:00Z"
+  },
+  {
+    id: 3,
+    title: "Order Confirmation",
+    message: "Your order #12345 has been confirmed and is being processed.",
+    type: "transaction",
+    channel: "email",
+    status: "sent",
+    scheduledDate: "2025-01-20T11:30:00Z",
+    sentDate: "2025-01-20T11:30:00Z",
+    recipients: 1,
+    opened: 1,
+    clicked: 0,
+    conversions: 0,
+    createdBy: "System",
+    createdAt: "2025-01-20T11:30:00Z"
+  },
+  {
+    id: 4,
+    title: "Valentine's Special",
+    message: "Spread love with our special Valentine's offers!",
+    type: "promotion",
+    channel: "push",
+    status: "scheduled",
+    scheduledDate: "2025-02-10T08:00:00Z",
+    sentDate: null,
+    recipients: 0,
+    opened: 0,
+    clicked: 0,
+    conversions: 0,
+    createdBy: "Sarah Wilson",
+    createdAt: "2025-01-25T10:15:00Z"
+  },
+  {
+    id: 5,
+    title: "Inventory Alert",
+    message: "Low stock alert: Ammonium Sulfate running low.",
+    type: "alert",
+    channel: "email",
+    status: "failed",
+    scheduledDate: "2025-01-22T14:00:00Z",
+    sentDate: null,
+    recipients: 0,
+    opened: 0,
+    clicked: 0,
+    conversions: 0,
+    createdBy: "Mike Johnson",
+    createdAt: "2025-01-22T13:45:00Z"
+  }
+];
 
 const ClientNotifications: React.FC = () => {
-  const [selectedTab, setSelectedTab] = useState('sent');
-  const [selectedType, setSelectedType] = useState('all');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [channelFilter, setChannelFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [showCreateModal, setShowCreateModal] = useState(false);
 
-  const notifications = [
-    {
-      id: 1,
-      title: 'Order Ready for Pickup',
-      message: 'Your order #ORD-2024-001 is ready for pickup at our main branch.',
-      type: 'Order Update',
-      channel: 'SMS + Email',
-      recipients: 1,
-      sent: 1,
-      delivered: 1,
-      opened: 1,
-      clicked: 0,
-      status: 'Delivered',
-      sentAt: '2024-01-15 10:30:00',
-      customer: 'John Doe',
-      priority: 'High'
-    },
-    {
-      id: 2,
-      title: 'Payment Confirmation',
-      message: 'Thank you for your payment of ₱1,500.00. Your order has been confirmed.',
-      type: 'Payment',
-      channel: 'Email',
-      recipients: 1,
-      sent: 1,
-      delivered: 1,
-      opened: 1,
-      clicked: 1,
-      status: 'Delivered',
-      sentAt: '2024-01-15 09:15:00',
-      customer: 'Jane Smith',
-      priority: 'Medium'
-    },
-    {
-      id: 3,
-      title: 'Product Restock Alert',
-      message: 'The product you were interested in is now back in stock!',
-      type: 'Marketing',
-      channel: 'SMS',
-      recipients: 50,
-      sent: 48,
-      delivered: 45,
-      opened: 30,
-      clicked: 12,
-      status: 'Delivered',
-      sentAt: '2024-01-14 14:20:00',
-      customer: 'Bulk Campaign',
-      priority: 'Low'
-    },
-    {
-      id: 4,
-      title: 'Appointment Reminder',
-      message: 'You have an appointment scheduled for tomorrow at 2:00 PM.',
-      type: 'Appointment',
-      channel: 'SMS + Push',
-      recipients: 1,
-      sent: 1,
-      delivered: 0,
-      opened: 0,
-      clicked: 0,
-      status: 'Failed',
-      sentAt: '2024-01-14 16:45:00',
-      customer: 'Mike Johnson',
-      priority: 'High'
+  const getTypeIcon = (type: string) => {
+    switch (type) {
+      case 'promotion': return <Target className="w-4 h-4" />;
+      case 'product': return <TrendingUp className="w-4 h-4" />;
+      case 'transaction': return <CheckCircle className="w-4 h-4" />;
+      case 'alert': return <AlertCircle className="w-4 h-4" />;
+      default: return <Bell className="w-4 h-4" />;
     }
-  ];
+  };
 
-  const filteredNotifications = notifications.filter(notification => {
-    const matchesTab = selectedTab === 'all' || 
-      (selectedTab === 'sent' && notification.status === 'Delivered') ||
-      (selectedTab === 'failed' && notification.status === 'Failed') ||
-      (selectedTab === 'scheduled' && notification.status === 'Scheduled');
-    
-    const matchesType = selectedType === 'all' || notification.type === selectedType;
-    
-    return matchesTab && matchesType;
-  });
+  const getTypeColor = (type: string) => {
+    switch (type) {
+      case 'promotion': return 'bg-orange-100 text-orange-800';
+      case 'product': return 'bg-blue-100 text-blue-800';
+      case 'transaction': return 'bg-green-100 text-green-800';
+      case 'alert': return 'bg-red-100 text-red-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'Delivered':
-        return 'bg-green-100 text-green-800';
-      case 'Failed':
-        return 'bg-red-100 text-red-800';
-      case 'Scheduled':
-        return 'bg-blue-100 text-blue-800';
-      case 'Pending':
-        return 'bg-yellow-100 text-yellow-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
+  const getChannelIcon = (channel: string) => {
+    switch (channel) {
+      case 'email': return <Mail className="w-4 h-4" />;
+      case 'sms': return <MessageSquare className="w-4 h-4" />;
+      case 'push': return <Bell className="w-4 h-4" />;
+      default: return <Bell className="w-4 h-4" />;
+    }
+  };
+
+  const getChannelColor = (channel: string) => {
+    switch (channel) {
+      case 'email': return 'bg-blue-100 text-blue-800';
+      case 'sms': return 'bg-green-100 text-green-800';
+      case 'push': return 'bg-purple-100 text-purple-800';
+      default: return 'bg-gray-100 text-gray-800';
     }
   };
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case 'Delivered':
-        return <CheckCircle className="w-4 h-4 text-green-600" />;
-      case 'Failed':
-        return <AlertCircle className="w-4 h-4 text-red-600" />;
-      case 'Scheduled':
-        return <Clock className="w-4 h-4 text-blue-600" />;
-      case 'Pending':
-        return <Clock className="w-4 h-4 text-yellow-600" />;
-      default:
-        return <Clock className="w-4 h-4 text-gray-600" />;
+      case 'sent': return <CheckCircle className="w-4 h-4 text-green-500" />;
+      case 'scheduled': return <Clock className="w-4 h-4 text-blue-500" />;
+      case 'failed': return <XCircle className="w-4 h-4 text-red-500" />;
+      default: return <Clock className="w-4 h-4 text-gray-500" />;
     }
   };
 
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case 'High':
-        return 'bg-red-100 text-red-800';
-      case 'Medium':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'Low':
-        return 'bg-green-100 text-green-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'sent': return 'bg-green-100 text-green-800';
+      case 'scheduled': return 'bg-blue-100 text-blue-800';
+      case 'failed': return 'bg-red-100 text-red-800';
+      default: return 'bg-gray-100 text-gray-800';
     }
   };
 
-  const getChannelIcon = (channel: string) => {
-    if (channel.includes('Email')) return <Mail className="w-4 h-4" />;
-    if (channel.includes('SMS')) return <Smartphone className="w-4 h-4" />;
-    if (channel.includes('Push')) return <Bell className="w-4 h-4" />;
-    return <MessageSquare className="w-4 h-4" />;
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('en-PH', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
   };
 
-  return (
-    <div className="client-notifications">
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Client Notifications</h1>
-          <p className="text-gray-600">Manage and track client communication</p>
+  const formatNumber = (num: number) => {
+    return new Intl.NumberFormat('en-PH').format(num);
+  };
+
+  const formatPercentage = (num: number) => {
+    return `${num.toFixed(1)}%`;
+  };
+
+  const filteredNotifications = mockNotifications.filter(notification => {
+    const matchesSearch = notification.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         notification.message.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesType = typeFilter === 'all' || notification.type === typeFilter;
+    const matchesChannel = channelFilter === 'all' || notification.channel === channelFilter;
+    const matchesStatus = statusFilter === 'all' || notification.status === statusFilter;
+    return matchesSearch && matchesType && matchesChannel && matchesStatus;
+  });
+
+  const renderCreateModal = () => (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+        <div className="p-6 border-b border-gray-200">
+          <h3 className="text-lg font-semibold text-gray-900">Create Notification</h3>
         </div>
-
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-            <div className="flex items-center">
-              <div className="p-2 bg-blue-100 rounded-lg">
-                <Send className="w-6 h-6 text-blue-600" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Total Sent</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {notifications.reduce((sum, n) => sum + n.sent, 0)}
-                </p>
-              </div>
-            </div>
+        <div className="p-6 space-y-6">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Title</label>
+            <input
+              type="text"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+              placeholder="Enter notification title"
+            />
           </div>
-
-          <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-            <div className="flex items-center">
-              <div className="p-2 bg-green-100 rounded-lg">
-                <CheckCircle className="w-6 h-6 text-green-600" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Delivered</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {notifications.reduce((sum, n) => sum + n.delivered, 0)}
-                </p>
-              </div>
-            </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Message</label>
+            <textarea
+              rows={4}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+              placeholder="Enter notification message"
+            />
           </div>
-
-          <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-            <div className="flex items-center">
-              <div className="p-2 bg-yellow-100 rounded-lg">
-                <Eye className="w-6 h-6 text-yellow-600" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Opened</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {notifications.reduce((sum, n) => sum + n.opened, 0)}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-            <div className="flex items-center">
-              <div className="p-2 bg-purple-100 rounded-lg">
-                <Target className="w-6 h-6 text-purple-600" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Clicked</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {notifications.reduce((sum, n) => sum + n.clicked, 0)}
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Controls */}
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 mb-6">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between space-y-4 md:space-y-0">
-            <div className="flex items-center space-x-4">
-              {/* Tab Navigation */}
-              <div className="flex space-x-1 bg-gray-100 p-1 rounded-lg">
-                {[
-                  { id: 'all', label: 'All', count: notifications.length },
-                  { id: 'sent', label: 'Sent', count: notifications.filter(n => n.status === 'Delivered').length },
-                  { id: 'failed', label: 'Failed', count: notifications.filter(n => n.status === 'Failed').length },
-                  { id: 'scheduled', label: 'Scheduled', count: notifications.filter(n => n.status === 'Scheduled').length }
-                ].map(tab => (
-                  <button
-                    key={tab.id}
-                    onClick={() => setSelectedTab(tab.id)}
-                    className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${
-                      selectedTab === tab.id
-                        ? 'bg-white text-gray-900 shadow-sm'
-                        : 'text-gray-600 hover:text-gray-900'
-                    }`}
-                  >
-                    {tab.label} ({tab.count})
-                  </button>
-                ))}
-              </div>
-
-              {/* Type Filter */}
-              <select
-                value={selectedType}
-                onChange={(e) => setSelectedType(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="all">All Types</option>
-                <option value="Order Update">Order Update</option>
-                <option value="Payment">Payment</option>
-                <option value="Marketing">Marketing</option>
-                <option value="Appointment">Appointment</option>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Type</label>
+              <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent">
+                <option value="promotion">Promotion</option>
+                <option value="product">Product</option>
+                <option value="transaction">Transaction</option>
+                <option value="alert">Alert</option>
               </select>
             </div>
-
-            <div className="flex items-center space-x-2">
-              <button className="flex items-center space-x-2 px-4 py-2 text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors">
-                <Filter className="w-4 h-4" />
-                <span>Filter</span>
-              </button>
-              
-              <button className="flex items-center space-x-2 px-4 py-2 text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors">
-                <Download className="w-4 h-4" />
-                <span>Export</span>
-              </button>
-              
-              <button className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors">
-                <Plus className="w-4 h-4" />
-                <span>New Notification</span>
-              </button>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Channel</label>
+              <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent">
+                <option value="email">Email</option>
+                <option value="sms">SMS</option>
+                <option value="push">Push Notification</option>
+              </select>
             </div>
           </div>
-        </div>
-
-        {/* Notifications List */}
-        <div className="space-y-4">
-          {filteredNotifications.map((notification) => (
-            <div key={notification.id} className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
-              <div className="flex items-start justify-between">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center space-x-3 mb-2">
-                    <h3 className="text-lg font-semibold text-gray-900 truncate">
-                      {notification.title}
-                    </h3>
-                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(notification.status)}`}>
-                      {notification.status}
-                    </span>
-                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getPriorityColor(notification.priority)}`}>
-                      {notification.priority}
-                    </span>
-                  </div>
-                  
-                  <p className="text-sm text-gray-600 mb-4">{notification.message}</p>
-                  
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                    <div>
-                      <span className="text-gray-500">Type:</span>
-                      <span className="ml-2 font-medium">{notification.type}</span>
-                    </div>
-                    <div>
-                      <span className="text-gray-500">Channel:</span>
-                      <span className="ml-2 font-medium flex items-center space-x-1">
-                        {getChannelIcon(notification.channel)}
-                        <span>{notification.channel}</span>
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-gray-500">Customer:</span>
-                      <span className="ml-2 font-medium">{notification.customer}</span>
-                    </div>
-                    <div>
-                      <span className="text-gray-500">Sent:</span>
-                      <span className="ml-2 font-medium">{notification.sentAt}</span>
-                    </div>
-                  </div>
-                  
-                  <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                    <div className="flex items-center space-x-2">
-                      <Users className="w-4 h-4 text-gray-400" />
-                      <span className="text-gray-600">Recipients: {notification.recipients}</span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <CheckCircle className="w-4 h-4 text-green-500" />
-                      <span className="text-gray-600">Delivered: {notification.delivered}</span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Eye className="w-4 h-4 text-blue-500" />
-                      <span className="text-gray-600">Opened: {notification.opened}</span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Target className="w-4 h-4 text-purple-500" />
-                      <span className="text-gray-600">Clicked: {notification.clicked}</span>
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="flex items-center space-x-2 ml-4">
-                  <button className="text-blue-600 hover:text-blue-800 p-1" title="View Details">
-                    <Eye className="w-4 h-4" />
-                  </button>
-                  <button className="text-gray-600 hover:text-gray-800 p-1" title="Edit">
-                    <Edit className="w-4 h-4" />
-                  </button>
-                  <button className="text-red-600 hover:text-red-800 p-1" title="Delete">
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Schedule</label>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm text-gray-600 mb-1">Date</label>
+                <input
+                  type="date"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-600 mb-1">Time</label>
+                <input
+                  type="time"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                />
               </div>
             </div>
-          ))}
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Recipients</label>
+            <div className="space-y-2">
+              <label className="flex items-center">
+                <input type="checkbox" className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500" />
+                <span className="ml-2 text-sm text-gray-700">All customers</span>
+              </label>
+              <label className="flex items-center">
+                <input type="checkbox" className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500" />
+                <span className="ml-2 text-sm text-gray-700">VIP customers only</span>
+              </label>
+              <label className="flex items-center">
+                <input type="checkbox" className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500" />
+                <span className="ml-2 text-sm text-gray-700">Specific segments</span>
+              </label>
+            </div>
+          </div>
+        </div>
+        <div className="p-6 border-t border-gray-200 flex items-center justify-end space-x-3">
+          <button
+            onClick={() => setShowCreateModal(false)}
+            className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+          <button className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700">
+            Create Notification
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Client Notifications</h2>
+          <p className="text-gray-600">Manage customer communications and notifications</p>
+        </div>
+        <button 
+          onClick={() => setShowCreateModal(true)}
+          className="flex items-center space-x-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700"
+        >
+          <Plus className="w-4 h-4" />
+          <span>Create Notification</span>
+        </button>
+      </div>
+
+      {/* Filters and Search */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="md:col-span-2">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+              <input
+                type="text"
+                placeholder="Search notifications..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+              />
+            </div>
+          </div>
+          <select
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value)}
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+          >
+            <option value="all">All Types</option>
+            <option value="promotion">Promotion</option>
+            <option value="product">Product</option>
+            <option value="transaction">Transaction</option>
+            <option value="alert">Alert</option>
+          </select>
+          <select
+            value={channelFilter}
+            onChange={(e) => setChannelFilter(e.target.value)}
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+          >
+            <option value="all">All Channels</option>
+            <option value="email">Email</option>
+            <option value="sms">SMS</option>
+            <option value="push">Push</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Notification Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Total Sent</p>
+              <p className="text-3xl font-bold text-gray-900">{mockNotifications.filter(n => n.status === 'sent').length}</p>
+            </div>
+            <div className="p-3 bg-green-100 rounded-lg">
+              <Send className="w-6 h-6 text-green-600" />
+            </div>
+          </div>
         </div>
 
-        {filteredNotifications.length === 0 && (
-          <div className="text-center py-12">
-            <Bell className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No Notifications Found</h3>
-            <p className="text-gray-500 mb-4">
-              {selectedTab === 'all' 
-                ? 'No notifications have been sent yet.'
-                : `No ${selectedTab} notifications found.`
-              }
-            </p>
-            <button className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors mx-auto">
-              <Plus className="w-4 h-4" />
-              <span>Send First Notification</span>
-            </button>
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Scheduled</p>
+              <p className="text-3xl font-bold text-gray-900">{mockNotifications.filter(n => n.status === 'scheduled').length}</p>
+            </div>
+            <div className="p-3 bg-blue-100 rounded-lg">
+              <Clock className="w-6 h-6 text-blue-600" />
+            </div>
           </div>
-        )}
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Total Recipients</p>
+              <p className="text-3xl font-bold text-gray-900">{formatNumber(mockNotifications.reduce((sum, n) => sum + n.recipients, 0))}</p>
+            </div>
+            <div className="p-3 bg-purple-100 rounded-lg">
+              <Users className="w-6 h-6 text-purple-600" />
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Avg Open Rate</p>
+              <p className="text-3xl font-bold text-gray-900">
+                {formatPercentage(
+                  mockNotifications
+                    .filter(n => n.status === 'sent' && n.recipients > 0)
+                    .reduce((sum, n) => sum + (n.opened / n.recipients), 0) / 
+                  mockNotifications.filter(n => n.status === 'sent' && n.recipients > 0).length * 100
+                )}
+              </p>
+            </div>
+            <div className="p-3 bg-orange-100 rounded-lg">
+              <TrendingUp className="w-6 h-6 text-orange-600" />
+            </div>
+          </div>
+        </div>
       </div>
+
+      {/* Notifications List */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200">
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Notification</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Channel</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Recipients</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Performance</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {filteredNotifications.map((notification) => (
+                <tr key={notification.id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div>
+                      <div className="text-sm font-medium text-gray-900">{notification.title}</div>
+                      <div className="text-sm text-gray-500 line-clamp-2">{notification.message}</div>
+                      <div className="text-xs text-gray-400 mt-1">
+                        {notification.sentDate ? `Sent: ${formatDate(notification.sentDate)}` : `Scheduled: ${formatDate(notification.scheduledDate)}`}
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center space-x-2">
+                      {getTypeIcon(notification.type)}
+                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${getTypeColor(notification.type)}`}>
+                        {notification.type}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center space-x-2">
+                      {getChannelIcon(notification.channel)}
+                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${getChannelColor(notification.channel)}`}>
+                        {notification.channel}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center space-x-2">
+                      {getStatusIcon(notification.status)}
+                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(notification.status)}`}>
+                        {notification.status}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm text-gray-900">{formatNumber(notification.recipients)}</div>
+                    <div className="text-xs text-gray-500">recipients</div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    {notification.status === 'sent' && notification.recipients > 0 ? (
+                      <div className="space-y-1">
+                        <div className="text-sm text-gray-900">
+                          {formatNumber(notification.opened)} / {formatNumber(notification.recipients)} opened
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {formatNumber(notification.clicked)} clicked, {formatNumber(notification.conversions)} converted
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-sm text-gray-500">-</div>
+                    )}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                    <div className="flex items-center space-x-2">
+                      <button className="text-emerald-600 hover:text-emerald-900" title="View">
+                        <Eye className="w-4 h-4" />
+                      </button>
+                      <button className="text-blue-600 hover:text-blue-900" title="Edit">
+                        <Edit className="w-4 h-4" />
+                      </button>
+                      <button className="text-red-600 hover:text-red-900" title="Delete">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Empty State */}
+      {filteredNotifications.length === 0 && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
+          <Bell className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-gray-900 mb-2">No notifications found</h3>
+          <p className="text-gray-600 mb-6">Try adjusting your search criteria or create a new notification.</p>
+          <button 
+            onClick={() => setShowCreateModal(true)}
+            className="flex items-center space-x-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 mx-auto"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Create Notification</span>
+          </button>
+        </div>
+      )}
+
+      {/* Create Modal */}
+      {showCreateModal && renderCreateModal()}
+    </div>
   );
 };
 
 export default ClientNotifications;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

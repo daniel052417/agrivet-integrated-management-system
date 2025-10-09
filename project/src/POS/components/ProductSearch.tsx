@@ -21,6 +21,7 @@ const ProductSearch: React.FC<ProductSearchProps> = ({ onAddToCart, filters }) =
   const [weight, setWeight] = useState<number | null>(null);
   const [showQuantityModal, setShowQuantityModal] = useState(false);
   const [showAgrivetHandler, setShowAgrivetHandler] = useState(false);
+  const [selectedUnit, setSelectedUnit] = useState<any>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -101,6 +102,10 @@ const ProductSearch: React.FC<ProductSearchProps> = ({ onAddToCart, filters }) =
     setQuantity(1);
     setWeight(null);
     
+    // Set default unit
+    const units = generateDynamicUnits(product);
+    setSelectedUnit(units[0] || null);
+    
     // Check if this is an agrivet product that needs special handling
     const isAgrivetProduct = product.name.toLowerCase().includes('feed') ||
                             product.name.toLowerCase().includes('medicine') ||
@@ -124,12 +129,20 @@ const ProductSearch: React.FC<ProductSearchProps> = ({ onAddToCart, filters }) =
 
   const handleAddToCart = (expiryDate?: string, batchNumber?: string) => {
     if (selectedProduct) {
-      onAddToCart(selectedProduct, quantity, weight || undefined, expiryDate, batchNumber);
+      // Create a modified product with the selected unit price
+      const productWithUnit = {
+        ...selectedProduct,
+        price: selectedUnit?.price || selectedProduct.price,
+        selectedUnit: selectedUnit
+      };
+      
+      onAddToCart(productWithUnit, quantity, weight || undefined, expiryDate, batchNumber);
       setShowQuantityModal(false);
       setShowAgrivetHandler(false);
       setSelectedProduct(null);
       setQuantity(1);
       setWeight(null);
+      setSelectedUnit(null);
     }
   };
 
@@ -142,6 +155,95 @@ const ProductSearch: React.FC<ProductSearchProps> = ({ onAddToCart, filters }) =
       style: 'currency',
       currency: 'PHP'
     }).format(price);
+  };
+
+  // Enhanced unit selection with tiered pricing system
+  const generateDynamicUnits = (product: ProductVariant) => {
+    const units = product.units || (product as any).availableUnits || [];
+    if (units.length === 0) return [];
+
+    // Find the minimum sellable quantity from all units
+    const minSellableQuantity = Math.min(
+      ...units.map((unit: any) => unit.min_sellable_quantity || 0.25)
+    );
+
+    // Find the base unit (is_base_unit = true) and smallest unit for calculations
+    const baseUnit = units.find((u: any) => u.is_base_unit);
+    const smallestUnit = units.reduce((smallest: any, unit: any) => {
+      if (!smallest || unit.conversion_factor < smallest.conversion_factor) {
+        return unit;
+      }
+      return smallest;
+    });
+
+    // Generate practical unit options based on min sellable quantity
+    const baseUnits = [50, 25, 10, 5, 1, 0.5, 0.25]; // Common selling units
+    const availableUnits = baseUnits.filter(unit => unit >= minSellableQuantity);
+
+    // Create dynamic unit options with tiered pricing
+    const dynamicUnits = availableUnits.map(unit => {
+      let unitPrice = 0;
+      let pricingMethod = '';
+
+      if (baseUnit && unit >= baseUnit.conversion_factor) {
+        // For units >= base unit: use base unit pricing
+        unitPrice = baseUnit.price;
+        pricingMethod = 'base_unit';
+      } else if (smallestUnit) {
+        // For units < base unit: use smallest unit pricing
+        unitPrice = (smallestUnit.price / smallestUnit.conversion_factor) * unit;
+        pricingMethod = 'smallest_unit';
+      } else {
+        // Fallback to original calculation
+        unitPrice = (baseUnit?.price || 0) / (baseUnit?.conversion_factor || 1) * unit;
+        pricingMethod = 'fallback';
+      }
+      
+      // Format display label
+      let displayLabel = '';
+      if (unit >= 1) {
+        displayLabel = `${unit}kg`;
+      } else if (unit === 0.5) {
+        displayLabel = '1/2';
+      } else if (unit === 0.25) {
+        displayLabel = '1/4';
+      } else {
+        displayLabel = `${unit}kg`;
+      }
+
+      return {
+        id: `dynamic_${unit}`,
+        unit_name: `${unit}kg`,
+        unit_label: displayLabel,
+        price: unitPrice,
+        conversion_factor: unit,
+        min_sellable_quantity: minSellableQuantity,
+        is_dynamic: true,
+        pricing_method: pricingMethod,
+        base_unit_id: baseUnit?.id,
+        smallest_unit_id: smallestUnit?.id
+      };
+    });
+
+    // Add original units if they're not already covered
+    const originalUnits = units.map((unit: any) => ({
+      ...unit,
+      is_dynamic: false,
+      pricing_method: unit.is_base_unit ? 'base_unit' : 'smallest_unit'
+    }));
+
+    // Combine and deduplicate by conversion_factor
+    const allUnits = [...originalUnits, ...dynamicUnits];
+    const uniqueUnits = allUnits.reduce((acc: any[], unit: any) => {
+      const existing = acc.find(u => Math.abs(u.conversion_factor - unit.conversion_factor) < 0.01);
+      if (!existing) {
+        acc.push(unit);
+      }
+      return acc;
+    }, []);
+
+    // Sort by conversion_factor descending (largest first)
+    return uniqueUnits.sort((a: any, b: any) => b.conversion_factor - a.conversion_factor);
   };
 
   const getPricingTypeIcon = (pricingType?: string) => {
@@ -355,6 +457,45 @@ const ProductSearch: React.FC<ProductSearchProps> = ({ onAddToCart, filters }) =
                 <p className="text-sm text-gray-600">SKU: {selectedProduct.sku}</p>
               </div>
 
+              {/* Unit Selection */}
+              {(() => {
+                const availableUnits = generateDynamicUnits(selectedProduct);
+                if (availableUnits.length > 1) {
+                  return (
+                    <div className="mb-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Select Unit
+                      </label>
+                      <div className="flex flex-wrap gap-2">
+                        {availableUnits.map((unit: any) => (
+                          <button
+                            key={unit.id}
+                            onClick={() => setSelectedUnit(unit)}
+                            className={`px-3 py-2 text-sm rounded-md transition-colors ${
+                              selectedUnit?.id === unit.id
+                                ? 'bg-emerald-600 text-white'
+                                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                            }`}
+                            title={`${unit.unit_name} - ₱${unit.price.toFixed(2)}`}
+                          >
+                            {unit.unit_label}
+                          </button>
+                        ))}
+                      </div>
+                      {selectedUnit && (
+                        <p className="text-xs text-gray-500 mt-1">
+                          Price: {formatPrice(selectedUnit.price)} per {selectedUnit.unit_label}
+                          {selectedUnit.is_dynamic && (
+                            <span className="text-emerald-600 ml-1">•</span>
+                          )}
+                        </p>
+                      )}
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+
             {selectedProduct.pos_pricing_type === 'weight_based' ? (
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -410,8 +551,8 @@ const ProductSearch: React.FC<ProductSearchProps> = ({ onAddToCart, filters }) =
               <p className="text-sm text-gray-600">
                 Total: {formatPrice(
                   selectedProduct.pos_pricing_type === 'weight_based' && weight
-                    ? selectedProduct.price * weight
-                    : selectedProduct.price * quantity
+                    ? (selectedUnit?.price || selectedProduct.price) * weight
+                    : (selectedUnit?.price || selectedProduct.price) * quantity
                 )}
               </p>
             </div>

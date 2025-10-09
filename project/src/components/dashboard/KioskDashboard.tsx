@@ -5,7 +5,6 @@ import { CustomUser } from '../../lib/customAuth';
 
 // Kiosk-specific components (simplified interface for public use)
 import POSInterface from '../pos/POSInterface';
-import InventorySummaryPage from '../inventory/InventorySummaryPage';
 
 interface KioskDashboardProps {
   user: CustomUser;
@@ -19,8 +18,6 @@ const KioskDashboard: React.FC<KioskDashboardProps> = ({ user, onLogout }) => {
     switch (activeSection) {
       case 'pos-interface':
         return <POSInterface user={user} onLogout={onLogout} />;
-      case 'inventory-summary':
-        return <InventorySummaryPage />;
       default:
         return (
           <div className="p-6">

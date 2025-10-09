@@ -140,3 +140,4 @@ FROM inventory_with_units;
 GRANT SELECT ON inventory_management_view TO authenticated;
 
 
+

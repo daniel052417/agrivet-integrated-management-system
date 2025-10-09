@@ -6,7 +6,7 @@ type TransactionRow = {
   id: string;
   transaction_number: string;
   customer_id: string | null;
-  created_by_user_id: string;
+  cashier_id: string;
   branch_id: string | null;
   transaction_date: string;
   subtotal: number;
@@ -18,13 +18,13 @@ type TransactionRow = {
   updated_at: string;
 };
 
-type ItemRow = {
-  id: string;
-  transaction_id: string;
-  product_id: string;
-  quantity: number;
-  unit_price: number;
-  total_price: number;
+type ItemRow = { 
+  id: string; 
+  transaction_id: string; 
+  product_id: string; 
+  quantity: number; 
+  unit_price: number; 
+  line_total: number; 
 };
 
 type CustomerRow = { 
@@ -98,12 +98,12 @@ const AllSalesRecords: React.FC = () => {
 
       // Load transactions with all relevant fields
       const { data: transactionsData, error: transactionsError } = await supabase
-        .from('sales_transactions')
+        .from('pos_transactions')
         .select(`
           id,
           transaction_number,
           customer_id,
-          created_by_user_id,
+          cashier_id,
           branch_id,
           transaction_date,
           subtotal,
@@ -118,16 +118,16 @@ const AllSalesRecords: React.FC = () => {
 
       if (transactionsError) throw transactionsError;
 
-      // Load transaction items (note: using 'transaction_items' table)
+      // Load transaction items (using 'pos_transaction_items' table)
       const { data: itemsData, error: itemsError } = await supabase
-        .from('transaction_items')
+        .from('pos_transaction_items')
         .select(`
           id,
           transaction_id,
           product_id,
           quantity,
           unit_price,
-          total_price
+          line_total
         `);
 
       if (itemsError) throw itemsError;
@@ -157,7 +157,8 @@ const AllSalesRecords: React.FC = () => {
           last_name,
           employee_id,
           department,
-          position
+          position,
+          email
         `)
         .eq('is_active', true);
 
@@ -193,7 +194,7 @@ const AllSalesRecords: React.FC = () => {
   const salesRecords = useMemo(() => {
     return transactions.map(transaction => {
       const customer = customers.find(c => c.id === transaction.customer_id);
-      const staffMember = staff.find(s => s.id === transaction.created_by_user_id);
+      const staffMember = staff.find(s => s.id === transaction.cashier_id);
       const branch = branches.find(b => b.id === transaction.branch_id);
       const transactionItems = items.filter(item => item.transaction_id === transaction.id);
       

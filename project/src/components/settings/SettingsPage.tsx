@@ -114,6 +114,44 @@ const SettingsPage: React.FC = () => {
   const [pushNotificationsEnabled, setPushNotificationsEnabled] = useState(true);
   const [pwaVersion, setPwaVersion] = useState('1.0.5');
 
+  // POS Terminal settings state
+  const [posTerminals, setPosTerminals] = useState<any[]>([]);
+  const [posAccounts, setPosAccounts] = useState<any[]>([]);
+  const [editingTerminal, setEditingTerminal] = useState<any>(null);
+  const [showAddTerminalModal, setShowAddTerminalModal] = useState(false);
+  const [terminalFormData, setTerminalFormData] = useState({
+    terminal_name: '',
+    terminal_code: '',
+    branch_id: '',
+    status: 'active',
+    assigned_user_id: '',
+    notes: ''
+  });
+  const [posSettings, setPosSettings] = useState({
+    defaultTaxRate: 12,
+    currencySymbol: '₱',
+    receiptWidth: 80,
+    autoPrintReceipt: true,
+    showItemImages: true,
+    enableQuickKeys: true,
+    enableBulkOperations: true,
+    enableInventoryTracking: true,
+    lowStockThreshold: 10,
+    enablePriceOverrides: true,
+    requireManagerForOverrides: true,
+    enableCustomerSearch: true,
+    enableBarcodeGeneration: true,
+    enableOfflineMode: true,
+    syncInterval: 5,
+    enableAuditLog: true,
+    enableReceiptNumbering: true,
+    receiptNumberPrefix: 'RCP',
+    enableMultiPayment: true,
+    enablePartialPayments: true,
+    enableLayaway: false,
+    enableInstallments: false
+  });
+
   const settingsSections = [
     {
       id: 'general',
@@ -162,6 +200,14 @@ const SettingsPage: React.FC = () => {
       description: 'Branch locations, settings, and configurations',
       color: 'text-orange-600',
       bgColor: 'bg-orange-50'
+    },
+    {
+      id: 'pos',
+      title: 'POS Terminal Management',
+      icon: Monitor,
+      description: 'POS terminals, accounts, and terminal configurations',
+      color: 'text-teal-600',
+      bgColor: 'bg-teal-50'
     }
   ];
 
@@ -173,6 +219,8 @@ const SettingsPage: React.FC = () => {
     loadBranches();
     loadUsers();
     loadSettings();
+    loadPosTerminals();
+    loadPosAccounts();
   }, []);
 
   const testDatabaseConnection = async () => {
@@ -430,6 +478,91 @@ const SettingsPage: React.FC = () => {
         hint: err.hint
       });
       setError('Failed to load branches: ' + err.message);
+    }
+  };
+
+  const loadPosTerminals = async () => {
+    try {
+      console.log('🔍 [DEBUG] Loading POS terminals from database...');
+      
+      const { data, error } = await supabase
+        .from('pos_terminals')
+        .select(`
+          id,
+          terminal_name,
+          terminal_code,
+          branch_id,
+          status,
+          assigned_user_id,
+          last_sync,
+          created_at,
+          updated_at,
+          notes,
+          branches!inner(
+            id,
+            name
+          ),
+          users!left(
+            id,
+            first_name,
+            last_name,
+            email
+          )
+        `)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('❌ [DEBUG] Error loading POS terminals:', error);
+        throw error;
+      }
+
+      // Transform the data to match our component expectations
+      const transformedTerminals = data?.map(terminal => ({
+        id: terminal.id,
+        name: terminal.terminal_name,
+        terminalId: terminal.terminal_code,
+        branchId: terminal.branch_id,
+        branchName: terminal.branches?.name || 'Unknown Branch',
+        status: terminal.status,
+        assignedUserId: terminal.assigned_user_id,
+        assignedUser: terminal.users ? {
+          id: terminal.users.id,
+          name: `${terminal.users.first_name} ${terminal.users.last_name}`,
+          email: terminal.users.email
+        } : null,
+        lastSync: terminal.last_sync,
+        notes: terminal.notes,
+        created_at: terminal.created_at,
+        updated_at: terminal.updated_at
+      })) || [];
+
+      setPosTerminals(transformedTerminals);
+      console.log('✅ [DEBUG] POS terminals loaded:', transformedTerminals.length);
+    } catch (err: any) {
+      console.error('❌ [DEBUG] Error loading POS terminals:', err);
+      setError('Failed to load POS terminals: ' + err.message);
+    }
+  };
+
+  const loadPosAccounts = async () => {
+    try {
+      console.log('🔍 [DEBUG] Loading POS accounts...');
+      
+      // Load users who can access POS terminals
+      const { data, error } = await supabase
+        .from('users')
+        .select('id, first_name, last_name, email, role')
+        .eq('is_active', true)
+        .in('role', ['cashier', 'manager', 'admin', 'super-admin'])
+        .order('first_name');
+
+      if (error) throw error;
+
+      setPosAccounts(data || []);
+      console.log('✅ [DEBUG] POS accounts loaded:', data?.length || 0);
+    } catch (err: any) {
+      console.error('❌ [DEBUG] Error loading POS accounts:', err);
+      setError('Failed to load POS accounts: ' + err.message);
     }
   };
 
@@ -2632,6 +2765,521 @@ const SettingsPage: React.FC = () => {
     );
   };
 
+  // ============================================
+  // POS TERMINAL MANAGEMENT FUNCTIONS
+  // ============================================
+
+  const getTerminalStatusBadge = (status: string) => {
+    return status === 'active' 
+      ? { color: 'bg-green-100 text-green-800', text: 'Active' }
+      : { color: 'bg-red-100 text-red-800', text: 'Inactive' };
+  };
+
+  const getTerminalStatusIcon = (status: string) => {
+    return status === 'active' 
+      ? <CheckCircle className="w-4 h-4 text-green-600" />
+      : <XCircle className="w-4 h-4 text-red-600" />;
+  };
+
+  const handleEditTerminal = async (terminal: any) => {
+    console.log('🔍 [DEBUG] Editing terminal:', terminal);
+    setEditingTerminal(terminal);
+    
+    // Populate form with terminal data
+    setTerminalFormData({
+      terminal_name: terminal.name || '',
+      terminal_code: terminal.terminalId || '',
+      branch_id: terminal.branchId || '',
+      status: terminal.status || 'active',
+      assigned_user_id: terminal.assignedUserId || '',
+      notes: terminal.notes || ''
+    });
+    
+    setShowAddTerminalModal(true);
+  };
+
+  const handleDeleteTerminal = async (terminalId: string) => {
+    console.log('🔍 [DEBUG] Deleting terminal:', terminalId);
+    
+    if (!confirm('Are you sure you want to delete this POS terminal? This action cannot be undone.')) {
+      return;
+    }
+
+    setLoading(true);
+    
+    try {
+      const { error } = await supabase
+        .from('pos_terminals')
+        .delete()
+        .eq('id', terminalId);
+
+      if (error) throw error;
+
+      // Reload terminals list
+      await loadPosTerminals();
+      setSuccess('POS terminal deleted successfully!');
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err: any) {
+      console.error('❌ [DEBUG] Error deleting terminal:', err);
+      setError('Failed to delete terminal: ' + err.message);
+    }
+    
+    setLoading(false);
+  };
+
+  const handleTerminalSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    console.log('🔍 [DEBUG] Submitting terminal form:', terminalFormData);
+    
+    setLoading(true);
+    setError(null);
+
+    try {
+      if (editingTerminal) {
+        // Update existing terminal
+        const { error } = await supabase
+          .from('pos_terminals')
+          .update({
+            terminal_name: terminalFormData.terminal_name,
+            terminal_code: terminalFormData.terminal_code,
+            branch_id: terminalFormData.branch_id,
+            status: terminalFormData.status,
+            assigned_user_id: terminalFormData.assigned_user_id || null,
+            notes: terminalFormData.notes,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', editingTerminal.id);
+
+        if (error) throw error;
+        setSuccess('POS terminal updated successfully!');
+      } else {
+        // Create new terminal
+        const { error } = await supabase
+          .from('pos_terminals')
+          .insert({
+            terminal_name: terminalFormData.terminal_name,
+            terminal_code: terminalFormData.terminal_code,
+            branch_id: terminalFormData.branch_id,
+            status: terminalFormData.status,
+            assigned_user_id: terminalFormData.assigned_user_id || null,
+            notes: terminalFormData.notes
+          });
+
+        if (error) throw error;
+        setSuccess('POS terminal created successfully!');
+      }
+
+      // Reload terminals list
+      await loadPosTerminals();
+
+      // Reset form and close modal
+      setShowAddTerminalModal(false);
+      setEditingTerminal(null);
+      setTerminalFormData({
+        terminal_name: '',
+        terminal_code: '',
+        branch_id: '',
+        status: 'active',
+        assigned_user_id: '',
+        notes: ''
+      });
+
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err: any) {
+      console.error('❌ [DEBUG] Error saving terminal:', err);
+      setError('Failed to save terminal: ' + err.message);
+    }
+
+    setLoading(false);
+  };
+
+  const renderPosTerminalManagement = () => {
+    const filteredTerminals = posTerminals.filter(terminal => 
+      terminal.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      terminal.terminalId?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      terminal.location?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      terminal.branchName?.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+
+    return (
+      <div className="space-y-8">
+        {/* POS Terminal Management Header */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between space-y-4 md:space-y-0">
+            <div className="flex items-center space-x-3">
+              <div className="p-2 bg-teal-50 rounded-lg">
+                <Monitor className="w-5 h-5 text-teal-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">POS Terminal Management</h3>
+                <p className="text-sm text-gray-500">Manage POS terminals, configurations, and accounts</p>
+              </div>
+            </div>
+            <div className="flex space-x-3">
+              <button 
+                onClick={() => setShowAddTerminalModal(true)}
+                className="flex items-center space-x-2 px-4 py-2 bg-teal-600 text-white rounded-md hover:bg-teal-700 transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Add Terminal</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Search and Filters */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+          <div className="flex flex-col md:flex-row md:items-center space-y-4 md:space-y-0 md:space-x-4">
+            <div className="flex-1">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                <input
+                  type="text"
+                  placeholder="Search terminals by name, ID, or location..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500"
+                />
+              </div>
+            </div>
+            <div className="flex space-x-2">
+              <select className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500">
+                <option value="">All Status</option>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
+              <select className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500">
+                <option value="">All Branches</option>
+                {branches.map((branch) => (
+                  <option key={branch.id} value={branch.id}>{branch.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* POS Settings Overview */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center space-x-3 mb-6">
+            <div className="p-2 bg-blue-50 rounded-lg">
+              <Settings className="w-5 h-5 text-blue-600" />
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900">Global POS Settings</h3>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Default Tax Rate (%)</label>
+              <input
+                type="number"
+                value={posSettings.defaultTaxRate}
+                onChange={(e) => setPosSettings({...posSettings, defaultTaxRate: Number(e.target.value)})}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Currency Symbol</label>
+              <input
+                type="text"
+                value={posSettings.currencySymbol}
+                onChange={(e) => setPosSettings({...posSettings, currencySymbol: e.target.value})}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Receipt Width (chars)</label>
+              <input
+                type="number"
+                value={posSettings.receiptWidth}
+                onChange={(e) => setPosSettings({...posSettings, receiptWidth: Number(e.target.value)})}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Sync Interval (minutes)</label>
+              <input
+                type="number"
+                value={posSettings.syncInterval}
+                onChange={(e) => setPosSettings({...posSettings, syncInterval: Number(e.target.value)})}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Low Stock Threshold</label>
+              <input
+                type="number"
+                value={posSettings.lowStockThreshold}
+                onChange={(e) => setPosSettings({...posSettings, lowStockThreshold: Number(e.target.value)})}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Receipt Number Prefix</label>
+              <input
+                type="text"
+                value={posSettings.receiptNumberPrefix}
+                onChange={(e) => setPosSettings({...posSettings, receiptNumberPrefix: e.target.value})}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500"
+              />
+            </div>
+          </div>
+
+          <div className="mt-6 pt-6 border-t border-gray-200">
+            <h4 className="text-md font-medium text-gray-900 mb-4">Feature Toggles</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {[
+                { key: 'autoPrintReceipt', label: 'Auto Print Receipt' },
+                { key: 'showItemImages', label: 'Show Item Images' },
+                { key: 'enableQuickKeys', label: 'Enable Quick Keys' },
+                { key: 'enableBulkOperations', label: 'Enable Bulk Operations' },
+                { key: 'enableInventoryTracking', label: 'Enable Inventory Tracking' },
+                { key: 'enablePriceOverrides', label: 'Enable Price Overrides' },
+                { key: 'requireManagerForOverrides', label: 'Require Manager for Overrides' },
+                { key: 'enableCustomerSearch', label: 'Enable Customer Search' },
+                { key: 'enableBarcodeGeneration', label: 'Enable Barcode Generation' },
+                { key: 'enableOfflineMode', label: 'Enable Offline Mode' },
+                { key: 'enableAuditLog', label: 'Enable Audit Log' },
+                { key: 'enableReceiptNumbering', label: 'Enable Receipt Numbering' },
+                { key: 'enableMultiPayment', label: 'Enable Multi Payment' },
+                { key: 'enablePartialPayments', label: 'Enable Partial Payments' },
+                { key: 'enableLayaway', label: 'Enable Layaway' },
+                { key: 'enableInstallments', label: 'Enable Installments' }
+              ].map((feature) => (
+                <label key={feature.key} className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={posSettings[feature.key as keyof typeof posSettings] as boolean}
+                    onChange={(e) => setPosSettings({...posSettings, [feature.key]: e.target.checked})}
+                    className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+                  />
+                  <span className="ml-2 text-sm text-gray-700">{feature.label}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Terminals Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {filteredTerminals.map((terminal) => {
+            const statusBadge = getTerminalStatusBadge(terminal.status);
+            
+            return (
+              <div key={terminal.id} className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow">
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex-1">
+                    <h4 className="text-lg font-semibold text-gray-900 mb-1">{terminal.name}</h4>
+                    <p className="text-sm text-gray-500 mb-2">{terminal.terminalId}</p>
+                    <div className="flex items-center space-x-2 mb-3">
+                      <span className={`inline-flex items-center px-2 py-1 text-xs font-semibold rounded-full ${statusBadge.color}`}>
+                        {getTerminalStatusIcon(terminal.status)}
+                        <span className="ml-1">{statusBadge.text}</span>
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex space-x-1">
+                    <button 
+                      onClick={() => handleEditTerminal(terminal)}
+                      className="p-2 text-gray-400 hover:text-teal-600 transition-colors"
+                      title="Edit terminal"
+                    >
+                      <Edit3 className="w-4 h-4" />
+                    </button>
+                    <button 
+                      onClick={() => handleDeleteTerminal(terminal.id)}
+                      className="p-2 text-gray-400 hover:text-red-600 transition-colors"
+                      title="Delete terminal"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex items-start space-x-3">
+                    <Building className="w-4 h-4 text-gray-400 mt-0.5" />
+                    <div>
+                      <p className="text-sm text-gray-900">{terminal.branchName}</p>
+                      <p className="text-xs text-gray-500">Branch</p>
+                    </div>
+                  </div>
+                  
+                  {terminal.assignedUser && (
+                    <div className="flex items-center space-x-3">
+                      <User className="w-4 h-4 text-gray-400" />
+                      <div>
+                        <p className="text-sm text-gray-900">{terminal.assignedUser.name}</p>
+                        <p className="text-xs text-gray-500">{terminal.assignedUser.email}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="pt-3 border-t border-gray-100">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-500">Last Sync:</span>
+                        <span className="text-gray-900">
+                          {terminal.lastSync ? new Date(terminal.lastSync).toLocaleString() : 'Never'}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-500">Created:</span>
+                        <span className="text-gray-900">
+                          {new Date(terminal.created_at).toLocaleDateString()}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {terminal.notes && (
+                    <div className="pt-3 border-t border-gray-100">
+                      <div className="text-xs text-gray-500 mb-1">Notes:</div>
+                      <p className="text-sm text-gray-600">{terminal.notes}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {filteredTerminals.length === 0 && (
+          <div className="text-center py-12 bg-white rounded-2xl shadow-sm border border-gray-200">
+            <Monitor className="w-12 h-12 mx-auto text-gray-400 mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">No POS terminals found</h3>
+            <p className="text-gray-500">Try adjusting your search criteria or add a new terminal.</p>
+          </div>
+        )}
+
+        {/* Add/Edit Terminal Modal */}
+        {showAddTerminalModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+            <div className="bg-white rounded-2xl shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+              <div className="p-6 border-b border-gray-200">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-semibold text-gray-900">
+                    {editingTerminal ? 'Edit POS Terminal' : 'Add New POS Terminal'}
+                  </h3>
+                  <button
+                    onClick={() => {
+                      setShowAddTerminalModal(false);
+                      setEditingTerminal(null);
+                    }}
+                    className="p-2 text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+
+              <form onSubmit={handleTerminalSubmit} className="p-6 space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Terminal Name *</label>
+                    <input
+                      type="text"
+                      value={terminalFormData.terminal_name}
+                      onChange={(e) => setTerminalFormData({...terminalFormData, terminal_name: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Terminal Code *</label>
+                    <input
+                      type="text"
+                      value={terminalFormData.terminal_code}
+                      onChange={(e) => setTerminalFormData({...terminalFormData, terminal_code: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Branch *</label>
+                    <select
+                      value={terminalFormData.branch_id}
+                      onChange={(e) => setTerminalFormData({...terminalFormData, branch_id: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500"
+                      required
+                    >
+                      <option value="">Select Branch</option>
+                      {branches.map((branch) => (
+                        <option key={branch.id} value={branch.id}>{branch.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Assigned User</label>
+                    <select
+                      value={terminalFormData.assigned_user_id}
+                      onChange={(e) => setTerminalFormData({...terminalFormData, assigned_user_id: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500"
+                    >
+                      <option value="">No User Assigned</option>
+                      {posAccounts.map((user) => (
+                        <option key={user.id} value={user.id}>
+                          {user.first_name} {user.last_name} ({user.email})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
+                    <select
+                      value={terminalFormData.status}
+                      onChange={(e) => setTerminalFormData({...terminalFormData, status: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500"
+                    >
+                      <option value="active">Active</option>
+                      <option value="inactive">Inactive</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Notes</label>
+                  <textarea
+                    value={terminalFormData.notes}
+                    onChange={(e) => setTerminalFormData({...terminalFormData, notes: e.target.value})}
+                    rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500"
+                    placeholder="Optional notes about this terminal..."
+                  />
+                </div>
+
+
+                <div className="flex justify-end space-x-3 pt-6 border-t border-gray-200">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAddTerminalModal(false);
+                      setEditingTerminal(null);
+                    }}
+                    className="px-4 py-2 text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="flex items-center space-x-2 px-6 py-2 bg-teal-600 text-white rounded-md hover:bg-teal-700 transition-colors disabled:opacity-50"
+                  >
+                    {loading ? (
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Save className="w-4 h-4" />
+                    )}
+                    <span>{loading ? 'Saving...' : (editingTerminal ? 'Update Terminal' : 'Create Terminal')}</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
 
   return (
     <div className="settings-page min-h-screen bg-gray-50">
@@ -2775,6 +3423,7 @@ const SettingsPage: React.FC = () => {
               {activeSection === 'pwa' && renderPWASettings()}
               {activeSection === 'data' && renderDataSettings()}
               {activeSection === 'branches' && renderBranchManagement()}
+              {activeSection === 'pos' && renderPosTerminalManagement()}
             </div>
 
             {/* Sticky Save Button */}

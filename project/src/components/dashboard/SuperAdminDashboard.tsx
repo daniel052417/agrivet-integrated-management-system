@@ -5,12 +5,10 @@ import { CustomUser } from '../../lib/customAuth';
 
 // Import all admin components for super admin access
 import Overview from '../dashboard/Overview';
-import SalesValue from '../sales/SalesValue';
 import AllSalesRecords from '../sales/AllSalesRecords';
 import SalesDashboard from '../sales/SalesDashboard';
 import DailySalesSummary from '../sales/DailySalesSummary';
 import ProductSalesReport from '../sales/ProductSalesReport';
-import InventorySummaryPage from '../inventory/InventorySummaryPage';
 import InventoryManagement from '../inventory/InventoryManagement';
 import AttendanceTimesheet from '../staff/AttendanceTimesheet';
 import RolesPermissions from '../staff/RolesPermissions';
@@ -51,8 +49,6 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, onLogou
     switch (activeSection) {
       case 'overview':
         return <Overview />;
-      case 'sales-value':
-        return <SalesValue />;
       case 'sales-records':
         return <AllSalesRecords />;
       case 'sales-dashboard':
@@ -61,8 +57,6 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, onLogou
         return <DailySalesSummary />;
       case 'product-sales':
         return <ProductSalesReport />;
-      case 'inventory-summary':
-        return <InventorySummaryPage />;
       case 'inventory-management':
       case 'all-products':
         return <InventoryManagement />;

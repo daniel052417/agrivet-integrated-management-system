@@ -10,10 +10,13 @@ import {
   Search,
   Menu,
   X,
-  ShoppingBag
+  ShoppingBag,
+  Loader2
 } from 'lucide-react';
 import logo from '../../assets/logo.png';
 import { CustomUser } from '../../lib/customAuth';
+import { useBranchTerminal } from '../../hooks/useBranchTerminal';
+import { branchTerminalService } from '../../lib/branchTerminalService';
 
 interface POSLayoutProps {
   children: React.ReactNode;
@@ -33,6 +36,7 @@ const POSLayout: React.FC<POSLayoutProps> = ({
   onlineOrdersCount = 0
 }) => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const { branchTerminalData, loading, error } = useBranchTerminal(user);
 
   const navigationItems = [
     { id: 'cashier', label: 'Cashier', icon: ShoppingCart, color: 'bg-green-500' },
@@ -61,8 +65,31 @@ const POSLayout: React.FC<POSLayoutProps> = ({
               <div className="flex items-center space-x-3">
                 <img src={logo} alt="AgriVet POS" className="w-10 h-10 rounded-lg" />
                 <div>
-                  <h1 className="text-xl font-bold text-gray-900">AgriVet POS</h1>
-                  <p className="text-sm text-gray-500">Point of Sale System</p>
+                  {loading ? (
+                    <div className="flex items-center space-x-2">
+                      <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
+                      <span className="text-sm text-gray-500">Loading...</span>
+                    </div>
+                  ) : error ? (
+                    <div>
+                      <h1 className="text-xl font-bold text-red-600">Error</h1>
+                      <p className="text-sm text-red-500">Failed to load branch info</p>
+                    </div>
+                  ) : branchTerminalData ? (
+                    <div>
+                      <h1 className="text-xl font-bold text-gray-900">
+                        {branchTerminalService.getTerminalCode(branchTerminalData.terminal)}
+                      </h1>
+                      <p className="text-sm text-gray-500">
+                        {branchTerminalData.branch.name}
+                      </p>
+                    </div>
+                  ) : (
+                    <div>
+                      <h1 className="text-xl font-bold text-gray-900">POS Terminal</h1>
+                      <p className="text-sm text-gray-500">Point of Sale System</p>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -99,6 +126,11 @@ const POSLayout: React.FC<POSLayoutProps> = ({
                   <p className="text-xs text-gray-500">
                     {user ? `${user.role_display_name || user.role_name}` : 'Role'}
                   </p>
+                  {branchTerminalData?.sessionNumber && (
+                    <p className="text-xs text-blue-600 font-medium">
+                      Session: {branchTerminalData.sessionNumber}
+                    </p>
+                  )}
                 </div>
                 <button
                   onClick={onLogout}

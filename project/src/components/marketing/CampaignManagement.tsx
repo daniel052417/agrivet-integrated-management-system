@@ -1,591 +1,426 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { 
   Plus, 
   Search, 
   Filter, 
-  Download, 
+  Calendar, 
+  Target, 
+  DollarSign, 
+  Users, 
   Eye, 
   Edit, 
-  Trash2, 
-  Play, 
-  Pause, 
-  Upload as Publish, 
-  Download as Unpublish,
-  BarChart3,
-  Calendar,
-  Users,
-  Globe,
+  Trash2,
+  MoreHorizontal,
   Image as ImageIcon,
-  AlertCircle,
-  CheckCircle,
-  Megaphone as Campaign
+  TrendingUp,
+  TrendingDown
 } from 'lucide-react';
-import { MarketingCampaign, CampaignTemplate, CampaignFilters, CampaignTemplateType } from '../../types/marketing';
-import { getCampaigns, getCampaignTemplates, deleteCampaign, toggleCampaignStatus, publishCampaign, unpublishCampaign } from '../../lib/campaignApi';
-import CampaignForm from './CampaignForm';
-import CampaignPreview from './CampaignPreview';
+
+// Mock data for campaigns
+const mockCampaigns = [
+  {
+    id: 1,
+    name: "Summer Sale 2025",
+    description: "Biggest summer promotion with up to 30% off on fertilizers",
+    status: "active",
+    startDate: "2025-01-15",
+    endDate: "2025-02-15",
+    totalDiscount: 15420,
+    totalSales: 125000,
+    targetSales: 100000,
+    branches: ["Poblacion Branch", "Downtown Branch"],
+    image: "/api/placeholder/300/150",
+    createdAt: "2025-01-10",
+    createdBy: "John Doe",
+    metrics: {
+      views: 1250,
+      clicks: 340,
+      conversions: 45,
+      conversionRate: 13.2
+    }
+  },
+  {
+    id: 2,
+    name: "New Year Promotion",
+    description: "Start the year right with special offers on all products",
+    status: "ended",
+    startDate: "2024-12-20",
+    endDate: "2025-01-10",
+    totalDiscount: 8750,
+    totalSales: 89000,
+    targetSales: 75000,
+    branches: ["All Branches"],
+    image: "/api/placeholder/300/150",
+    createdAt: "2024-12-15",
+    createdBy: "Jane Smith",
+    metrics: {
+      views: 980,
+      clicks: 245,
+      conversions: 32,
+      conversionRate: 13.1
+    }
+  },
+  {
+    id: 3,
+    name: "Farmer's Choice",
+    description: "Exclusive deals for our loyal farming customers",
+    status: "upcoming",
+    startDate: "2025-02-01",
+    endDate: "2025-02-28",
+    totalDiscount: 0,
+    totalSales: 0,
+    targetSales: 150000,
+    branches: ["Poblacion Branch"],
+    image: "/api/placeholder/300/150",
+    createdAt: "2025-01-20",
+    createdBy: "Mike Johnson",
+    metrics: {
+      views: 0,
+      clicks: 0,
+      conversions: 0,
+      conversionRate: 0
+    }
+  },
+  {
+    id: 4,
+    name: "Valentine's Special",
+    description: "Spread love with our special Valentine's offers",
+    status: "draft",
+    startDate: "2025-02-10",
+    endDate: "2025-02-17",
+    totalDiscount: 0,
+    totalSales: 0,
+    targetSales: 50000,
+    branches: ["All Branches"],
+    image: "/api/placeholder/300/150",
+    createdAt: "2025-01-25",
+    createdBy: "Sarah Wilson",
+    metrics: {
+      views: 0,
+      clicks: 0,
+      conversions: 0,
+      conversionRate: 0
+    }
+  }
+];
 
 const CampaignManagement: React.FC = () => {
-  const [campaigns, setCampaigns] = useState<MarketingCampaign[]>([]);
-  const [templates, setTemplates] = useState<CampaignTemplate[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  
-  // UI State
-  const [showForm, setShowForm] = useState(false);
-  const [showPreview, setShowPreview] = useState(false);
-  const [selectedCampaign, setSelectedCampaign] = useState<MarketingCampaign | null>(null);
-  const [editingCampaign, setEditingCampaign] = useState<MarketingCampaign | null>(null);
-  
-  // Filters and Search
-  const [filters, setFilters] = useState<CampaignFilters>({});
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [templateFilter, setTemplateFilter] = useState<string>('all');
-  
-  // Pagination
-  const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [totalCampaigns, setTotalCampaigns] = useState(0);
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
-  useEffect(() => {
-    loadCampaigns();
-    loadTemplates();
-  }, [filters, currentPage]);
-
-  const loadCampaigns = async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
-      
-      const searchFilters = {
-        ...filters,
-        search: searchTerm || undefined,
-        template_type: templateFilter !== 'all' ? templateFilter as CampaignTemplateType : undefined,
-        is_active: statusFilter === 'active' ? true : statusFilter === 'inactive' ? false : undefined,
-        is_published: statusFilter === 'published' ? true : statusFilter === 'draft' ? false : undefined
-      };
-
-      const response = await getCampaigns(searchFilters, currentPage, 10);
-      
-      if (response.success && response.data) {
-        setCampaigns(response.data.campaigns);
-        setTotalCampaigns(response.data.total);
-        setTotalPages(Math.ceil(response.data.total / 10));
-      } else {
-        setError(response.error || 'Failed to load campaigns');
-      }
-    } catch (err) {
-      setError('An error occurred while loading campaigns');
-      console.error('Error loading campaigns:', err);
-    } finally {
-      setIsLoading(false);
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'active': return 'bg-green-100 text-green-800';
+      case 'ended': return 'bg-gray-100 text-gray-800';
+      case 'upcoming': return 'bg-blue-100 text-blue-800';
+      case 'draft': return 'bg-yellow-100 text-yellow-800';
+      default: return 'bg-gray-100 text-gray-800';
     }
   };
 
-  const loadTemplates = async () => {
-    try {
-      const response = await getCampaignTemplates();
-      if (response.success && response.data) {
-        setTemplates(response.data);
-      }
-    } catch (err) {
-      console.error('Error loading templates:', err);
-    }
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-PH', {
+      style: 'currency',
+      currency: 'PHP'
+    }).format(amount);
   };
 
-  const handleCreateCampaign = () => {
-    setEditingCampaign(null);
-    setShowForm(true);
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('en-PH', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    });
   };
 
-  const handleEditCampaign = (campaign: MarketingCampaign) => {
-    setEditingCampaign(campaign);
-    setShowForm(true);
-  };
+  const filteredCampaigns = mockCampaigns.filter(campaign => {
+    const matchesSearch = campaign.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         campaign.description.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesStatus = statusFilter === 'all' || campaign.status === statusFilter;
+    return matchesSearch && matchesStatus;
+  });
 
-  const handlePreviewCampaign = (campaign: MarketingCampaign) => {
-    setSelectedCampaign(campaign);
-    setShowPreview(true);
-  };
+  const renderGridView = () => (
+    <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+      {filteredCampaigns.map((campaign) => (
+        <div key={campaign.id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-shadow">
+          <div className="h-32 bg-gradient-to-r from-emerald-500 to-blue-500 relative">
+            <div className="absolute inset-0 bg-black bg-opacity-20"></div>
+            <div className="absolute top-4 right-4">
+              <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(campaign.status)}`}>
+                {campaign.status}
+              </span>
+            </div>
+            <div className="absolute bottom-4 left-4 text-white">
+              <h3 className="text-lg font-semibold">{campaign.name}</h3>
+              <p className="text-sm opacity-90 line-clamp-2">{campaign.description}</p>
+            </div>
+          </div>
+          
+          <div className="p-6">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-gray-600">Duration</span>
+                <span className="font-medium">{formatDate(campaign.startDate)} - {formatDate(campaign.endDate)}</span>
+              </div>
+              
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-gray-600">Branches</span>
+                <span className="font-medium">{campaign.branches.length} branch{campaign.branches.length > 1 ? 'es' : ''}</span>
+              </div>
+              
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-gray-600">Sales Progress</span>
+                  <span className="font-medium">{formatCurrency(campaign.totalSales)} / {formatCurrency(campaign.targetSales)}</span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div 
+                    className="bg-emerald-500 h-2 rounded-full" 
+                    style={{ width: `${Math.min((campaign.totalSales / campaign.targetSales) * 100, 100)}%` }}
+                  ></div>
+                </div>
+                <div className="flex items-center justify-between text-xs text-gray-500">
+                  <span>Target: {formatCurrency(campaign.targetSales)}</span>
+                  <span>{Math.round((campaign.totalSales / campaign.targetSales) * 100)}%</span>
+                </div>
+              </div>
+              
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-gray-600">Total Discount</span>
+                <span className="font-medium text-red-600">{formatCurrency(campaign.totalDiscount)}</span>
+              </div>
+              
+              {campaign.status === 'active' && (
+                <div className="grid grid-cols-2 gap-4 pt-2 border-t border-gray-100">
+                  <div className="text-center">
+                    <div className="text-lg font-semibold text-gray-900">{campaign.metrics.views}</div>
+                    <div className="text-xs text-gray-500">Views</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-lg font-semibold text-gray-900">{campaign.metrics.conversions}</div>
+                    <div className="text-xs text-gray-500">Conversions</div>
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            <div className="flex items-center space-x-2 mt-6">
+              <button className="flex-1 flex items-center justify-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
+                <Eye className="w-4 h-4" />
+                <span>View</span>
+              </button>
+              <button className="flex-1 flex items-center justify-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
+                <Edit className="w-4 h-4" />
+                <span>Edit</span>
+              </button>
+              <button className="p-2 text-gray-400 hover:text-gray-600">
+                <MoreHorizontal className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 
-  const handleDeleteCampaign = async (campaignId: string) => {
-    if (!window.confirm('Are you sure you want to delete this campaign?')) {
-      return;
-    }
-
-    try {
-      const response = await deleteCampaign(campaignId);
-      if (response.success) {
-        await loadCampaigns();
-      } else {
-        setError(response.error || 'Failed to delete campaign');
-      }
-    } catch (err) {
-      setError('An error occurred while deleting the campaign');
-      console.error('Error deleting campaign:', err);
-    }
-  };
-
-  const handleToggleStatus = async (campaignId: string, isActive: boolean) => {
-    try {
-      const response = await toggleCampaignStatus(campaignId, isActive);
-      if (response.success) {
-        await loadCampaigns();
-      } else {
-        setError(response.error || 'Failed to update campaign status');
-      }
-    } catch (err) {
-      setError('An error occurred while updating campaign status');
-      console.error('Error updating campaign status:', err);
-    }
-  };
-
-  const handlePublishCampaign = async (campaignId: string) => {
-    try {
-      const response = await publishCampaign(campaignId);
-      if (response.success) {
-        await loadCampaigns();
-      } else {
-        setError(response.error || 'Failed to publish campaign');
-      }
-    } catch (err) {
-      setError('An error occurred while publishing the campaign');
-      console.error('Error publishing campaign:', err);
-    }
-  };
-
-  const handleUnpublishCampaign = async (campaignId: string) => {
-    try {
-      const response = await unpublishCampaign(campaignId);
-      if (response.success) {
-        await loadCampaigns();
-      } else {
-        setError(response.error || 'Failed to unpublish campaign');
-      }
-    } catch (err) {
-      setError('An error occurred while unpublishing the campaign');
-      console.error('Error unpublishing campaign:', err);
-    }
-  };
-
-  const handleFormSubmit = async (formData: any) => {
-    try {
-      // This would be handled by the parent component or a campaign service
-      setShowForm(false);
-      await loadCampaigns();
-    } catch (err) {
-      console.error('Error submitting campaign form:', err);
-    }
-  };
-
-  const getStatusBadge = (campaign: MarketingCampaign) => {
-    if (campaign.is_published) {
-      return (
-        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-          <CheckCircle className="w-3 h-3 mr-1" />
-          Published
-        </span>
-      );
-    } else if (campaign.is_active) {
-      return (
-        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-          <Play className="w-3 h-3 mr-1" />
-          Active
-        </span>
-      );
-    } else {
-      return (
-        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-          <Pause className="w-3 h-3 mr-1" />
-          Draft
-        </span>
-      );
-    }
-  };
-
-  const getTemplateIcon = (templateType: CampaignTemplateType) => {
-    switch (templateType) {
-      case 'hero_banner':
-        return <Globe className="w-4 h-4" />;
-      case 'promo_card':
-        return <ImageIcon className="w-4 h-4" />;
-      case 'popup':
-        return <AlertCircle className="w-4 h-4" />;
-      default:
-        return <Globe className="w-4 h-4" />;
-    }
-  };
-
-  if (showForm) {
-    return (
-      <CampaignForm
-        campaign={editingCampaign}
-        templates={templates}
-        onSubmit={handleFormSubmit}
-        onCancel={() => setShowForm(false)}
-        onPreview={(data) => {
-          // Create a temporary campaign object for preview
-          const tempCampaign: MarketingCampaign = {
-            id: 'preview',
-            campaign_name: data.campaign_name,
-            template_type: data.template_type,
-            title: data.title,
-            description: data.description,
-            content: data.content,
-            background_color: data.background_color,
-            text_color: data.text_color,
-            image_url: data.image_url,
-            image_alt_text: data.image_alt_text,
-            cta_text: data.cta_text,
-            cta_url: data.cta_url,
-            cta_button_color: data.cta_button_color,
-            cta_text_color: data.cta_text_color,
-            target_audience: data.target_audience,
-            target_channels: data.target_channels,
-            is_active: data.is_active,
-            is_published: false,
-            publish_date: data.publish_date,
-            unpublish_date: data.unpublish_date,
-            views_count: 0,
-            clicks_count: 0,
-            conversions_count: 0,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          };
-          setSelectedCampaign(tempCampaign);
-          setShowPreview(true);
-        }}
-        isLoading={false}
-      />
-    );
-  }
-
-  if (showPreview && selectedCampaign) {
-    const template = templates.find(t => t.template_type === selectedCampaign.template_type);
-    if (!template) return null;
-
-    return (
-      <CampaignPreview
-        campaign={selectedCampaign}
-        template={template}
-        isPreview={selectedCampaign.id === 'preview'}
-        onClose={() => setShowPreview(false)}
-        onEdit={() => {
-          setShowPreview(false);
-          setEditingCampaign(selectedCampaign);
-          setShowForm(true);
-        }}
-        onPublish={() => selectedCampaign.id !== 'preview' && handlePublishCampaign(selectedCampaign.id)}
-        onUnpublish={() => selectedCampaign.id !== 'preview' && handleUnpublishCampaign(selectedCampaign.id)}
-        onToggleStatus={(isActive) => selectedCampaign.id !== 'preview' && handleToggleStatus(selectedCampaign.id, isActive)}
-      />
-    );
-  }
+  const renderListView = () => (
+    <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Campaign</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Duration</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sales</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Progress</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-gray-200">
+            {filteredCampaigns.map((campaign) => (
+              <tr key={campaign.id} className="hover:bg-gray-50">
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <div className="flex items-center">
+                    <div className="w-12 h-8 bg-gray-200 rounded-lg flex items-center justify-center mr-3">
+                      <ImageIcon className="w-4 h-4 text-gray-400" />
+                    </div>
+                    <div>
+                      <div className="text-sm font-medium text-gray-900">{campaign.name}</div>
+                      <div className="text-sm text-gray-500 line-clamp-1">{campaign.description}</div>
+                    </div>
+                  </div>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(campaign.status)}`}>
+                    {campaign.status}
+                  </span>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  <div>{formatDate(campaign.startDate)}</div>
+                  <div className="text-gray-500">to {formatDate(campaign.endDate)}</div>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <div className="text-sm font-medium text-gray-900">{formatCurrency(campaign.totalSales)}</div>
+                  <div className="text-xs text-gray-500">Target: {formatCurrency(campaign.targetSales)}</div>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <div className="flex items-center">
+                    <div className="w-16 bg-gray-200 rounded-full h-2 mr-2">
+                      <div 
+                        className="bg-emerald-500 h-2 rounded-full" 
+                        style={{ width: `${Math.min((campaign.totalSales / campaign.targetSales) * 100, 100)}%` }}
+                      ></div>
+                    </div>
+                    <span className="text-xs text-gray-500">{Math.round((campaign.totalSales / campaign.targetSales) * 100)}%</span>
+                  </div>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                  <div className="flex items-center space-x-2">
+                    <button className="text-emerald-600 hover:text-emerald-900">
+                      <Eye className="w-4 h-4" />
+                    </button>
+                    <button className="text-blue-600 hover:text-blue-900">
+                      <Edit className="w-4 h-4" />
+                    </button>
+                    <button className="text-red-600 hover:text-red-900">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-gray-800">Campaign Management</h2>
-          <p className="text-gray-600 mt-1">Create and manage marketing campaigns</p>
+          <h2 className="text-2xl font-bold text-gray-900">Campaign Management</h2>
+          <p className="text-gray-600">Create and manage marketing campaigns</p>
         </div>
-        <div className="flex items-center space-x-3">
-          <button className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
-            <Download className="w-4 h-4" />
-            <span>Export</span>
-          </button>
-          <button 
-            onClick={handleCreateCampaign}
-            className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Create Campaign</span>
-          </button>
-        </div>
+        <button className="flex items-center space-x-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700">
+          <Plus className="w-4 h-4" />
+          <span>Create Campaign</span>
+        </button>
       </div>
 
-      {/* Error Message */}
-      {error && (
-        <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-          <div className="flex items-center space-x-2">
-            <AlertCircle className="w-5 h-5 text-red-600" />
-            <span className="text-red-800">{error}</span>
-          </div>
-        </div>
-      )}
-
-      {/* Filters */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Search</label>
+      {/* Filters and Search */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div className="flex flex-col sm:flex-row gap-4">
+          <div className="flex-1">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
               <input
                 type="text"
+                placeholder="Search campaigns..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Search campaigns..."
-                className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
               />
             </div>
           </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
+          <div className="flex items-center space-x-4">
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
             >
               <option value="all">All Status</option>
-              <option value="published">Published</option>
               <option value="active">Active</option>
+              <option value="upcoming">Upcoming</option>
+              <option value="ended">Ended</option>
               <option value="draft">Draft</option>
-              <option value="inactive">Inactive</option>
             </select>
+            <div className="flex items-center border border-gray-300 rounded-lg">
+              <button
+                onClick={() => setViewMode('grid')}
+                className={`p-2 ${viewMode === 'grid' ? 'bg-emerald-100 text-emerald-600' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                <div className="w-4 h-4 grid grid-cols-2 gap-0.5">
+                  <div className="bg-current rounded-sm"></div>
+                  <div className="bg-current rounded-sm"></div>
+                  <div className="bg-current rounded-sm"></div>
+                  <div className="bg-current rounded-sm"></div>
+                </div>
+              </button>
+              <button
+                onClick={() => setViewMode('list')}
+                className={`p-2 ${viewMode === 'list' ? 'bg-emerald-100 text-emerald-600' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                <div className="w-4 h-4 flex flex-col space-y-0.5">
+                  <div className="h-0.5 bg-current rounded"></div>
+                  <div className="h-0.5 bg-current rounded"></div>
+                  <div className="h-0.5 bg-current rounded"></div>
+                </div>
+              </button>
+            </div>
           </div>
+        </div>
+      </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Template</label>
-            <select
-              value={templateFilter}
-              onChange={(e) => setTemplateFilter(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="all">All Templates</option>
-              {templates.map(template => (
-                <option key={template.id} value={template.template_type}>
-                  {template.template_name}
-                </option>
-              ))}
-            </select>
+      {/* Campaign Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Total Campaigns</p>
+              <p className="text-3xl font-bold text-gray-900">{mockCampaigns.length}</p>
+            </div>
+            <div className="p-3 bg-blue-100 rounded-lg">
+              <Target className="w-6 h-6 text-blue-600" />
+            </div>
           </div>
+        </div>
 
-          <div className="flex items-end">
-            <button
-              onClick={loadCampaigns}
-              className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
-            >
-              <Filter className="w-4 h-4" />
-              <span>Apply Filters</span>
-            </button>
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Active Campaigns</p>
+              <p className="text-3xl font-bold text-gray-900">{mockCampaigns.filter(c => c.status === 'active').length}</p>
+            </div>
+            <div className="p-3 bg-green-100 rounded-lg">
+              <TrendingUp className="w-6 h-6 text-green-600" />
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Total Sales</p>
+              <p className="text-3xl font-bold text-gray-900">{formatCurrency(mockCampaigns.reduce((sum, c) => sum + c.totalSales, 0))}</p>
+            </div>
+            <div className="p-3 bg-emerald-100 rounded-lg">
+              <DollarSign className="w-6 h-6 text-emerald-600" />
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Total Discounts</p>
+              <p className="text-3xl font-bold text-gray-900">{formatCurrency(mockCampaigns.reduce((sum, c) => sum + c.totalDiscount, 0))}</p>
+            </div>
+            <div className="p-3 bg-red-100 rounded-lg">
+              <TrendingDown className="w-6 h-6 text-red-600" />
+            </div>
           </div>
         </div>
       </div>
 
       {/* Campaigns List */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <h3 className="text-lg font-semibold text-gray-800">
-            Campaigns ({totalCampaigns})
-          </h3>
-        </div>
-
-        {isLoading ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-          </div>
-        ) : campaigns.length === 0 ? (
-          <div className="text-center py-12">
-            <ImageIcon className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No campaigns found</h3>
-            <p className="text-gray-600 mb-4">Get started by creating your first campaign</p>
-            <button
-              onClick={handleCreateCampaign}
-              className="inline-flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Create Campaign</span>
-            </button>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Campaign</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Template</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Performance</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {campaigns.map((campaign) => (
-                  <tr key={campaign.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4">
-                      <div className="max-w-xs">
-                        <div className="text-sm font-medium text-gray-900 truncate">
-                          {campaign.campaign_name}
-                        </div>
-                        <div className="text-sm text-gray-500 truncate">
-                          {campaign.title}
-                        </div>
-                        {campaign.image_url && (
-                          <div className="mt-2">
-                            <img
-                              src={campaign.image_url}
-                              alt={campaign.image_alt_text || campaign.title}
-                              className="w-16 h-12 object-cover rounded border border-gray-200"
-                            />
-                          </div>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center space-x-2">
-                        {getTemplateIcon(campaign.template_type)}
-                        <span className="text-sm text-gray-900">
-                          {templates.find(t => t.template_type === campaign.template_type)?.template_name || campaign.template_type}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      {getStatusBadge(campaign)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">
-                        <div className="flex items-center space-x-4">
-                          <div className="flex items-center space-x-1">
-                            <Eye className="w-4 h-4 text-blue-600" />
-                            <span>{campaign.views_count}</span>
-                          </div>
-                          <div className="flex items-center space-x-1">
-                            <BarChart3 className="w-4 h-4 text-green-600" />
-                            <span>{campaign.clicks_count}</span>
-                          </div>
-                        </div>
-                        {campaign.views_count > 0 && (
-                          <div className="text-xs text-gray-500 mt-1">
-                            CTR: {((campaign.clicks_count / campaign.views_count) * 100).toFixed(1)}%
-                          </div>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      <div className="flex items-center space-x-1">
-                        <Calendar className="w-4 h-4" />
-                        <span>{new Date(campaign.created_at).toLocaleDateString()}</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <div className="flex items-center space-x-2">
-                        <button
-                          onClick={() => handlePreviewCampaign(campaign)}
-                          className="text-blue-600 hover:text-blue-900 transition-colors"
-                          title="Preview"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleEditCampaign(campaign)}
-                          className="text-green-600 hover:text-green-900 transition-colors"
-                          title="Edit"
-                        >
-                          <Edit className="w-4 h-4" />
-                        </button>
-                        {campaign.is_published ? (
-                          <button
-                            onClick={() => handleUnpublishCampaign(campaign.id)}
-                            className="text-orange-600 hover:text-orange-900 transition-colors"
-                            title="Unpublish"
-                          >
-                            <Unpublish className="w-4 h-4" />
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => handlePublishCampaign(campaign.id)}
-                            className="text-green-600 hover:text-green-900 transition-colors"
-                            title="Publish"
-                          >
-                            <Publish className="w-4 h-4" />
-                          </button>
-                        )}
-                        <button
-                          onClick={() => handleToggleStatus(campaign.id, !campaign.is_active)}
-                          className={`transition-colors ${
-                            campaign.is_active
-                              ? 'text-red-600 hover:text-red-900'
-                              : 'text-green-600 hover:text-green-900'
-                          }`}
-                          title={campaign.is_active ? 'Deactivate' : 'Activate'}
-                        >
-                          {campaign.is_active ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-                        </button>
-                        <button
-                          onClick={() => handleDeleteCampaign(campaign.id)}
-                          className="text-red-600 hover:text-red-900 transition-colors"
-                          title="Delete"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="px-6 py-4 border-t border-gray-200">
-            <div className="flex items-center justify-between">
-              <div className="text-sm text-gray-700">
-                Showing {((currentPage - 1) * 10) + 1} to {Math.min(currentPage * 10, totalCampaigns)} of {totalCampaigns} campaigns
-              </div>
-              <div className="flex items-center space-x-2">
-                <button
-                  onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                  disabled={currentPage === 1}
-                  className="px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Previous
-                </button>
-                <span className="px-3 py-2 text-sm text-gray-700">
-                  Page {currentPage} of {totalPages}
-                </span>
-                <button
-                  onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                  disabled={currentPage === totalPages}
-                  className="px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Next
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
+      {viewMode === 'grid' ? renderGridView() : renderListView()}
     </div>
   );
 };
 
 export default CampaignManagement;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

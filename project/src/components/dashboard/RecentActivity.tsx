@@ -43,8 +43,11 @@ const RecentActivity: React.FC = () => {
 
       // Load recent sales
       const { data: recentSales, error: salesError } = await supabase
-        .from('sales_transactions')
+        .from('pos_transactions')
         .select('id, total_amount, transaction_date, customer_id')
+        .eq('transaction_type', 'sale')
+        .eq('payment_status', 'completed')
+        .eq('status', 'active')
         .order('transaction_date', { ascending: false })
         .limit(5);
 

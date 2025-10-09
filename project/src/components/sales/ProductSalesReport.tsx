@@ -26,7 +26,7 @@ const ProductSalesReport: React.FC = () => {
     product_id: string; 
     quantity: number; 
     unit_price: number; 
-    total_price: number; 
+    line_total: number; 
     created_at: string; 
   };
 
@@ -88,10 +88,13 @@ const ProductSalesReport: React.FC = () => {
           startDate = new Date(now.getFullYear(), now.getMonth(), 1);
       }
 
-      // Load products (without pricing info - that's in product_units)
+      // Load products with category information and cost
       const { data: productsData, error: productsError } = await supabase
         .from('products')
-        .select('id, sku, name, category_id')
+        .select(`
+          id, sku, name, category_id, brand, unit_of_measure, cost,
+          categories:category_id (id, name)
+        `)
         .eq('is_active', true);
 
       if (productsError) throw productsError;
@@ -112,10 +115,10 @@ const ProductSalesReport: React.FC = () => {
 
       if (categoriesError) throw categoriesError;
 
-      // Load transaction items for the selected period (using correct table name)
+      // Load transaction items for the selected period (using pos_transaction_items table)
       const { data: itemsData, error: itemsError } = await supabase
-        .from('transaction_items')
-        .select('product_id, quantity, unit_price, total_price, created_at')
+        .from('pos_transaction_items')
+        .select('product_id, quantity, unit_price, line_total, created_at')
         .gte('created_at', startDate.toISOString());
 
       if (itemsError) throw itemsError;
@@ -129,19 +132,27 @@ const ProductSalesReport: React.FC = () => {
       const metrics: ProductMetric[] = productsData?.map(product => {
         const productItems = itemsData?.filter(item => item.product_id === product.id) || [];
         const productUnits = unitsData?.filter(v => v.product_id === product.id) || [];
-        const category = categoriesData?.find(c => c.id === product.category_id);
+        const category = product.categories || categoriesData?.find(c => c.id === product.category_id);
         
-        // Get average pricing from units (or use first unit if available)
+        // Get base unit information
+        const baseUnit = productUnits.find(unit => unit.is_base_unit === true);
+        const baseUnitConversionFactor = baseUnit?.conversion_factor || 1; // e.g., 50 for 50kg base unit
+        
+        // Get average selling price from units (for display purposes)
         const avgPrice = productUnits.length > 0 
           ? productUnits.reduce((sum, v) => sum + v.price_per_unit, 0) / productUnits.length 
           : 0;
-        const avgCostPrice = productUnits.length > 0 
-          ? productUnits.reduce((sum, v) => sum + (v.price_per_unit || 0), 0) / productUnits.length 
-          : 0;
+        
+        // Product cost is per base unit (e.g., 1500 for 50kg)
+        const baseUnitCost = product.cost || 0;
         
         const totalSold = productItems.reduce((sum, item) => sum + item.quantity, 0);
-        const totalRevenue = productItems.reduce((sum, item) => sum + (item.total_price || 0), 0);
-        const totalCost = productItems.reduce((sum, item) => sum + (item.quantity * avgCostPrice), 0);
+        const totalRevenue = productItems.reduce((sum, item) => sum + (item.line_total || 0), 0);
+        
+        // Calculate total cost based on base unit cost structure
+        // Cost per unit = baseUnitCost / baseUnitConversionFactor (e.g., 1500 / 50 = 30 per kg)
+        const costPerUnit = baseUnitConversionFactor > 0 ? baseUnitCost / baseUnitConversionFactor : 0;
+        const totalCost = productItems.reduce((sum, item) => sum + (item.quantity * costPerUnit), 0);
         const totalProfit = totalRevenue - totalCost;
         const profitMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
         
@@ -159,7 +170,7 @@ const ProductSalesReport: React.FC = () => {
           category: category?.name || 'Uncategorized',
           sku: product.sku,
           unitPrice: avgPrice,
-          costPrice: avgCostPrice,
+          costPrice: costPerUnit, // Cost per unit (e.g., 30 per kg)
           stockQuantity: 0, // Stock quantity is in inventory table, not products
           totalSold,
           totalRevenue,

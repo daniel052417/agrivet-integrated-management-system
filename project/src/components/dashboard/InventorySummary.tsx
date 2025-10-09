@@ -60,10 +60,10 @@ const InventorySummary: React.FC = () => {
       // Transform inventory data to match expected format
       const transformedProducts = inventoryData?.map(item => ({
         category_id: item.category_id,
-        stock_quantity: item.quantity_available,
+        stock_quantity: item.quantity_available || 0,
         unit_price: item.price_per_unit || 0,
         cost_price: item.cost || 0,
-        minimum_stock: 0 // Default since reorder_level is in inventory table
+        minimum_stock: item.reorder_level || 0
       })) || [];
 
       setProducts(transformedProducts);

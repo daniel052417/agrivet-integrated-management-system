@@ -9,7 +9,6 @@ import SalesDashboard from '../sales/SalesDashboard';
 import AllSalesRecords from '../sales/AllSalesRecords';
 import DailySalesSummary from '../sales/DailySalesSummary';
 import ProductSalesReport from '../sales/ProductSalesReport';
-import SalesValue from '../sales/SalesValue';
 
 interface POSDashboardProps {
   user: CustomUser;
@@ -31,8 +30,6 @@ const POSDashboard: React.FC<POSDashboardProps> = ({ user, onLogout }) => {
         return <DailySalesSummary />;
       case 'product-sales':
         return <ProductSalesReport />;
-      case 'sales-value':
-        return <SalesValue />;
       default:
         return (
           <div className="p-6">

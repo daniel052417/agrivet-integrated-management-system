@@ -4,7 +4,6 @@ import Header from '../shared/layout/Header';
 import { CustomUser } from '../../lib/customAuth';
 
 // Inventory-specific components
-import InventorySummaryPage from '../inventory/InventorySummaryPage';
 import InventoryManagement from '../inventory/InventoryManagement';
 import Categories from '../inventory/Categories';
 import LowStockAlerts from '../inventory/LowStockAlerts';
@@ -15,12 +14,10 @@ interface InventoryDashboardProps {
 }
 
 const InventoryDashboard: React.FC<InventoryDashboardProps> = ({ user, onLogout }) => {
-  const [activeSection, setActiveSection] = useState('inventory-summary');
+  const [activeSection, setActiveSection] = useState('inventory-management');
 
   const renderContent = () => {
     switch (activeSection) {
-      case 'inventory-summary':
-        return <InventorySummaryPage />;
       case 'inventory-management':
       case 'all-products':
         return <InventoryManagement />;
