@@ -2,18 +2,18 @@ import React, { useState } from 'react';
 import { 
   Plus, 
   Search, 
-  Filter, 
-  Calendar, 
   Target, 
   DollarSign, 
-  Users, 
   Eye, 
   Edit, 
   Trash2,
   MoreHorizontal,
   Image as ImageIcon,
   TrendingUp,
-  TrendingDown
+  TrendingDown,
+  Percent,
+  Share2,
+  Megaphone
 } from 'lucide-react';
 
 // Mock data for campaigns
@@ -105,6 +105,7 @@ const mockCampaigns = [
 ];
 
 const CampaignManagement: React.FC = () => {
+  const [activeSubTab, setActiveSubTab] = useState('campaigns');
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
@@ -298,13 +299,58 @@ const CampaignManagement: React.FC = () => {
     </div>
   );
 
+  const renderDiscounts = () => (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h3 className="text-xl font-semibold text-gray-900">Discounts</h3>
+        <button className="flex items-center space-x-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700">
+          <Plus className="w-4 h-4" />
+          <span>Create Discount</span>
+        </button>
+      </div>
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <p className="text-gray-600">Discount management functionality will be implemented here.</p>
+      </div>
+    </div>
+  );
+
+  const renderBannersAds = () => (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h3 className="text-xl font-semibold text-gray-900">Banners & Ads</h3>
+        <button className="flex items-center space-x-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700">
+          <Plus className="w-4 h-4" />
+          <span>Create Banner</span>
+        </button>
+      </div>
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <p className="text-gray-600">Banner and ad management functionality will be implemented here.</p>
+      </div>
+    </div>
+  );
+
+  const renderSocialMedia = () => (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h3 className="text-xl font-semibold text-gray-900">Social Media Integrations</h3>
+        <button className="flex items-center space-x-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700">
+          <Plus className="w-4 h-4" />
+          <span>Connect Platform</span>
+        </button>
+      </div>
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <p className="text-gray-600">Social media integration functionality will be implemented here.</p>
+      </div>
+    </div>
+  );
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Campaign Management</h2>
-          <p className="text-gray-600">Create and manage marketing campaigns</p>
+          <p className="text-gray-600">Comprehensive campaign management with discounts, banners, and social media integration</p>
         </div>
         <button className="flex items-center space-x-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700">
           <Plus className="w-4 h-4" />
@@ -312,113 +358,181 @@ const CampaignManagement: React.FC = () => {
         </button>
       </div>
 
-      {/* Filters and Search */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <div className="flex flex-col sm:flex-row gap-4">
-          <div className="flex-1">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-              <input
-                type="text"
-                placeholder="Search campaigns..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-              />
-            </div>
-          </div>
-          <div className="flex items-center space-x-4">
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+      {/* Sub-tabs */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200">
+        <div className="border-b border-gray-200">
+          <nav className="flex space-x-8 px-6">
+            <button 
+              onClick={() => setActiveSubTab('campaigns')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                activeSubTab === 'campaigns'
+                  ? 'border-emerald-500 text-emerald-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
             >
-              <option value="all">All Status</option>
-              <option value="active">Active</option>
-              <option value="upcoming">Upcoming</option>
-              <option value="ended">Ended</option>
-              <option value="draft">Draft</option>
-            </select>
-            <div className="flex items-center border border-gray-300 rounded-lg">
-              <button
-                onClick={() => setViewMode('grid')}
-                className={`p-2 ${viewMode === 'grid' ? 'bg-emerald-100 text-emerald-600' : 'text-gray-500 hover:text-gray-700'}`}
-              >
-                <div className="w-4 h-4 grid grid-cols-2 gap-0.5">
-                  <div className="bg-current rounded-sm"></div>
-                  <div className="bg-current rounded-sm"></div>
-                  <div className="bg-current rounded-sm"></div>
-                  <div className="bg-current rounded-sm"></div>
+              <div className="flex items-center space-x-2">
+                <Target className="w-4 h-4" />
+                <span>Campaigns</span>
+              </div>
+            </button>
+            <button 
+              onClick={() => setActiveSubTab('discounts')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                activeSubTab === 'discounts'
+                  ? 'border-emerald-500 text-emerald-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <div className="flex items-center space-x-2">
+                <Percent className="w-4 h-4" />
+                <span>Discounts</span>
+              </div>
+            </button>
+            <button 
+              onClick={() => setActiveSubTab('banners')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                activeSubTab === 'banners'
+                  ? 'border-emerald-500 text-emerald-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <div className="flex items-center space-x-2">
+                <Megaphone className="w-4 h-4" />
+                <span>Banners & Ads</span>
+              </div>
+            </button>
+            <button 
+              onClick={() => setActiveSubTab('social')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                activeSubTab === 'social'
+                  ? 'border-emerald-500 text-emerald-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <div className="flex items-center space-x-2">
+                <Share2 className="w-4 h-4" />
+                <span>Social Media</span>
+              </div>
+            </button>
+          </nav>
+        </div>
+        <div className="p-6">
+          {activeSubTab === 'campaigns' && (
+            <div className="space-y-6">
+              {/* Filters and Search */}
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <div className="flex flex-col sm:flex-row gap-4">
+                  <div className="flex-1">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                      <input
+                        type="text"
+                        placeholder="Search campaigns..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-4">
+                    <select
+                      value={statusFilter}
+                      onChange={(e) => setStatusFilter(e.target.value)}
+                      className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    >
+                      <option value="all">All Status</option>
+                      <option value="active">Active</option>
+                      <option value="upcoming">Upcoming</option>
+                      <option value="ended">Ended</option>
+                      <option value="draft">Draft</option>
+                    </select>
+                    <div className="flex items-center border border-gray-300 rounded-lg">
+                      <button
+                        onClick={() => setViewMode('grid')}
+                        className={`p-2 ${viewMode === 'grid' ? 'bg-emerald-100 text-emerald-600' : 'text-gray-500 hover:text-gray-700'}`}
+                      >
+                        <div className="w-4 h-4 grid grid-cols-2 gap-0.5">
+                          <div className="bg-current rounded-sm"></div>
+                          <div className="bg-current rounded-sm"></div>
+                          <div className="bg-current rounded-sm"></div>
+                          <div className="bg-current rounded-sm"></div>
+                        </div>
+                      </button>
+                      <button
+                        onClick={() => setViewMode('list')}
+                        className={`p-2 ${viewMode === 'list' ? 'bg-emerald-100 text-emerald-600' : 'text-gray-500 hover:text-gray-700'}`}
+                      >
+                        <div className="w-4 h-4 flex flex-col space-y-0.5">
+                          <div className="h-0.5 bg-current rounded"></div>
+                          <div className="h-0.5 bg-current rounded"></div>
+                          <div className="h-0.5 bg-current rounded"></div>
+                        </div>
+                      </button>
+                    </div>
+                  </div>
                 </div>
-              </button>
-              <button
-                onClick={() => setViewMode('list')}
-                className={`p-2 ${viewMode === 'list' ? 'bg-emerald-100 text-emerald-600' : 'text-gray-500 hover:text-gray-700'}`}
-              >
-                <div className="w-4 h-4 flex flex-col space-y-0.5">
-                  <div className="h-0.5 bg-current rounded"></div>
-                  <div className="h-0.5 bg-current rounded"></div>
-                  <div className="h-0.5 bg-current rounded"></div>
+              </div>
+
+              {/* Campaign Stats */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-gray-600">Total Campaigns</p>
+                      <p className="text-3xl font-bold text-gray-900">{mockCampaigns.length}</p>
+                    </div>
+                    <div className="p-3 bg-blue-100 rounded-lg">
+                      <Target className="w-6 h-6 text-blue-600" />
+                    </div>
+                  </div>
                 </div>
-              </button>
+
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-gray-600">Active Campaigns</p>
+                      <p className="text-3xl font-bold text-gray-900">{mockCampaigns.filter(c => c.status === 'active').length}</p>
+                    </div>
+                    <div className="p-3 bg-green-100 rounded-lg">
+                      <TrendingUp className="w-6 h-6 text-green-600" />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-gray-600">Total Sales</p>
+                      <p className="text-3xl font-bold text-gray-900">{formatCurrency(mockCampaigns.reduce((sum, c) => sum + c.totalSales, 0))}</p>
+                    </div>
+                    <div className="p-3 bg-emerald-100 rounded-lg">
+                      <DollarSign className="w-6 h-6 text-emerald-600" />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-gray-600">Total Discounts</p>
+                      <p className="text-3xl font-bold text-gray-900">{formatCurrency(mockCampaigns.reduce((sum, c) => sum + c.totalDiscount, 0))}</p>
+                    </div>
+                    <div className="p-3 bg-red-100 rounded-lg">
+                      <TrendingDown className="w-6 h-6 text-red-600" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Campaigns List */}
+              {viewMode === 'grid' ? renderGridView() : renderListView()}
             </div>
-          </div>
+          )}
+          {activeSubTab === 'discounts' && renderDiscounts()}
+          {activeSubTab === 'banners' && renderBannersAds()}
+          {activeSubTab === 'social' && renderSocialMedia()}
         </div>
       </div>
-
-      {/* Campaign Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Total Campaigns</p>
-              <p className="text-3xl font-bold text-gray-900">{mockCampaigns.length}</p>
-            </div>
-            <div className="p-3 bg-blue-100 rounded-lg">
-              <Target className="w-6 h-6 text-blue-600" />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Active Campaigns</p>
-              <p className="text-3xl font-bold text-gray-900">{mockCampaigns.filter(c => c.status === 'active').length}</p>
-            </div>
-            <div className="p-3 bg-green-100 rounded-lg">
-              <TrendingUp className="w-6 h-6 text-green-600" />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Total Sales</p>
-              <p className="text-3xl font-bold text-gray-900">{formatCurrency(mockCampaigns.reduce((sum, c) => sum + c.totalSales, 0))}</p>
-            </div>
-            <div className="p-3 bg-emerald-100 rounded-lg">
-              <DollarSign className="w-6 h-6 text-emerald-600" />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Total Discounts</p>
-              <p className="text-3xl font-bold text-gray-900">{formatCurrency(mockCampaigns.reduce((sum, c) => sum + c.totalDiscount, 0))}</p>
-            </div>
-            <div className="p-3 bg-red-100 rounded-lg">
-              <TrendingDown className="w-6 h-6 text-red-600" />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Campaigns List */}
-      {viewMode === 'grid' ? renderGridView() : renderListView()}
     </div>
   );
 };

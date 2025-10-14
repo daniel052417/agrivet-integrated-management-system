@@ -3,26 +3,21 @@ import {
   TrendingUp, 
   Percent, 
   Target,
-  Star, 
   Image as ImageIcon, 
-  Users, 
   BarChart3,
   Plus,
-  Calendar,
   DollarSign,
-  ShoppingCart,
   Eye,
   Edit,
-  Trash2,
   MoreHorizontal,
-  Tag,
-  Facebook,
-  Gift
+  Megaphone,
+  FileText,
+  Bell
 } from 'lucide-react';
-import PromotionsManagement from './PromotionsManagement';
 import InsightsAnalytics from './InsightsAnalytics';
-import RewardsNotifications from './RewardsNotifications';
-import FacebookIntegration from './FacebookIntegration';
+import CampaignManagement from './CampaignManagement';
+import TemplateManagement from './TemplateManagement';
+import ClientNotifications from './ClientNotifications';
 
 // Mock data for marketing dashboard
 const mockData = {
@@ -223,6 +218,103 @@ const MarketingDashboard: React.FC = () => {
       day: 'numeric'
     });
   };
+
+
+
+  const renderPromotionsCampaigns = () => (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Promotions & Campaigns</h2>
+          <p className="text-gray-600">Manage all promotional activities and marketing campaigns in one place</p>
+        </div>
+        <div className="flex items-center space-x-3">
+          <button className="flex items-center space-x-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700">
+            <Plus className="w-4 h-4" />
+            <span>New Promotion</span>
+          </button>
+          <button className="flex items-center space-x-2 border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50">
+            <Plus className="w-4 h-4" />
+            <span>New Campaign</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Quick Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Active Promotions</p>
+              <p className="text-3xl font-bold text-gray-900">{mockData.analytics.totalDiscounts}</p>
+            </div>
+            <div className="p-3 bg-green-100 rounded-lg">
+              <Percent className="w-6 h-6 text-green-600" />
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Active Campaigns</p>
+              <p className="text-3xl font-bold text-gray-900">{mockData.analytics.activeCampaigns}</p>
+            </div>
+            <div className="p-3 bg-blue-100 rounded-lg">
+              <Target className="w-6 h-6 text-blue-600" />
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Total Sales</p>
+              <p className="text-3xl font-bold text-gray-900">{formatCurrency(mockData.analytics.totalSales)}</p>
+            </div>
+            <div className="p-3 bg-emerald-100 rounded-lg">
+              <DollarSign className="w-6 h-6 text-emerald-600" />
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Conversion Rate</p>
+              <p className="text-3xl font-bold text-gray-900">{mockData.analytics.conversionRate}%</p>
+            </div>
+            <div className="p-3 bg-purple-100 rounded-lg">
+              <TrendingUp className="w-6 h-6 text-purple-600" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Sub-tabs for Promotions & Campaigns */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200">
+        <div className="border-b border-gray-200">
+          <nav className="flex space-x-8 px-6">
+            <button className="py-4 px-1 border-b-2 border-emerald-500 text-emerald-600 font-medium text-sm">
+              All Campaigns
+            </button>
+            <button className="py-4 px-1 border-b-2 border-transparent text-gray-500 hover:text-gray-700 font-medium text-sm">
+              Active Promotions
+            </button>
+            <button className="py-4 px-1 border-b-2 border-transparent text-gray-500 hover:text-gray-700 font-medium text-sm">
+              Upcoming
+            </button>
+            <button className="py-4 px-1 border-b-2 border-transparent text-gray-500 hover:text-gray-700 font-medium text-sm">
+              Analytics
+            </button>
+          </nav>
+        </div>
+        <div className="p-6">
+          {renderCampaigns()}
+        </div>
+      </div>
+    </div>
+  );
 
   const renderOverview = () => (
     <div className="space-y-6">
@@ -456,338 +548,18 @@ const MarketingDashboard: React.FC = () => {
     </div>
   );
 
-  const renderDiscounts = () => (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-gray-900">Discount Management</h2>
-        <button className="flex items-center space-x-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700">
-          <Plus className="w-4 h-4" />
-          <span>Create Discount</span>
-              </button>
-      </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200">
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Discount</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Value</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Usage</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {mockData.discounts.map((discount) => (
-                <tr key={discount.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div>
-                      <div className="text-sm font-medium text-gray-900">{discount.name}</div>
-                      <div className="text-sm text-gray-500">Applies to: {discount.target}</div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">
-                      {discount.type}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {discount.type === 'percentage' ? `${discount.value}%` : 
-                     discount.type === 'fixed' ? formatCurrency(discount.value) : 
-                     discount.value}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">{discount.usageCount} / {discount.usageLimit}</div>
-                    <div className="w-full bg-gray-200 rounded-full h-1 mt-1">
-                      <div 
-                        className="bg-emerald-500 h-1 rounded-full" 
-                        style={{ width: `${(discount.usageCount / discount.usageLimit) * 100}%` }}
-                      ></div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(discount.status)}`}>
-                      {discount.status}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <div className="flex items-center space-x-2">
-                      <button className="text-emerald-600 hover:text-emerald-900">
-                        <Edit className="w-4 h-4" />
-              </button>
-                      <button className="text-red-600 hover:text-red-900">
-                        <Trash2 className="w-4 h-4" />
-              </button>
-          </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
 
-  const renderFeaturedProducts = () => (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-gray-900">Featured Products</h2>
-        <button className="flex items-center space-x-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700">
-          <Plus className="w-4 h-4" />
-          <span>Add Product</span>
-        </button>
-      </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {mockData.featuredProducts.map((product) => (
-          <div key={product.id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-            <div className="h-48 bg-gray-200 flex items-center justify-center">
-              <ImageIcon className="w-16 h-16 text-gray-400" />
-            </div>
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="text-lg font-semibold text-gray-900">{product.name}</h3>
-                <span className={`px-2 py-1 text-xs font-medium rounded-full ${getTypeColor(product.type)}`}>
-                  {product.type.replace('_', ' ')}
-                </span>
-              </div>
-              <p className="text-sm text-gray-600 mb-4">SKU: {product.sku}</p>
-              
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center space-x-2">
-                  {product.discount > 0 ? (
-                    <>
-                      <span className="text-xl font-bold text-emerald-600">{formatCurrency(product.salePrice)}</span>
-                      <span className="text-sm text-gray-500 line-through">{formatCurrency(product.originalPrice)}</span>
-                    </>
-                  ) : (
-                    <span className="text-xl font-bold text-gray-900">{formatCurrency(product.originalPrice)}</span>
-                  )}
-                </div>
-                <div className="text-right">
-                  <div className="text-sm font-medium text-gray-900">{product.salesCount} sales</div>
-                  <div className="text-xs text-gray-500">Priority: {product.priority}</div>
-                </div>
-              </div>
 
-              <div className="flex items-center space-x-2">
-                <button className="flex-1 flex items-center justify-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
-                  <Edit className="w-4 h-4" />
-                  <span>Edit</span>
-                </button>
-                <button className="flex-1 flex items-center justify-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
-                  <Trash2 className="w-4 h-4" />
-                  <span>Remove</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-
-  const renderBanners = () => (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-gray-900">Banners & Advertisements</h2>
-        <button className="flex items-center space-x-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700">
-          <Plus className="w-4 h-4" />
-          <span>Add Banner</span>
-        </button>
-      </div>
-
-      <div className="space-y-4">
-        {mockData.banners.map((banner) => (
-          <div key={banner.id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-            <div className="h-48 bg-gray-200 flex items-center justify-center relative">
-              <ImageIcon className="w-16 h-16 text-gray-400" />
-              <div className="absolute top-4 right-4">
-                <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(banner.status)}`}>
-                  {banner.status}
-                </span>
-              </div>
-              <div className="absolute bottom-4 left-4 text-white">
-                <h3 className="text-xl font-semibold">{banner.title}</h3>
-                <p className="text-sm opacity-90">{banner.subtitle}</p>
-              </div>
-            </div>
-            <div className="p-6">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-4">
-                  <div className="text-sm">
-                    <span className="text-gray-600">Priority:</span>
-                    <span className="ml-2 font-medium">{banner.priority}</span>
-                  </div>
-                  <div className="text-sm">
-                    <span className="text-gray-600">Link:</span>
-                    <span className="ml-2 font-medium text-emerald-600">{banner.linkTo}</span>
-                  </div>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <button className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
-                    <Edit className="w-4 h-4" />
-                  </button>
-                  <button className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-
-  const renderLoyaltyProgram = () => (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-gray-900">Loyalty Program</h2>
-        <button className="flex items-center space-x-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700">
-          <Plus className="w-4 h-4" />
-          <span>Manage Program</span>
-        </button>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Total Members</p>
-              <p className="text-3xl font-bold text-gray-900">{mockData.loyaltyStats.totalMembers.toLocaleString()}</p>
-            </div>
-            <div className="p-3 bg-blue-100 rounded-lg">
-              <Users className="w-6 h-6 text-blue-600" />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Active Members</p>
-              <p className="text-3xl font-bold text-gray-900">{mockData.loyaltyStats.activeMembers.toLocaleString()}</p>
-            </div>
-            <div className="p-3 bg-green-100 rounded-lg">
-              <Star className="w-6 h-6 text-green-600" />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Points Issued</p>
-              <p className="text-3xl font-bold text-gray-900">{mockData.loyaltyStats.totalPointsIssued.toLocaleString()}</p>
-            </div>
-            <div className="p-3 bg-purple-100 rounded-lg">
-              <TrendingUp className="w-6 h-6 text-purple-600" />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Points Redeemed</p>
-              <p className="text-3xl font-bold text-gray-900">{mockData.loyaltyStats.totalPointsRedeemed.toLocaleString()}</p>
-            </div>
-            <div className="p-3 bg-orange-100 rounded-lg">
-              <ShoppingCart className="w-6 h-6 text-orange-600" />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Loyalty Program Settings</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Points per Peso</label>
-            <input 
-              type="number" 
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-              placeholder="1"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Peso per Point</label>
-            <input 
-              type="number" 
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-              placeholder="1"
-            />
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-
-  const renderAnalytics = () => (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-gray-900">Marketing Analytics</h2>
-        <button className="flex items-center space-x-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700">
-          <BarChart3 className="w-4 h-4" />
-          <span>Export Report</span>
-        </button>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Campaign Performance</h3>
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-600">Top Performing Campaign</span>
-              <span className="font-medium">{mockData.analytics.topPerformingCampaign}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-600">Most Used Discount</span>
-              <span className="font-medium">{mockData.analytics.mostUsedDiscount}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-600">Total Discount Value</span>
-              <span className="font-medium text-red-600">{formatCurrency(mockData.analytics.totalDiscountValue)}</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Sales Overview</h3>
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-600">Total Sales</span>
-              <span className="font-medium">{formatCurrency(mockData.analytics.totalSales)}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-600">Conversion Rate</span>
-              <span className="font-medium">{mockData.analytics.conversionRate}%</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-600">Active Campaigns</span>
-              <span className="font-medium">{mockData.analytics.activeCampaigns}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
 
   const tabs = [
     { id: 'overview', name: 'Overview', icon: BarChart3 },
-    { id: 'promotions', name: 'Promotions', icon: Tag },
+    { id: 'promotions-campaigns', name: 'Promotions & Campaigns', icon: Megaphone },
     { id: 'insights', name: 'Insights & Analytics', icon: TrendingUp },
-    { id: 'rewards', name: 'Rewards & Notifications', icon: Gift },
-    { id: 'facebook', name: 'Facebook Integration', icon: Facebook },
-    { id: 'campaigns', name: 'Campaigns', icon: Target },
-    { id: 'discounts', name: 'Discounts', icon: Percent },
-    { id: 'featured-products', name: 'Featured Products', icon: Star },
-    { id: 'banners', name: 'Banners & Ads', icon: ImageIcon },
-    { id: 'loyalty', name: 'Loyalty Program', icon: Users }
+    { id: 'campaign-management', name: 'Campaign Management', icon: Target },
+    { id: 'template-management', name: 'Template Management', icon: FileText },
+    { id: 'client-notifications', name: 'Client Notifications', icon: Bell }
   ];
 
   return (
@@ -822,15 +594,11 @@ const MarketingDashboard: React.FC = () => {
 
       <div className="p-6">
         {activeTab === 'overview' && renderOverview()}
-        {activeTab === 'promotions' && <PromotionsManagement />}
+        {activeTab === 'promotions-campaigns' && renderPromotionsCampaigns()}
         {activeTab === 'insights' && <InsightsAnalytics />}
-        {activeTab === 'rewards' && <RewardsNotifications />}
-        {activeTab === 'facebook' && <FacebookIntegration />}
-        {activeTab === 'campaigns' && renderCampaigns()}
-        {activeTab === 'discounts' && renderDiscounts()}
-        {activeTab === 'featured-products' && renderFeaturedProducts()}
-        {activeTab === 'banners' && renderBanners()}
-        {activeTab === 'loyalty' && renderLoyaltyProgram()}
+        {activeTab === 'campaign-management' && <CampaignManagement />}
+        {activeTab === 'template-management' && <TemplateManagement />}
+        {activeTab === 'client-notifications' && <ClientNotifications />}
       </div>
     </div>
   );

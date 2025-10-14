@@ -88,11 +88,12 @@ const SimplifiedSidebar: React.FC<SimplifiedSidebarProps> = ({ user, activeSecti
       icon: Megaphone, 
       category: 'Marketing',
       children: [
-        { id: 'marketing-dashboard', label: 'Marketing Dashboard', icon: BarChart3, category: 'Marketing' },
-        { id: 'campaigns', label: 'Campaign Management', icon: Megaphone, category: 'Marketing' },
-        { id: 'templates', label: 'Template Management', icon: Settings, category: 'Marketing' },
-        { id: 'analytics', label: 'Campaign Analytics', icon: TrendingUp, category: 'Marketing' },
-        { id: 'notifications', label: 'Client Notifications', icon: Bell, category: 'Marketing' },
+        { id: 'marketing-dashboard', label: 'Marketing Dashboard (Overview)', icon: BarChart3, category: 'Marketing' },
+        { id: 'promotions-campaigns', label: 'Promotions & Campaigns', icon: Megaphone, category: 'Marketing' },
+        { id: 'insights', label: 'Insights & Analytics', icon: TrendingUp, category: 'Marketing' },
+        { id: 'campaign-management', label: 'Campaign Management', icon: Megaphone, category: 'Marketing' },
+        { id: 'template-management', label: 'Template Management', icon: Settings, category: 'Marketing' },
+        { id: 'client-notifications', label: 'Client Notifications', icon: Bell, category: 'Marketing' },
       ]
     },
     
