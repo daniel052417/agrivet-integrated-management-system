@@ -50,6 +50,154 @@ const AttendanceDashboard: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
+  // Mock data for demonstration
+  const mockAttendanceRecords: AttendanceRecord[] = [
+    {
+      id: '1',
+      staff_id: 'staff_001',
+      staff_name: 'John Smith',
+      position: 'Sales Manager',
+      department: 'Sales',
+      attendance_date: selectedDate,
+      time_in: '2025-01-15T08:00:00Z',
+      time_out: '2025-01-15T17:00:00Z',
+      break_start: '2025-01-15T12:00:00Z',
+      break_end: '2025-01-15T13:00:00Z',
+      total_hours: 8,
+      overtime_hours: 0,
+      status: 'present',
+      notes: 'On time',
+      location: 'Main Office',
+      created_at: '2025-01-15T08:05:00Z'
+    },
+    {
+      id: '2',
+      staff_id: 'staff_002',
+      staff_name: 'Maria Garcia',
+      position: 'HR Specialist',
+      department: 'Human Resources',
+      attendance_date: selectedDate,
+      time_in: '2025-01-15T08:15:00Z',
+      time_out: '2025-01-15T17:30:00Z',
+      break_start: '2025-01-15T12:00:00Z',
+      break_end: '2025-01-15T13:00:00Z',
+      total_hours: 8.25,
+      overtime_hours: 0.25,
+      status: 'late',
+      notes: 'Traffic delay',
+      location: 'Main Office',
+      created_at: '2025-01-15T08:20:00Z'
+    },
+    {
+      id: '3',
+      staff_id: 'staff_003',
+      staff_name: 'Robert Johnson',
+      position: 'Accountant',
+      department: 'Finance',
+      attendance_date: selectedDate,
+      time_in: '2025-01-15T07:45:00Z',
+      time_out: '2025-01-15T16:45:00Z',
+      break_start: '2025-01-15T12:00:00Z',
+      break_end: '2025-01-15T13:00:00Z',
+      total_hours: 8,
+      overtime_hours: 0,
+      status: 'present',
+      notes: 'Early arrival',
+      location: 'Main Office',
+      created_at: '2025-01-15T07:50:00Z'
+    },
+    {
+      id: '4',
+      staff_id: 'staff_004',
+      staff_name: 'Sarah Wilson',
+      position: 'Marketing Coordinator',
+      department: 'Marketing',
+      attendance_date: selectedDate,
+      time_in: null,
+      time_out: null,
+      break_start: null,
+      break_end: null,
+      total_hours: 0,
+      overtime_hours: 0,
+      status: 'absent',
+      notes: 'Sick leave',
+      location: null,
+      created_at: '2025-01-15T09:00:00Z'
+    },
+    {
+      id: '5',
+      staff_id: 'staff_005',
+      staff_name: 'Michael Brown',
+      position: 'IT Support',
+      department: 'IT',
+      attendance_date: selectedDate,
+      time_in: '2025-01-15T08:30:00Z',
+      time_out: '2025-01-15T17:00:00Z',
+      break_start: '2025-01-15T12:00:00Z',
+      break_end: '2025-01-15T13:00:00Z',
+      total_hours: 7.5,
+      overtime_hours: 0,
+      status: 'late',
+      notes: 'System maintenance',
+      location: 'Main Office',
+      created_at: '2025-01-15T08:35:00Z'
+    },
+    {
+      id: '6',
+      staff_id: 'staff_006',
+      staff_name: 'Lisa Davis',
+      position: 'Customer Service Rep',
+      department: 'Customer Service',
+      attendance_date: selectedDate,
+      time_in: '2025-01-15T08:00:00Z',
+      time_out: '2025-01-15T16:00:00Z',
+      break_start: '2025-01-15T12:00:00Z',
+      break_end: '2025-01-15T13:00:00Z',
+      total_hours: 7,
+      overtime_hours: 0,
+      status: 'half_day',
+      notes: 'Personal appointment',
+      location: 'Main Office',
+      created_at: '2025-01-15T08:05:00Z'
+    },
+    {
+      id: '7',
+      staff_id: 'staff_007',
+      staff_name: 'David Lee',
+      position: 'Operations Manager',
+      department: 'Operations',
+      attendance_date: selectedDate,
+      time_in: '2025-01-15T08:00:00Z',
+      time_out: '2025-01-15T18:00:00Z',
+      break_start: '2025-01-15T12:00:00Z',
+      break_end: '2025-01-15T13:00:00Z',
+      total_hours: 9,
+      overtime_hours: 1,
+      status: 'present',
+      notes: 'Project deadline',
+      location: 'Main Office',
+      created_at: '2025-01-15T08:05:00Z'
+    },
+    {
+      id: '8',
+      staff_id: 'staff_008',
+      staff_name: 'Jennifer Taylor',
+      position: 'Administrative Assistant',
+      department: 'Administration',
+      attendance_date: selectedDate,
+      time_in: null,
+      time_out: null,
+      break_start: null,
+      break_end: null,
+      total_hours: 0,
+      overtime_hours: 0,
+      status: 'on_leave',
+      notes: 'Vacation leave',
+      location: null,
+      created_at: '2025-01-15T09:00:00Z'
+    }
+  ];
+
   useEffect(() => {
     loadAttendanceData();
   }, [selectedDate]);
@@ -59,50 +207,18 @@ const AttendanceDashboard: React.FC = () => {
       setLoading(true);
       setError(null);
 
-      // Load attendance records for selected date
-      const { data: records, error: recordsError } = await supabase
-        .from('attendance_records')
-        .select(`
-          id, staff_id, attendance_date, time_in, time_out, break_start, break_end,
-          total_hours, overtime_hours, status, notes, location, created_at,
-          staff:staff_id (first_name, last_name, position, department)
-        `)
-        .eq('attendance_date', selectedDate)
-        .order('created_at', { ascending: false });
+      // Use mock data for demonstration
+      setAttendanceRecords(mockAttendanceRecords);
 
-      if (recordsError) throw recordsError;
-
-      // Transform data
-      const transformedRecords: AttendanceRecord[] = (records || []).map(record => ({
-        id: record.id,
-        staff_id: record.staff_id,
-        staff_name: `${record.staff?.first_name || ''} ${record.staff?.last_name || ''}`.trim(),
-        position: record.staff?.position || '',
-        department: record.staff?.department || '',
-        attendance_date: record.attendance_date,
-        time_in: record.time_in,
-        time_out: record.time_out,
-        break_start: record.break_start,
-        break_end: record.break_end,
-        total_hours: record.total_hours,
-        overtime_hours: record.overtime_hours,
-        status: record.status,
-        notes: record.notes,
-        location: record.location,
-        created_at: record.created_at
-      }));
-
-      setAttendanceRecords(transformedRecords);
-
-      // Calculate stats
-      const totalStaff = transformedRecords.length;
-      const presentToday = transformedRecords.filter(r => r.status === 'present').length;
-      const absentToday = transformedRecords.filter(r => r.status === 'absent').length;
-      const lateToday = transformedRecords.filter(r => r.status === 'late').length;
-      const averageHours = transformedRecords
+      // Calculate stats from mock data
+      const totalStaff = mockAttendanceRecords.length;
+      const presentToday = mockAttendanceRecords.filter(r => r.status === 'present').length;
+      const absentToday = mockAttendanceRecords.filter(r => r.status === 'absent').length;
+      const lateToday = mockAttendanceRecords.filter(r => r.status === 'late').length;
+      const averageHours = mockAttendanceRecords
         .filter(r => r.total_hours)
         .reduce((sum, r) => sum + (r.total_hours || 0), 0) / Math.max(presentToday, 1);
-      const totalOvertime = transformedRecords
+      const totalOvertime = mockAttendanceRecords
         .reduce((sum, r) => sum + (r.overtime_hours || 0), 0);
 
       setStats({
@@ -383,6 +499,8 @@ const AttendanceDashboard: React.FC = () => {
 };
 
 export default AttendanceDashboard;
+
+
 
 
 

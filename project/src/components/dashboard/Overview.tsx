@@ -24,7 +24,7 @@ import AuditLogs from './AuditLogs';
 const Overview: React.FC = () => {
   return (
     <div className="p-6 space-y-6">
-      {/* Super Admin Header */}
+      {/* Super Admin Header
       <div className="mb-8">
         <div className="flex items-center space-x-3 mb-2">
           <div className="w-10 h-10 bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg flex items-center justify-center">
@@ -38,7 +38,7 @@ const Overview: React.FC = () => {
         <div className="text-sm text-gray-500">
           Last updated: {new Date().toLocaleString()}
         </div>
-      </div>
+      </div> */}
 
       {/* Today's Overview - Key Metrics */}
       <div className="mb-8">

@@ -91,7 +91,7 @@ export class OnlineOrdersService {
           payment_method: order.payment_method,
           subtotal: parseFloat(order.subtotal),
           tax_amount: parseFloat(order.tax_amount),
-          delivery_fee: order.order_type === 'delivery' ? 50 : undefined, // Add delivery fee logic
+          delivery_fee: order.delivery_fee ? parseFloat(order.delivery_fee) : (order.order_type === 'delivery' ? 50 : undefined),
           total_amount: parseFloat(order.total_amount),
           special_instructions: order.special_instructions,
           estimated_ready_time: order.estimated_ready_time,
@@ -102,6 +102,16 @@ export class OnlineOrdersService {
           updated_at: order.updated_at,
           confirmed_at: order.confirmed_at,
           completed_at: order.completed_at,
+          ready_at: order.ready_at,
+          // Delivery-related fields
+          delivery_method: order.delivery_method,
+          delivery_address: order.delivery_address,
+          delivery_contact_number: order.delivery_contact_number,
+          delivery_landmark: order.delivery_landmark,
+          delivery_status: order.delivery_status,
+          delivery_tracking_number: order.delivery_tracking_number,
+          delivery_latitude: order.delivery_latitude,
+          delivery_longitude: order.delivery_longitude,
           items: (order.order_items || []).map((item: any) => ({
             id: item.id,
             order_id: order.id,
@@ -134,6 +144,8 @@ export class OnlineOrdersService {
       'confirmed': 'confirmed',
       'preparing': 'confirmed',
       'ready_for_pickup': 'ready_for_pickup',
+      'for_payment': 'for_payment',
+      'for_dispatch': 'for_dispatch',
       'completed': 'completed',
       'cancelled': 'cancelled',
       'abandoned': 'cancelled'
@@ -147,6 +159,8 @@ export class OnlineOrdersService {
       'pending_confirmation': 'pending_confirmation',
       'confirmed': 'confirmed',
       'ready_for_pickup': 'ready_for_pickup',
+      'for_payment': 'for_payment',
+      'for_dispatch': 'for_dispatch',
       'completed': 'completed',
       'cancelled': 'cancelled'
     };
@@ -219,7 +233,7 @@ export class OnlineOrdersService {
         payment_method: data.payment_method,
         subtotal: parseFloat(data.subtotal),
         tax_amount: parseFloat(data.tax_amount),
-        delivery_fee: data.order_type === 'delivery' ? 50 : undefined,
+        delivery_fee: data.delivery_fee ? parseFloat(data.delivery_fee) : (data.order_type === 'delivery' ? 50 : undefined),
         total_amount: parseFloat(data.total_amount),
         special_instructions: data.special_instructions,
         estimated_ready_time: data.estimated_ready_time,
@@ -230,6 +244,16 @@ export class OnlineOrdersService {
         updated_at: data.updated_at,
         confirmed_at: data.confirmed_at,
         completed_at: data.completed_at,
+        ready_at: data.ready_at,
+        // Delivery-related fields
+        delivery_method: data.delivery_method,
+        delivery_address: data.delivery_address,
+        delivery_contact_number: data.delivery_contact_number,
+        delivery_landmark: data.delivery_landmark,
+        delivery_status: data.delivery_status,
+        delivery_tracking_number: data.delivery_tracking_number,
+        delivery_latitude: data.delivery_latitude,
+        delivery_longitude: data.delivery_longitude,
         items: (data.order_items || []).map((item: any) => ({
           id: item.id,
           order_id: data.id,

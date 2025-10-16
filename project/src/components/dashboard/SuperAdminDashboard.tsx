@@ -13,11 +13,17 @@ import InventoryManagement from '../inventory/InventoryManagement';
 import AttendanceTimesheet from '../staff/AttendanceTimesheet';
 import RolesPermissions from '../staff/RolesPermissions';
 import LeaveRequest from '../staff/LeaveRequest';
-import MarketingDashboard from '../marketing/MarketingDashboard';
-import CampaignManagement from '../marketing/CampaignManagement';
+// import MarketingDashboard from '../marketing/MarketingDashboard';
+// import CampaignManagement from '../marketing/CampaignManagement';
+// import TemplateManagement from '../marketing/TemplateManagement';
+// import CampaignAnalytics from '../marketing/CampaignAnalytics';
+// import ClientNotifications from '../marketing/ClientNotifications';
+import MarketingOverview from '../marketing/MarketingOveriview';
+import PromotionsCampaigns from '../marketing/PromotionsCampaigns';
+import InsightsAnalytics from '../marketing/InsightsAnalytics';
+import CampaignManagementSection from '../marketing/CampaignManagementSection';
 import TemplateManagement from '../marketing/TemplateManagement';
-import CampaignAnalytics from '../marketing/CampaignAnalytics';
-import ClientNotifications from '../marketing/ClientNotifications';
+import ClientNotificationsSection from '../marketing/ClientNotificationsSection';
 import EventCenter from '../reports/EventCenter';
 import ReportsAnalytics from '../reports/ReportsAnalytics';
 import SettingsPage from '../settings/SettingsPage';
@@ -27,16 +33,16 @@ import ActiveUsers from '../users/ActiveUsers';
 import UserAccounts from '../users/UserAccounts';
 import UserActivity from '../users/UserActivity';
 import SessionHistory from '../users/SessionHistory';
-import UserRolesOverview from '../users/UserRolesOverview';
+// import UserRolesOverview from '../users/UserRolesOverview';
 import AddStaff from '../hr/AddStaff';
 import StaffList from '../hr/StaffList';
 import UserPermissions from '../users/UserPermissions';
-import HRDashboard from '../hr/HRDashboard';
+// import HRDashboard from '../hr/HRDashboard';
 import AttendanceDashboard from '../hr/AttendanceDashboard';
 import LeaveManagement from '../hr/LeaveManagement';
-import HRAnalytics from '../hr/HRAnalytics';
+// import HRAnalytics from '../hr/HRAnalytics';
 import PayrollCompensation from '../hr/PayrollCompensation';
-
+import HRDashboard from '../hr/HRDashboard';
 interface SuperAdminDashboardProps {
   user: CustomUser;
   onLogout: () => void;
@@ -83,8 +89,8 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, onLogou
         return <UserActivity />;
       case 'session-history':
         return <SessionHistory />;
-      case 'user-roles-overview':
-        return <UserRolesOverview />;
+      // case 'user-roles-overview':
+      //   return <UserRolesOverview />;
       
       // Legacy staff management routes (for backward compatibility)
       case 'staff':
@@ -94,17 +100,21 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, onLogou
         return <AttendanceTimesheet />;
       case 'leave':
         return <LeaveRequest />;
+        
       case 'marketing':
-      case 'marketing-dashboard':
-        return <MarketingDashboard />;
-      case 'campaigns':
-        return <CampaignManagement />;
-      case 'templates':
+      case 'marketing-overview':
+        return <MarketingOverview />;
+      case 'promotions-campaigns':
+        return <PromotionsCampaigns />;
+      case 'insights-analytics':
+        return <InsightsAnalytics />;
+      case 'campaign-management':
+        return <CampaignManagementSection />;
+      case 'template-management':
         return <TemplateManagement />;
-      case 'analytics':
-        return <CampaignAnalytics />;
-      case 'notifications':
-        return <ClientNotifications />;
+      case 'client-notifications':
+        return <ClientNotificationsSection/>;
+
       case 'reports':
         return <ReportsAnalytics />;
       case 'event-center':
@@ -113,16 +123,16 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, onLogou
         return <SettingsPage />;
       
       // HR Section (Simplified)
-      case 'hr':
-        return <HRDashboard />;
+      // case 'hr':
+      //   return <HRDashboard />;
       case 'hr-dashboard':
         return <HRDashboard />;
       case 'attendance-dashboard':
         return <AttendanceDashboard />;
       case 'leave-management':
         return <LeaveManagement />;
-      case 'hr-analytics':
-        return <HRAnalytics />;
+      // case 'hr-analytics':
+      //   return <HRAnalytics />;
       case 'attendance-leave':
         return <AttendanceDashboard />;
       case 'payroll':

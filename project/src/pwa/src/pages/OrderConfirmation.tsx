@@ -7,7 +7,8 @@ interface OrderDetails {
   orderId: string
   orderNumber: string
   status: 'pending' | 'confirmed' | 'ready' | 'completed'
-  estimatedReadyTime: string
+  orderType: 'pickup' | 'delivery'
+  estimatedReadyTime?: string
   totalAmount: number
   paymentMethod: string
   items: Array<{
@@ -24,6 +25,13 @@ interface OrderDetails {
     name: string
     address: string
     phone: string
+  }
+  deliveryInfo?: {
+    method: 'maxim' | 'other'
+    address: string
+    contactNumber: string
+    landmark?: string
+    status: 'pending' | 'booked' | 'in_transit' | 'delivered' | 'failed'
   }
   createdAt: string
 }
@@ -46,44 +54,96 @@ const OrderConfirmation: React.FC = () => {
     try {
       setIsLoading(true)
       
-      // Simulate API call - in real app, fetch from backend
-      await new Promise(resolve => setTimeout(resolve, 1000))
+      console.log('🔍 OrderConfirmation: Loading order details for ID:', id)
       
-      // Mock order details
-      const mockOrder: OrderDetails = {
-        orderId: id,
-        orderNumber: `ORD-${id.slice(-8)}`,
-        status: 'pending',
-        estimatedReadyTime: new Date(Date.now() + 30 * 60 * 1000).toLocaleTimeString('en-US', {
-          hour: '2-digit',
-          minute: '2-digit'
-        }),
-        totalAmount: 1250.00,
-        paymentMethod: 'GCash',
-        items: [
-          { name: 'Chicken Feed 50kg', quantity: 2, price: 500.00 },
-          { name: 'Vitamin Supplement', quantity: 1, price: 250.00 }
-        ],
-        customerInfo: {
-          name: 'Juan Dela Cruz',
-          phone: '+63 912 345 6789',
-          email: 'juan@example.com'
-        },
-        branchInfo: selectedBranch ? {
-          name: selectedBranch.name,
-          address: selectedBranch.address,
-          phone: selectedBranch.phone || '+63 912 345 6789'
-        } : {
-          name: 'AgriVet Main Branch',
-          address: '123 Main Street, City',
-          phone: '+63 912 345 6789'
-        },
-        createdAt: new Date().toLocaleString()
+      // Import supabase dynamically
+      const { supabase } = await import('../services/supabase')
+      
+      // Fetch real order data from database
+      const { data: order, error: orderError } = await supabase
+        .from('orders')
+        .select(`
+          *,
+          order_items (
+            product_name,
+            quantity,
+            unit_price,
+            line_total
+          )
+        `)
+        .eq('id', id)
+        .single()
+      
+      if (orderError) {
+        console.error('❌ OrderConfirmation: Error fetching order:', orderError)
+        throw new Error(`Failed to load order: ${orderError.message}`)
       }
       
-      setOrderDetails(mockOrder)
+      if (!order) {
+        throw new Error('Order not found')
+      }
+      
+      console.log('✅ OrderConfirmation: Order data loaded:', order)
+      
+      // Fetch branch info
+      const { data: branch, error: branchError } = await supabase
+        .from('branches')
+        .select('name, address, phone')
+        .eq('id', order.branch_id)
+        .single()
+      
+      if (branchError) {
+        console.warn('⚠️ OrderConfirmation: Could not fetch branch info:', branchError)
+      }
+      
+      // Transform database order to UI format
+      const orderDetails: OrderDetails = {
+        orderId: order.id,
+        orderNumber: order.order_number,
+        status: order.status as 'pending' | 'confirmed' | 'ready' | 'completed',
+        orderType: order.order_type as 'pickup' | 'delivery',
+        estimatedReadyTime: order.estimated_ready_time 
+          ? new Date(order.estimated_ready_time).toLocaleTimeString('en-US', {
+              hour: '2-digit',
+              minute: '2-digit'
+            })
+          : undefined,
+        totalAmount: order.total_amount,
+        paymentMethod: order.payment_method,
+        items: order.order_items?.map((item: any) => ({
+          name: item.product_name || 'Unknown Product',
+          quantity: item.quantity,
+          price: item.unit_price
+        })) || [],
+        customerInfo: {
+          name: order.customer_name || 'Unknown Customer',
+          phone: order.customer_phone || 'No phone provided',
+          email: order.customer_email
+        },
+        branchInfo: branch ? {
+          name: branch.name,
+          address: branch.address,
+          phone: branch.phone || 'No phone provided'
+        } : {
+          name: selectedBranch?.name || 'Unknown Branch',
+          address: selectedBranch?.address || 'Unknown Address',
+          phone: selectedBranch?.phone || 'No phone provided'
+        },
+        // Real delivery info from database
+        deliveryInfo: order.order_type === 'delivery' ? {
+          method: order.delivery_method as 'maxim' | 'other',
+          address: order.delivery_address || '',
+          contactNumber: order.delivery_contact_number || '',
+          landmark: order.delivery_landmark,
+          status: order.delivery_status as 'pending' | 'booked' | 'in_transit' | 'delivered' | 'failed'
+        } : undefined,
+        createdAt: new Date(order.created_at).toLocaleString()
+      }
+      
+      console.log('✅ OrderConfirmation: Transformed order details:', orderDetails)
+      setOrderDetails(orderDetails)
     } catch (error) {
-      console.error('Error loading order details:', error)
+      console.error('❌ OrderConfirmation: Error loading order details:', error)
     } finally {
       setIsLoading(false)
     }
@@ -140,7 +200,10 @@ const OrderConfirmation: React.FC = () => {
               Order Confirmed!
             </h1>
             <p className="text-gray-600">
-              Your order has been successfully placed
+              {orderDetails.orderType === 'pickup' 
+                ? 'Your order has been successfully placed and is being prepared for pickup'
+                : 'Thank you! Your order will be arranged for delivery via Maxim. We\'ll notify you once it\'s booked.'
+              }
             </p>
           </div>
         </div>
@@ -169,9 +232,21 @@ const OrderConfirmation: React.FC = () => {
                   <p className="font-medium text-gray-900">{orderDetails.createdAt}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-600">Estimated Ready Time</p>
-                  <p className="font-medium text-gray-900">{orderDetails.estimatedReadyTime}</p>
+                  <p className="text-sm text-gray-600">Order Type</p>
+                  <p className="font-medium text-gray-900 capitalize">{orderDetails.orderType}</p>
                 </div>
+                {orderDetails.orderType === 'pickup' && orderDetails.estimatedReadyTime && (
+                  <div>
+                    <p className="text-sm text-gray-600">Estimated Ready Time</p>
+                    <p className="font-medium text-gray-900">{orderDetails.estimatedReadyTime}</p>
+                  </div>
+                )}
+                {orderDetails.orderType === 'delivery' && orderDetails.deliveryInfo && (
+                  <div>
+                    <p className="text-sm text-gray-600">Delivery Status</p>
+                    <p className="font-medium text-gray-900 capitalize">{orderDetails.deliveryInfo.status}</p>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -215,25 +290,59 @@ const OrderConfirmation: React.FC = () => {
               </div>
             </div>
 
-            {/* Branch Info */}
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">
-                Pickup Location
-              </h2>
-              <div className="space-y-2">
-                <div className="flex items-start space-x-2">
-                  <MapPin className="w-5 h-5 text-gray-400 mt-0.5" />
-                  <div>
-                    <p className="font-medium text-gray-900">{orderDetails.branchInfo.name}</p>
-                    <p className="text-gray-600">{orderDetails.branchInfo.address}</p>
+            {/* Branch Info for Pickup or Delivery Info for Delivery */}
+            {orderDetails.orderType === 'pickup' ? (
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                <h2 className="text-lg font-semibold text-gray-900 mb-4">
+                  Pickup Location
+                </h2>
+                <div className="space-y-2">
+                  <div className="flex items-start space-x-2">
+                    <MapPin className="w-5 h-5 text-gray-400 mt-0.5" />
+                    <div>
+                      <p className="font-medium text-gray-900">{orderDetails.branchInfo.name}</p>
+                      <p className="text-gray-600">{orderDetails.branchInfo.address}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Phone className="w-5 h-5 text-gray-400" />
+                    <p className="text-gray-600">{orderDetails.branchInfo.phone}</p>
                   </div>
                 </div>
-                <div className="flex items-center space-x-2">
-                  <Phone className="w-5 h-5 text-gray-400" />
-                  <p className="text-gray-600">{orderDetails.branchInfo.phone}</p>
-                </div>
               </div>
-            </div>
+            ) : (
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                <h2 className="text-lg font-semibold text-gray-900 mb-4">
+                  Delivery Information
+                </h2>
+                {orderDetails.deliveryInfo && (
+                  <div className="space-y-2">
+                    <div className="flex items-start space-x-2">
+                      <MapPin className="w-5 h-5 text-gray-400 mt-0.5" />
+                      <div>
+                        <p className="font-medium text-gray-900">Delivery Address</p>
+                        <p className="text-gray-600">{orderDetails.deliveryInfo.address}</p>
+                        {orderDetails.deliveryInfo.landmark && (
+                          <p className="text-sm text-gray-500 mt-1">
+                            Landmark: {orderDetails.deliveryInfo.landmark}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Phone className="w-5 h-5 text-gray-400" />
+                      <p className="text-gray-600">{orderDetails.deliveryInfo.contactNumber}</p>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Clock className="w-5 h-5 text-gray-400" />
+                      <p className="text-gray-600">
+                        Service: {orderDetails.deliveryInfo.method === 'maxim' ? 'Maxim Delivery' : 'Other'}
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Summary & Actions */}
@@ -290,7 +399,10 @@ const OrderConfirmation: React.FC = () => {
                       Order Status
                     </p>
                     <p className="text-sm text-blue-700">
-                      Your order is being prepared. You'll receive updates via SMS.
+                      {orderDetails.orderType === 'pickup' 
+                        ? 'Your order is being prepared. You\'ll receive updates via SMS.'
+                        : 'Your delivery order is being arranged. We\'ll notify you once Maxim delivery is booked.'
+                      }
                     </p>
                   </div>
                 </div>

@@ -216,7 +216,7 @@ export interface Order {
   customer_id: string | null
   branch_id: string
   user_id?: string | null
-  order_type: string
+  order_type: 'pickup' | 'delivery'
   status: string
   total_amount: number
   subtotal: number
@@ -238,12 +238,52 @@ export interface Order {
   special_instructions?: string | null
   confirmed_at?: string | null
   completed_at?: string | null
+  // Delivery fields
+  delivery_method?: 'maxim' | 'other'
+  delivery_address?: string | null
+  delivery_contact_number?: string | null
+  delivery_landmark?: string | null
+  delivery_status?: 'pending' | 'booked' | 'in_transit' | 'delivered' | 'failed'
+  delivery_fee?: number | null
+  delivery_tracking_number?: string | null
   // Joined data
   customer?: Customer
   branch?: Branch
   order_items?: OrderItem[]
   payments?: Payment[]
   tracking?: OrderTracking
+  delivery_latitude?: number | null
+  delivery_longitude?: number | null
+}
+// Add new interface for customer delivery addresses
+export interface CustomerDeliveryAddress {
+  id: string
+  customer_id: string
+  address_label: string
+  address_line1: string
+  address_line2?: string | null
+  landmark?: string | null
+  city?: string | null
+  province?: string | null
+  postal_code?: string | null
+  contact_number?: string | null
+  latitude?: number | null
+  longitude?: number | null
+  is_default: boolean
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+// Update DeliveryInfo interface
+export interface DeliveryInfo {
+  method: 'pickup' | 'delivery'
+  deliveryMethod?: 'maxim' | 'other'
+  address?: string
+  contactNumber?: string
+  landmark?: string
+  latitude?: number
+  longitude?: number
 }
 
 export interface OrderItem {
@@ -614,4 +654,20 @@ export interface NotificationHookReturn {
   showNotification: (data: NotificationData) => Promise<void>
   scheduleNotification: (data: NotificationData, delay: number) => Promise<void>
   clearNotifications: () => void
+}
+
+// Delivery-related interfaces
+export interface DeliveryInfo {
+  method: 'pickup' | 'delivery'
+  deliveryMethod?: 'maxim' | 'other'
+  address?: string
+  contactNumber?: string
+  landmark?: string
+}
+
+export interface DeliveryFormData {
+  deliveryMethod: 'pickup' | 'delivery'
+  deliveryAddress: string
+  deliveryContactNumber: string
+  deliveryLandmark: string
 }

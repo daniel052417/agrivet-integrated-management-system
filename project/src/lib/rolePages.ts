@@ -6,7 +6,7 @@
  */
 
 import SuperAdminDashboard from '../components/dashboard/SuperAdminDashboard';
-import HRDashboard from '../components/dashboard/HRDashboard';
+import HRDashboard from '../components/dashboard/HrAdminDashboard';
 import POSDashboard from '../components/dashboard/POSDashboard';
 import MarketingDashboard from '../components/dashboard/MarketingDashboard';
 import InventoryDashboard from '../components/dashboard/InventoryDashboard';

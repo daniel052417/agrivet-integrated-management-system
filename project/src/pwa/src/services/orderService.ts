@@ -22,6 +22,15 @@ interface CreateOrderRequest {
     email?: string
     phone?: string
   }
+  // Delivery fields
+  orderType?: 'pickup' | 'delivery'
+  deliveryMethod?: 'maxim' | 'other'
+  deliveryAddress?: string
+  deliveryContactNumber?: string
+  deliveryLandmark?: string
+  deliveryStatus?: 'pending' | 'booked' | 'in_transit' | 'delivered' | 'failed'
+  deliveryLatitude?: number
+  deliveryLongitude?: number
 }
 
 interface CreateOrderResponse {
@@ -51,11 +60,30 @@ class OrderService {
    */
   async createOrder(request: CreateOrderRequest): Promise<CreateOrderResponse> {
     try {
+      console.log('🔧 OrderService: Starting createOrder...')
+      console.log('🔧 OrderService: Supabase client:', !!supabase)
+      
       if (!supabase) {
+        console.error('❌ OrderService: Supabase client not initialized')
         throw new Error('Supabase client not initialized')
       }
 
-      const { cart, customerId, branchId, paymentMethod, notes, customerInfo } = request
+      const { 
+        cart, 
+        customerId, 
+        branchId, 
+        paymentMethod, 
+        notes, 
+        customerInfo,
+        orderType = 'pickup',
+        deliveryMethod,
+        deliveryAddress,
+        deliveryContactNumber,
+        deliveryLandmark,
+        deliveryStatus,
+        deliveryLatitude,
+        deliveryLongitude
+      } = request
 
       // Generate order number
       const orderNumber = this.generateOrderNumber()
@@ -102,7 +130,7 @@ class OrderService {
         order_number: orderNumber,
         customer_id: finalCustomerId || null,
         branch_id: branchId,
-        order_type: 'pickup',
+        order_type: orderType,
         status: 'pending_confirmation',
         payment_status: 'pending',
         subtotal: cart.subtotal,
@@ -112,32 +140,41 @@ class OrderService {
         payment_method: paymentMethod,
         payment_reference: null,
         payment_notes: notes || null,
-        estimated_ready_time: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+        estimated_ready_time: orderType === 'pickup' ? new Date(Date.now() + 30 * 60 * 1000).toISOString() : null,
         is_guest_order: !finalCustomerId,
         customer_name: customerInfo ? `${customerInfo.firstName} ${customerInfo.lastName}` : null,
         customer_email: customerInfo?.email || null,
         customer_phone: customerInfo?.phone || null,
         special_instructions: notes || null,
         notes: notes || null,
+        // Delivery fields
+        delivery_method: deliveryMethod || null,
+        delivery_address: deliveryAddress || null,
+        delivery_contact_number: deliveryContactNumber || null,
+        delivery_landmark: deliveryLandmark || null,
+        delivery_status: deliveryStatus || null,
         confirmed_at: null,
         completed_at: null,
         created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
+        delivery_latitude: deliveryLatitude || null,
+        delivery_longitude: deliveryLongitude || null,
       }
 
       // Direct insert into orders table
-        const { data: order, error: orderError } = await supabase
+      console.log('🔧 OrderService: Inserting order data:', JSON.stringify(orderData, null, 2))
+      const { data: order, error: orderError } = await supabase
         .from('orders')
         .insert(orderData)
         .select()
         .single()
 
       if (orderError) {
-        console.error('Order creation error:', orderError)
+        console.error('❌ OrderService: Order creation error:', orderError)
         throw new Error(`Failed to create order: ${orderError.message}`)
       }
 
-      console.log('Order created successfully:', order.id, 'with customer_id:', order.customer_id)
+      console.log('✅ OrderService: Order created successfully:', order.id, 'with customer_id:', order.customer_id)
 
       // Create order items
       const orderItems = cart.items.map(item => ({
@@ -154,7 +191,7 @@ class OrderService {
         unit_label: item.product_unit?.unit_label || 'Piece',
         weight: item.weight || null,
         expiry_date: item.expiryDate || null,
-        batch_number: item.batchNumber || null,
+        batch_number: item.batchNumber || null, 
         notes: item.notes || null,
         created_at: new Date().toISOString()
       }))
@@ -205,7 +242,8 @@ class OrderService {
       }
 
     } catch (error) {
-      console.error('Error creating order:', error)
+      console.error('❌ OrderService: Error creating order:', error)
+      console.error('❌ OrderService: Error stack:', error instanceof Error ? error.stack : 'No stack trace')
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error'

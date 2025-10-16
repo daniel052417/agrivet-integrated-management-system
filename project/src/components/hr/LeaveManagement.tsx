@@ -52,6 +52,190 @@ const LeaveManagement: React.FC = () => {
   const [showModal, setShowModal] = useState<boolean>(false);
   const [selectedRequest, setSelectedRequest] = useState<LeaveRequest | null>(null);
 
+  // Mock data for demonstration
+  const mockLeaveRequests: LeaveRequest[] = [
+    {
+      id: '1',
+      staff_id: 'staff_001',
+      staff_name: 'John Smith',
+      position: 'Sales Manager',
+      department: 'Sales',
+      leave_type: 'annual',
+      start_date: '2025-02-01',
+      end_date: '2025-02-05',
+      days_requested: 5,
+      reason: 'Family vacation',
+      status: 'pending',
+      applied_date: '2025-01-10',
+      approved_by: null,
+      approved_date: null,
+      rejection_reason: null,
+      created_at: '2025-01-10T09:00:00Z'
+    },
+    {
+      id: '2',
+      staff_id: 'staff_002',
+      staff_name: 'Maria Garcia',
+      position: 'HR Specialist',
+      department: 'Human Resources',
+      leave_type: 'sick',
+      start_date: '2025-01-20',
+      end_date: '2025-01-22',
+      days_requested: 3,
+      reason: 'Flu symptoms',
+      status: 'approved',
+      applied_date: '2025-01-19',
+      approved_by: 'manager_001',
+      approved_date: '2025-01-19',
+      rejection_reason: null,
+      created_at: '2025-01-19T14:30:00Z'
+    },
+    {
+      id: '3',
+      staff_id: 'staff_003',
+      staff_name: 'Robert Johnson',
+      position: 'Accountant',
+      department: 'Finance',
+      leave_type: 'personal',
+      start_date: '2025-01-25',
+      end_date: '2025-01-25',
+      days_requested: 1,
+      reason: 'Personal appointment',
+      status: 'approved',
+      applied_date: '2025-01-20',
+      approved_by: 'manager_002',
+      approved_date: '2025-01-20',
+      rejection_reason: null,
+      created_at: '2025-01-20T10:15:00Z'
+    },
+    {
+      id: '4',
+      staff_id: 'staff_004',
+      staff_name: 'Sarah Wilson',
+      position: 'Marketing Coordinator',
+      department: 'Marketing',
+      leave_type: 'maternity',
+      start_date: '2025-03-01',
+      end_date: '2025-06-01',
+      days_requested: 90,
+      reason: 'Maternity leave',
+      status: 'approved',
+      applied_date: '2025-01-15',
+      approved_by: 'manager_003',
+      approved_date: '2025-01-15',
+      rejection_reason: null,
+      created_at: '2025-01-15T11:00:00Z'
+    },
+    {
+      id: '5',
+      staff_id: 'staff_005',
+      staff_name: 'Michael Brown',
+      position: 'IT Support',
+      department: 'IT',
+      leave_type: 'emergency',
+      start_date: '2025-01-18',
+      end_date: '2025-01-18',
+      days_requested: 1,
+      reason: 'Family emergency',
+      status: 'approved',
+      applied_date: '2025-01-18',
+      approved_by: 'manager_004',
+      approved_date: '2025-01-18',
+      rejection_reason: null,
+      created_at: '2025-01-18T08:00:00Z'
+    },
+    {
+      id: '6',
+      staff_id: 'staff_006',
+      staff_name: 'Lisa Davis',
+      position: 'Customer Service Rep',
+      department: 'Customer Service',
+      leave_type: 'annual',
+      start_date: '2025-02-15',
+      end_date: '2025-02-19',
+      days_requested: 5,
+      reason: 'Holiday trip',
+      status: 'pending',
+      applied_date: '2025-01-12',
+      approved_by: null,
+      approved_date: null,
+      rejection_reason: null,
+      created_at: '2025-01-12T16:45:00Z'
+    },
+    {
+      id: '7',
+      staff_id: 'staff_007',
+      staff_name: 'David Lee',
+      position: 'Operations Manager',
+      department: 'Operations',
+      leave_type: 'study',
+      start_date: '2025-02-10',
+      end_date: '2025-02-12',
+      days_requested: 3,
+      reason: 'Professional development course',
+      status: 'rejected',
+      applied_date: '2025-01-08',
+      approved_by: 'manager_005',
+      approved_date: '2025-01-09',
+      rejection_reason: 'Insufficient notice period',
+      created_at: '2025-01-08T13:20:00Z'
+    },
+    {
+      id: '8',
+      staff_id: 'staff_008',
+      staff_name: 'Jennifer Taylor',
+      position: 'Administrative Assistant',
+      department: 'Administration',
+      leave_type: 'bereavement',
+      start_date: '2025-01-22',
+      end_date: '2025-01-24',
+      days_requested: 3,
+      reason: 'Family bereavement',
+      status: 'approved',
+      applied_date: '2025-01-21',
+      approved_by: 'manager_006',
+      approved_date: '2025-01-21',
+      rejection_reason: null,
+      created_at: '2025-01-21T09:30:00Z'
+    },
+    {
+      id: '9',
+      staff_id: 'staff_009',
+      staff_name: 'James Wilson',
+      position: 'Sales Representative',
+      department: 'Sales',
+      leave_type: 'annual',
+      start_date: '2025-03-15',
+      end_date: '2025-03-22',
+      days_requested: 6,
+      reason: 'Spring break vacation',
+      status: 'pending',
+      applied_date: '2025-01-14',
+      approved_by: null,
+      approved_date: null,
+      rejection_reason: null,
+      created_at: '2025-01-14T15:10:00Z'
+    },
+    {
+      id: '10',
+      staff_id: 'staff_010',
+      staff_name: 'Emily Chen',
+      position: 'Marketing Manager',
+      department: 'Marketing',
+      leave_type: 'paternity',
+      start_date: '2025-02-28',
+      end_date: '2025-03-14',
+      days_requested: 14,
+      reason: 'Paternity leave',
+      status: 'approved',
+      applied_date: '2025-01-05',
+      approved_by: 'manager_007',
+      approved_date: '2025-01-05',
+      rejection_reason: null,
+      created_at: '2025-01-05T12:00:00Z'
+    }
+  ];
+
   useEffect(() => {
     loadLeaveData();
   }, []);
@@ -61,45 +245,15 @@ const LeaveManagement: React.FC = () => {
       setLoading(true);
       setError(null);
 
-      // Load leave requests
-      const { data: requests, error: requestsError } = await supabase
-        .from('leave_requests')
-        .select(`
-          *,
-          staff:staff_id (first_name, last_name, position, department)
-        `)
-        .order('applied_date', { ascending: false });
+      // Use mock data for demonstration
+      setLeaveRequests(mockLeaveRequests);
 
-      if (requestsError) throw requestsError;
-
-      // Transform data
-      const transformedRequests: LeaveRequest[] = (requests || []).map(request => ({
-        id: request.id,
-        staff_id: request.staff_id,
-        staff_name: `${request.staff?.first_name || ''} ${request.staff?.last_name || ''}`.trim(),
-        position: request.staff?.position || '',
-        department: request.staff?.department || '',
-        leave_type: request.leave_type,
-        start_date: request.start_date,
-        end_date: request.end_date,
-        days_requested: request.days_requested,
-        reason: request.reason,
-        status: request.status,
-        applied_date: request.applied_date,
-        approved_by: request.approved_by,
-        approved_date: request.approved_date,
-        rejection_reason: request.rejection_reason,
-        created_at: request.created_at
-      }));
-
-      setLeaveRequests(transformedRequests);
-
-      // Calculate stats
-      const totalRequests = transformedRequests.length;
-      const pendingRequests = transformedRequests.filter(r => r.status === 'pending').length;
-      const approvedRequests = transformedRequests.filter(r => r.status === 'approved').length;
-      const rejectedRequests = transformedRequests.filter(r => r.status === 'rejected').length;
-      const totalDaysRequested = transformedRequests.reduce((sum, r) => sum + r.days_requested, 0);
+      // Calculate stats from mock data
+      const totalRequests = mockLeaveRequests.length;
+      const pendingRequests = mockLeaveRequests.filter(r => r.status === 'pending').length;
+      const approvedRequests = mockLeaveRequests.filter(r => r.status === 'approved').length;
+      const rejectedRequests = mockLeaveRequests.filter(r => r.status === 'rejected').length;
+      const totalDaysRequested = mockLeaveRequests.reduce((sum, r) => sum + r.days_requested, 0);
       const averageDaysPerRequest = totalRequests > 0 ? totalDaysRequested / totalRequests : 0;
 
       setStats({
@@ -476,6 +630,8 @@ const LeaveManagement: React.FC = () => {
 };
 
 export default LeaveManagement;
+
+
 
 
 

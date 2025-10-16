@@ -23,7 +23,6 @@ import Modal from '../components/shared/Modal';
 import { OnlineOrdersService } from '../services/onlineOrdersService';
 import { customAuth } from '../../lib/customAuth';
 import { OrderCancellationDialog } from '../components/OrderCancellationDialog';
-
 // Order status constants (matching the actual database values)
 // const ORDER_STATUSES = {
 //   PENDING: 'pending_confirmation',
@@ -62,8 +61,19 @@ const OnlineOrdersScreen: React.FC<OnlineOrdersScreenProps> = (props) => {
   const [cashAmount, setCashAmount] = useState<number>(0);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   
-  // Tab-based organization state
-  const [activeTab, setActiveTab] = useState<'pending' | 'confirmed' | 'ready' | 'for_payment' | 'completed'>('pending');
+  // Delivery booking state
+  const [showBookDeliveryModal, setShowBookDeliveryModal] = useState(false);
+  const [orderForDelivery, setOrderForDelivery] = useState<OnlineOrder | null>(null);
+  const [deliveryFee, setDeliveryFee] = useState<number>(0);
+  const [trackingNumber, setTrackingNumber] = useState<string>('');
+  const [riderName, setRiderName] = useState<string>('');
+  const [isProcessingDelivery, setIsProcessingDelivery] = useState(false);
+  
+  // Map modal state
+  const [showMapModal, setShowMapModal] = useState(false);
+  const [mapCoordinates, setMapCoordinates] = useState<{lat: number, lng: number} | null>(null);
+  const [mapAddress, setMapAddress] = useState<string>('');
+  
 
   const getCurrentBranchId = () => {
     // Use prop branchId if provided, otherwise get from current user
@@ -82,13 +92,33 @@ const OnlineOrdersScreen: React.FC<OnlineOrdersScreenProps> = (props) => {
     return 'default-branch';
   };
 
-  // Helper functions for tab management
-  const getOrdersByStatus = (status: string) => {
-    return orders.filter(order => order.status === status);
-  };
 
-  const getTabCount = (status: string) => {
-    return getOrdersByStatus(status).length;
+
+  // Helper function to get filtered orders based on current filters
+  const getFilteredOrders = () => {
+    let filteredOrders = orders;
+
+    // Filter by status if specified
+    if (filters.status) {
+      filteredOrders = filteredOrders.filter(order => order.status === filters.status);
+    }
+
+    // Filter by order type if specified
+    if (filters.order_type) {
+      filteredOrders = filteredOrders.filter(order => order.order_type === filters.order_type);
+    }
+
+    // Filter by search term if specified
+    if (searchTerm) {
+      const searchLower = searchTerm.toLowerCase();
+      filteredOrders = filteredOrders.filter(order => 
+        order.order_number.toLowerCase().includes(searchLower) ||
+        order.customer_name.toLowerCase().includes(searchLower) ||
+        order.customer_phone.toLowerCase().includes(searchLower)
+      );
+    }
+
+    return filteredOrders;
   };
 
 
@@ -212,9 +242,8 @@ const OnlineOrdersScreen: React.FC<OnlineOrdersScreenProps> = (props) => {
       const result = await OnlineOrdersService.confirmOrder(orderId, currentBranchId);
       
       if (result.success) {
-        // Refresh orders list and switch to confirmed tab
+        // Refresh orders list
         await loadOrders();
-        setActiveTab('confirmed');
         alert('✅ ' + result.message);
       } else {
         if (result.missingItems && result.missingItems.length > 0) {
@@ -270,9 +299,8 @@ const OnlineOrdersScreen: React.FC<OnlineOrdersScreenProps> = (props) => {
       const result = await OnlineOrdersService.markOrderReady(orderId);
       
       if (result.success) {
-        // Refresh orders list and switch to ready tab
+        // Refresh orders list
         await loadOrders();
-        setActiveTab('ready');
         alert('✅ ' + result.message);
       } else {
         alert('❌ ' + result.message);
@@ -306,9 +334,8 @@ const OnlineOrdersScreen: React.FC<OnlineOrdersScreenProps> = (props) => {
         setCashAmount(order.total_amount);
         setShowPaymentModal(true);
         
-        // Refresh orders list and switch to for_payment tab
+        // Refresh orders list
         await loadOrders();
-        setActiveTab('for_payment');
       } else {
         alert('❌ Failed to move order to payment');
       }
@@ -340,9 +367,8 @@ const OnlineOrdersScreen: React.FC<OnlineOrdersScreenProps> = (props) => {
         setShowPaymentModal(false);
         setOrderForPayment(null);
         
-        // Refresh orders list and switch to completed tab
+        // Refresh orders list
         await loadOrders();
-        setActiveTab('completed');
         alert('✅ Payment processed successfully! Order completed.');
       } else {
         alert('❌ ' + result.message);
@@ -362,9 +388,8 @@ const OnlineOrdersScreen: React.FC<OnlineOrdersScreenProps> = (props) => {
       const result = await OnlineOrdersService.completeOrder(orderId);
       
       if (result.success) {
-        // Refresh orders list and switch to completed tab
+        // Refresh orders list
         await loadOrders();
-        setActiveTab('completed');
         alert('✅ ' + result.message);
       } else {
         alert('❌ ' + result.message);
@@ -377,12 +402,75 @@ const OnlineOrdersScreen: React.FC<OnlineOrdersScreenProps> = (props) => {
     }
   };
 
+  const handleBookDelivery = (order: OnlineOrder) => {
+    setOrderForDelivery(order);
+    setDeliveryFee(order.delivery_fee || 0);
+    setTrackingNumber(order.delivery_tracking_number || '');
+    setRiderName('');
+    setShowBookDeliveryModal(true);
+  };
+
+  const handleMarkAsDispatched = async () => {
+    if (!orderForDelivery) return;
+    
+    try {
+      setIsProcessingDelivery(true);
+      
+      // Update order status to 'for_dispatch' and add delivery details
+      const result = await OnlineOrdersService.updateOrderStatus(
+        orderForDelivery.id, 
+        'for_dispatch',
+        getCurrentBranchId()
+      );
+      
+      if (result) {
+        // Update delivery details in the order
+        const { supabase } = await import('../../pwa/src/services/supabase');
+        const { error: updateError } = await supabase
+          .from('orders')
+          .update({
+            delivery_fee: deliveryFee,
+            delivery_tracking_number: trackingNumber || null,
+            delivery_status: 'booked',
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', orderForDelivery.id);
+        
+        if (updateError) {
+          console.error('Error updating delivery details:', updateError);
+          alert('❌ Failed to update delivery details');
+          return;
+        }
+        
+        // Close modal and refresh orders
+        setShowBookDeliveryModal(false);
+        setOrderForDelivery(null);
+        await loadOrders();
+        alert('✅ Delivery booked successfully! Order marked as For Dispatch.');
+      } else {
+        alert('❌ Failed to update order status');
+      }
+    } catch (error) {
+      console.error('Error booking delivery:', error);
+      alert('❌ Failed to book delivery');
+    } finally {
+      setIsProcessingDelivery(false);
+    }
+  };
+
+  const handleShowMap = (lat: number, lng: number, address: string) => {
+    setMapCoordinates({ lat, lng });
+    setMapAddress(address);
+    setShowMapModal(true);
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'pending': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
       case 'confirmed': return 'bg-blue-100 text-blue-800 border-blue-200';
       case 'ready': return 'bg-green-100 text-green-800 border-green-200';
       case 'for_payment': return 'bg-purple-100 text-purple-800 border-purple-200';
+      case 'for_dispatch': return 'bg-orange-100 text-orange-800 border-orange-200';
       case 'completed': return 'bg-gray-100 text-gray-800 border-gray-200';
       case 'cancelled': return 'bg-red-100 text-red-800 border-red-200';
       default: return 'bg-gray-100 text-gray-800 border-gray-200';
@@ -398,12 +486,32 @@ const OnlineOrdersScreen: React.FC<OnlineOrdersScreenProps> = (props) => {
     }
   };
 
+  // Helper function to render order type badge
+  const typeBadge = (orderType: string) => {
+    if (orderType === 'pickup') {
+      return (
+        <span className="ml-2 px-2 py-1 text-xs rounded-full text-green-700 bg-green-100 font-medium">
+          Pickup
+        </span>
+      );
+    }
+    if (orderType === 'delivery') {
+      return (
+        <span className="ml-2 px-2 py-1 text-xs rounded-full text-purple-700 bg-purple-100 font-medium">
+          Delivery
+        </span>
+      );
+    }
+    return null;
+  };
+
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'pending': return Clock;
       case 'confirmed': return CheckCircle;
       case 'ready': return Package;
       case 'for_payment': return ShoppingBag;
+      case 'for_dispatch': return Truck;
       case 'completed': return CheckCircle;
       case 'cancelled': return XCircle;
       default: return Clock;
@@ -427,7 +535,7 @@ const OnlineOrdersScreen: React.FC<OnlineOrdersScreenProps> = (props) => {
     });
   };
 
-  const getStatusActions = (status: string, _order?: OnlineOrder) => {
+  const getStatusActions = (status: string, order?: OnlineOrder) => {
     const actions = [];
     
     if (status === 'pending_confirmation') {
@@ -446,13 +554,25 @@ const OnlineOrdersScreen: React.FC<OnlineOrdersScreenProps> = (props) => {
         icon: X
       });
     } else if (status === 'confirmed') {
-      actions.push({ 
-        label: 'Mark Ready', 
-        status: 'ready_for_pickup', 
-        color: 'bg-green-500 hover:bg-green-600 text-white shadow-sm',
-        action: 'ready',
-        icon: Package
-      });
+      // For delivery orders, show "Book Delivery" button
+      if (order?.order_type === 'delivery') {
+        actions.push({ 
+          label: '🚚 Book Delivery', 
+          status: 'for_dispatch', 
+          color: 'bg-orange-500 hover:bg-orange-600 text-white shadow-sm',
+          action: 'book_delivery',
+          icon: Truck
+        });
+      } else {
+        // For pickup orders, show "Mark Ready" button
+        actions.push({ 
+          label: 'Mark Ready', 
+          status: 'ready_for_pickup', 
+          color: 'bg-green-500 hover:bg-green-600 text-white shadow-sm',
+          action: 'ready',
+          icon: Package
+        });
+      }
       actions.push({ 
         label: 'Cancel', 
         status: 'cancelled', 
@@ -467,6 +587,21 @@ const OnlineOrdersScreen: React.FC<OnlineOrdersScreenProps> = (props) => {
         color: 'bg-purple-500 hover:bg-purple-600 text-white shadow-sm',
         action: 'proceed_to_payment',
         icon: ShoppingBag
+      });
+      actions.push({ 
+        label: 'Cancel', 
+        status: 'cancelled', 
+        color: 'bg-gray-100 hover:bg-gray-200 text-gray-700 border border-gray-300',
+        action: 'cancel',
+        icon: X
+      });
+    } else if (status === 'for_dispatch') {
+      actions.push({ 
+        label: 'Mark Ready', 
+        status: 'ready_for_pickup', 
+        color: 'bg-green-500 hover:bg-green-600 text-white shadow-sm',
+        action: 'ready',
+        icon: Package
       });
       actions.push({ 
         label: 'Cancel', 
@@ -557,48 +692,6 @@ const OnlineOrdersScreen: React.FC<OnlineOrdersScreenProps> = (props) => {
         </div>
       </div>
 
-      {/* Tab Navigation */}
-      <div className="bg-white border-b border-gray-200">
-        <div className="px-6">
-          <nav className="flex space-x-8">
-            {[
-              { key: 'pending', label: 'Pending', status: 'pending_confirmation', icon: Clock, color: 'text-yellow-600' },
-              { key: 'confirmed', label: 'Confirmed', status: 'confirmed', icon: CheckCircle, color: 'text-blue-600' },
-              { key: 'ready', label: 'Ready', status: 'ready_for_pickup', icon: CheckCircle, color: 'text-green-600' },
-              { key: 'for_payment', label: 'For Payment', status: 'for_payment', icon: ShoppingBag, color: 'text-purple-600' },
-              { key: 'completed', label: 'Completed', status: 'completed', icon: CheckCircle, color: 'text-emerald-600' }
-            ].map((tab) => {
-              const IconComponent = tab.icon;
-              const count = getTabCount(tab.status);
-              const isActive = activeTab === tab.key;
-              
-              return (
-                <button
-                  key={tab.key}
-                  onClick={() => setActiveTab(tab.key as any)}
-                  className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
-                    isActive
-                      ? 'border-emerald-500 text-emerald-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                  }`}
-                >
-                  <IconComponent className={`w-4 h-4 ${isActive ? 'text-emerald-600' : tab.color}`} />
-                  <span>{tab.label}</span>
-                  {count > 0 && (
-                    <span className={`ml-2 py-0.5 px-2 rounded-full text-xs font-medium ${
-                      isActive 
-                        ? 'bg-emerald-100 text-emerald-600' 
-                        : 'bg-gray-100 text-gray-600'
-                    }`}>
-                      {count}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </nav>
-        </div>
-      </div>
 
       {/* Orders List */}
       <div className="flex-1 overflow-y-auto p-6">
@@ -607,419 +700,217 @@ const OnlineOrdersScreen: React.FC<OnlineOrdersScreenProps> = (props) => {
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-600"></div>
           </div>
         ) : (() => {
-          const currentOrders = getOrdersByStatus(
-            activeTab === 'pending' ? 'pending_confirmation' :
-            activeTab === 'confirmed' ? 'confirmed' :
-            activeTab === 'ready' ? 'ready_for_pickup' :
-            activeTab === 'for_payment' ? 'for_payment' :
-            'completed'
-          );
+          const filteredOrders = getFilteredOrders();
           
-          console.log(`🔍 Tab filtering debug:`, {
-            activeTab,
+          console.log(`🔍 Filtering debug:`, {
             totalOrders: orders.length,
-            allOrderStatuses: orders.map(o => ({ id: o.id, status: o.status })),
-            filteredOrders: currentOrders.length,
-            filteredOrderIds: currentOrders.map(o => o.id)
+            filteredOrders: filteredOrders.length,
+            filters,
+            searchTerm,
+            allOrderStatuses: orders.map(o => ({ id: o.id, status: o.status, order_type: o.order_type })),
+            filteredOrderIds: filteredOrders.map(o => o.id)
           });
           
-          return currentOrders.length === 0 ? (
+          return filteredOrders.length === 0 ? (
             <div className="text-center py-12">
               <ShoppingBag className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-              <p className="text-gray-500 text-lg">No {activeTab} orders</p>
+              <p className="text-gray-500 text-lg">No orders found</p>
               <p className="text-gray-400">
-                {activeTab === 'pending' 
-                  ? 'New orders will appear here when customers place them'
-                  : `No orders in ${activeTab} status at the moment`
+                {searchTerm || filters.status || filters.order_type
+                  ? 'Try adjusting your search or filter criteria'
+                  : 'New orders will appear here when customers place them'
                 }
               </p>
             </div>
           ) : (
             <div className="space-y-4">
-              {currentOrders.map(order => {
+              {filteredOrders.map(order => {
               const OrderTypeIcon = getOrderTypeIcon(order.order_type);
               const StatusIcon = getStatusIcon(order.status);
-              const statusActions = getStatusActions(order.status);
+              const statusActions = getStatusActions(order.status, order);
 
               return (
                 <div
                   key={order.id}
                   className="bg-white border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow"
                 >
-                  {/* Enhanced Layout for For Payment Orders */}
-                  {order.status === 'for_payment' ? (
-                    <div className="space-y-4">
-                      {/* Header with Status and Payment Info */}
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-3">
-                          <div className="w-3 h-3 bg-purple-500 rounded-full"></div>
-                          <h3 className="text-lg font-semibold text-gray-900">
-                            {order.order_number}
-                          </h3>
-                          <span className="px-3 py-1 bg-purple-100 text-purple-800 rounded-full text-sm font-medium">
-                            For Payment
-                          </span>
-                          <span className="text-sm text-gray-600">
-                            💳 Customer at counter
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Customer and Order Details Grid */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div className="space-y-2">
-                          <h4 className="font-medium text-gray-900">{order.customer_name}</h4>
-                          <div className="space-y-1 text-sm text-gray-600">
-                            <p className="flex items-center">
-                              <Phone className="w-4 h-4 mr-2" />
-                              {order.customer_phone}
-                            </p>
-                            <p className="flex items-center">
-                              <MapPin className="w-4 h-4 mr-2" />
-                              {order.customer_address}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="space-y-2">
-                          <h4 className="font-medium text-gray-900">Payment Details</h4>
-                          <div className="space-y-1 text-sm text-gray-600">
-                            <p>Type: <span className="capitalize">{order.order_type}</span></p>
-                            <p>Payment: <span className="capitalize">{order.payment_method}</span></p>
-                            <p>Total: <span className="font-semibold text-emerald-600">{formatPrice(order.total_amount)}</span></p>
-                            {order.ready_at && (
-                              <p>Ready: {formatDateTime(order.ready_at)}</p>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Items Section */}
-                      <div>
-                        <h4 className="font-medium text-gray-900 mb-2">Items ({order.items.length}):</h4>
-                        <div className="space-y-1">
-                          {order.items.map(item => (
-                            <div key={item.id} className="flex justify-between text-sm">
-                              <span>• {item.product_name} x {item.quantity}</span>
-                              <span className="font-medium">{formatPrice(item.line_total)}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Payment Instructions */}
-                      <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                        <div className="flex items-start space-x-3">
-                          <ShoppingBag className="w-5 h-5 text-purple-600 mt-0.5" />
-                          <div>
-                            <h4 className="font-medium text-purple-900 mb-1">Payment Processing</h4>
-                            <p className="text-sm text-purple-700">
-                              Customer is at the counter. Process payment through POS system and complete the transaction.
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Action Buttons */}
-                      <div className="flex items-center space-x-3 pt-2">
-                        <button
-                          onClick={() => {
-                            setSelectedOrder(order);
-                            setShowOrderDetails(true);
-                          }}
-                          className="flex items-center space-x-2 px-4 py-2 bg-white border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 hover:border-gray-300 transition-colors shadow-sm"
-                        >
-                          <Eye className="w-4 h-4" />
-                          <span>View Details</span>
-                        </button>
-                        
-                        {statusActions.map((action, index) => {
-                          const IconComponent = action.icon;
-                          const isProcessing = processingOrderId === order.id;
-                          
-                          return (
-                            <button
-                              key={index}
-                              onClick={() => {
-                                if (action.action === 'proceed_to_payment') {
-                                  handleProceedToPayment(order.id);
-                                } else if (action.action === 'complete') {
-                                  handleCompleteOrder(order.id);
-                                } else if (action.action === 'cancel') {
-                                  handleCancelOrder(order);
-                                } else {
-                                  // Fallback to old method
-                                  updateOrderStatus(order.id, action.status as OnlineOrder['status']);
-                                }
-                              }}
-                              disabled={isProcessing}
-                              className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-medium transition-all duration-200 ${action.color} disabled:opacity-50 disabled:cursor-not-allowed`}
-                            >
-                              {isProcessing ? (
-                                <RefreshCw className="w-4 h-4 animate-spin" />
-                              ) : (
-                                <IconComponent className="w-4 h-4" />
-                              )}
-                              <span>{isProcessing ? 'Processing...' : action.label}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ) : order.status === 'confirmed' ? (
-                    <div className="space-y-4">
-                      {/* Header with Status and Time */}
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-3">
-                          <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
-                          <h3 className="text-lg font-semibold text-gray-900">
-                            {order.order_number}
-                          </h3>
-                          <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
-                            Confirmed
-                          </span>
-                          {order.estimated_ready_time && (
-                            <span className="text-sm text-gray-600">
-                              🕐 {getTimeUntilReady(order.estimated_ready_time)}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Customer and Order Details Grid */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div className="space-y-2">
-                          <h4 className="font-medium text-gray-900">{order.customer_name}</h4>
-                          <div className="space-y-1 text-sm text-gray-600">
-                            <p className="flex items-center">
-                              <Phone className="w-4 h-4 mr-2" />
-                              {order.customer_phone}
-                            </p>
-                            <p className="flex items-center">
-                              <MapPin className="w-4 h-4 mr-2" />
-                              {order.customer_address}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="space-y-2">
-                          <h4 className="font-medium text-gray-900">Order Details</h4>
-                          <div className="space-y-1 text-sm text-gray-600">
-                            <p>Type: <span className="capitalize">{order.order_type}</span></p>
-                            <p>Payment: <span className="capitalize">{order.payment_method}</span></p>
-                            <p>Total: <span className="font-semibold text-emerald-600">{formatPrice(order.total_amount)}</span></p>
-                            {order.confirmed_at && (
-                              <p>Confirmed: {formatDateTime(order.confirmed_at)}</p>
-                            )}
-                            {order.estimated_ready_time && (
-                              <p>Ready by: {formatDateTime(order.estimated_ready_time)}</p>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Items Section */}
-                      <div>
-                        <h4 className="font-medium text-gray-900 mb-2">Items ({order.items.length}):</h4>
-                        <div className="space-y-1">
-                          {order.items.map(item => (
-                            <div key={item.id} className="flex justify-between text-sm">
-                              <span>• {item.product_name} x {item.quantity}</span>
-                              <span className="font-medium">{formatPrice(item.line_total)}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Progress Bar */}
-                      {order.confirmed_at && order.estimated_ready_time && (
-                        <div>
-                          <div className="flex items-center justify-between text-sm text-gray-600 mb-2">
-                            <span>Progress: Preparing items...</span>
-                            <span>{Math.round(getProgressPercentage(order.confirmed_at, order.estimated_ready_time))}%</span>
-                          </div>
-                          <div className="w-full bg-gray-200 rounded-full h-2">
-                            <div 
-                              className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                              style={{ width: `${getProgressPercentage(order.confirmed_at, order.estimated_ready_time)}%` }}
-                            ></div>
-                          </div>
-                        </div>
+                  {/* Order Header */}
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center space-x-3">
+                      <OrderTypeIcon className="w-5 h-5 text-emerald-600" />
+                      <h3 className="text-lg font-semibold text-gray-900">
+                        {order.order_number}
+                        {typeBadge(order.order_type)}
+                      </h3>
+                      <span className={`px-3 py-1 rounded-full text-sm font-medium border ${getStatusColor(order.status)}`}>
+                        <StatusIcon className="w-4 h-4 inline mr-1" />
+                        {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
+                      </span>
+                      {order.status === 'confirmed' && order.estimated_ready_time && (
+                        <span className="text-sm text-gray-600">
+                          🕐 {getTimeUntilReady(order.estimated_ready_time)}
+                        </span>
                       )}
-
-                      {/* Action Buttons */}
-                      <div className="flex items-center space-x-3 pt-2">
-                        <button
-                          onClick={() => {
-                            setSelectedOrder(order);
-                            setShowOrderDetails(true);
-                          }}
-                          className="flex items-center space-x-2 px-4 py-2 bg-white border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 hover:border-gray-300 transition-colors shadow-sm"
-                        >
-                          <Eye className="w-4 h-4" />
-                          <span>View Details</span>
-                        </button>
-                        
-                        {statusActions.map((action, index) => {
-                          const IconComponent = action.icon;
-                          const isProcessing = processingOrderId === order.id;
-                          
-                          return (
-                            <button
-                              key={index}
-                              onClick={() => {
-                                if (action.action === 'confirm') {
-                                  handleConfirmOrder(order.id);
-                                } else if (action.action === 'cancel') {
-                                  handleCancelOrder(order);
-                                } else if (action.action === 'ready') {
-                                  handleMarkReady(order.id);
-                                } else if (action.action === 'proceed_to_payment') {
-                                  handleProceedToPayment(order.id);
-                                } else if (action.action === 'complete') {
-                                  handleCompleteOrder(order.id);
-                                } else {
-                                  // Fallback to old method
-                                  updateOrderStatus(order.id, action.status as OnlineOrder['status']);
-                                }
-                              }}
-                              disabled={isProcessing}
-                              className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-medium transition-all duration-200 ${action.color} disabled:opacity-50 disabled:cursor-not-allowed`}
-                            >
-                              {isProcessing ? (
-                                <RefreshCw className="w-4 h-4 animate-spin" />
-                              ) : (
-                                <IconComponent className="w-4 h-4" />
-                              )}
-                              <span>{isProcessing ? 'Processing...' : action.label}</span>
-                            </button>
-                          );
-                        })}
+                    </div>
+                    <div className="text-right">
+                      <div className="text-lg font-semibold text-emerald-600">
+                        {formatPrice(order.total_amount)}
+                      </div>
+                      <div className="text-sm text-gray-500">
+                        {formatDateTime(order.created_at)}
                       </div>
                     </div>
-                  ) : (
-                    /* Standard Layout for Other Statuses */
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center space-x-3 mb-3">
-                          <OrderTypeIcon className="w-5 h-5 text-emerald-600" />
-                          <h3 className="text-lg font-semibold text-gray-900">
-                            {order.order_number}
-                          </h3>
-                          <div className="flex items-center space-x-2">
-                            <span className={`px-3 py-1 rounded-full text-sm font-medium border ${getStatusColor(order.status)}`}>
-                              <StatusIcon className="w-4 h-4 inline mr-1" />
-                              {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
-                            </span>
-                            {(order.status as any) === 'confirmed' && order.estimated_ready_time && (
-                              <span className="text-sm text-gray-600">
-                                🕐 {getTimeUntilReady(order.estimated_ready_time)}
-                              </span>
-                            )}
-                          </div>
-                        </div>
+                  </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                          <div>
-                            <h4 className="font-medium text-gray-900 mb-2">Customer Information</h4>
-                            <div className="space-y-1 text-sm text-gray-600">
-                              <p className="flex items-center">
-                                <span className="font-medium">{order.customer_name}</span>
-                              </p>
-                              <p className="flex items-center">
-                                <Phone className="w-4 h-4 mr-2" />
-                                {order.customer_phone}
-                              </p>
-                              <p className="flex items-center">
-                                <MapPin className="w-4 h-4 mr-2" />
-                                {order.customer_address}
-                              </p>
-                            </div>
-                          </div>
+                  {/* Customer and Order Details */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div>
+                      <h4 className="font-medium text-gray-900 mb-2">Customer Information</h4>
+                      <div className="space-y-1 text-sm text-gray-600">
+                        <p><strong>Name:</strong> {order.customer_name}</p>
+                        <p className="flex items-center">
+                          <Phone className="w-4 h-4 mr-2" />
+                          {order.customer_phone}
+                        </p>
+                        <p className="flex items-center">
+                          <MapPin className="w-4 h-4 mr-2" />
+                          {order.customer_address}
+                        </p>
+                      </div>
+                    </div>
 
-                          <div>
-                            <h4 className="font-medium text-gray-900 mb-2">Order Details</h4>
-                            <div className="space-y-1 text-sm text-gray-600">
-                              <p>Type: <span className="capitalize">{order.order_type}</span></p>
-                              <p>Payment: <span className="capitalize">{order.payment_method}</span></p>
-                              <p>Total: <span className="font-semibold text-emerald-600">{formatPrice(order.total_amount)}</span></p>
-                              <p>Ordered: {formatDateTime(order.created_at)}</p>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="mb-4">
-                          <h4 className="font-medium text-gray-900 mb-2">Items ({order.items.length})</h4>
-                          <div className="space-y-1">
-                            {order.items.map(item => (
-                              <div key={item.id} className="flex justify-between text-sm">
-                                <span>{item.product_name} x {item.quantity}</span>
-                                <span className="font-medium">{formatPrice(item.line_total)}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-
-                        {order.special_instructions && (
-                          <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                            <p className="text-sm text-yellow-800">
-                              <AlertCircle className="w-4 h-4 inline mr-1" />
-                              <strong>Special Instructions:</strong> {order.special_instructions}
-                            </p>
-                          </div>
+                    <div>
+                      <h4 className="font-medium text-gray-900 mb-2">Order Details</h4>
+                      <div className="space-y-1 text-sm text-gray-600">
+                        <p><strong>Type:</strong> <span className="capitalize">{order.order_type}</span></p>
+                        <p><strong>Payment:</strong> <span className="capitalize">{order.payment_method}</span></p>
+                        <p><strong>Status:</strong> <span className="capitalize">{order.status}</span></p>
+                        {order.confirmed_at && (
+                          <p><strong>Confirmed:</strong> {formatDateTime(order.confirmed_at)}</p>
+                        )}
+                        {order.estimated_ready_time && (
+                          <p><strong>Ready by:</strong> {formatDateTime(order.estimated_ready_time)}</p>
                         )}
                       </div>
+                    </div>
+                  </div>
 
-                      <div className="flex flex-col space-y-2 ml-4">
-                        <button
-                          onClick={() => {
-                            setSelectedOrder(order);
-                            setShowOrderDetails(true);
-                          }}
-                          className="flex items-center space-x-2 px-4 py-2 bg-white border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 hover:border-gray-300 transition-colors shadow-sm"
-                        >
-                          <Eye className="w-4 h-4" />
-                          <span>View Details</span>
-                        </button>
-                        
-                        {statusActions.map((action, index) => {
-                          const IconComponent = action.icon;
-                          const isProcessing = processingOrderId === order.id;
-                          
-                          return (
-                            <button
-                              key={index}
-                              onClick={() => {
-                                if (action.action === 'confirm') {
-                                  handleConfirmOrder(order.id);
-                                } else if (action.action === 'cancel') {
-                                  handleCancelOrder(order);
-                                } else if (action.action === 'ready') {
-                                  handleMarkReady(order.id);
-                                } else if (action.action === 'proceed_to_payment') {
-                                  handleProceedToPayment(order.id);
-                                } else if (action.action === 'complete') {
-                                  handleCompleteOrder(order.id);
-                                } else {
-                                  // Fallback to old method
-                                  updateOrderStatus(order.id, action.status as OnlineOrder['status']);
-                                }
-                              }}
-                              disabled={isProcessing}
-                              className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-medium transition-all duration-200 ${action.color} disabled:opacity-50 disabled:cursor-not-allowed`}
-                            >
-                              {isProcessing ? (
-                                <RefreshCw className="w-4 h-4 animate-spin" />
-                              ) : (
-                                <IconComponent className="w-4 h-4" />
-                              )}
-                              <span>{isProcessing ? 'Processing...' : action.label}</span>
-                            </button>
-                          );
-                        })}
+                  {/* Items Section */}
+                  <div className="mb-4">
+                    <h4 className="font-medium text-gray-900 mb-2">Items ({order.items.length})</h4>
+                    <div className="space-y-1">
+                      {order.items.map(item => (
+                        <div key={item.id} className="flex justify-between text-sm">
+                          <span>• {item.product_name} x {item.quantity}</span>
+                          <span className="font-medium">{formatPrice(item.line_total)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Delivery Information (for delivery orders) */}
+                  {order.order_type === 'delivery' && (
+                    <div className="mb-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
+                      <h4 className="font-medium text-purple-900 mb-2 flex items-center">
+                        <Truck className="w-4 h-4 mr-2" />
+                        Delivery Information
+                      </h4>
+                      <div className="space-y-1 text-sm text-purple-700">
+                        <p><strong>Method:</strong> {order.delivery_method || 'Maxim'}</p>
+                        <p><strong>Address:</strong> {order.delivery_address || 'Not specified'}</p>
+                        {order.delivery_landmark && (
+                          <p><strong>Landmark:</strong> {order.delivery_landmark}</p>
+                        )}
+                        {order.delivery_fee && (
+                          <p><strong>Fee:</strong> {formatPrice(order.delivery_fee)}</p>
+                        )}
+                        {order.delivery_tracking_number && (
+                          <p><strong>Tracking #:</strong> {order.delivery_tracking_number}</p>
+                        )}
+                        {order.delivery_status && (
+                          <p><strong>Status:</strong> <span className="capitalize">{order.delivery_status}</span></p>
+                        )}
                       </div>
                     </div>
                   )}
+
+                  {/* Special Instructions */}
+                  {order.special_instructions && (
+                    <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                      <p className="text-sm text-yellow-800">
+                        <AlertCircle className="w-4 h-4 inline mr-1" />
+                        <strong>Special Instructions:</strong> {order.special_instructions}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Progress Bar (for confirmed orders) */}
+                  {order.status === 'confirmed' && order.confirmed_at && order.estimated_ready_time && (
+                    <div className="mb-4">
+                      <div className="flex items-center justify-between text-sm text-gray-600 mb-2">
+                        <span>Progress: Preparing items...</span>
+                        <span>{Math.round(getProgressPercentage(order.confirmed_at, order.estimated_ready_time))}%</span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div 
+                          className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                          style={{ width: `${getProgressPercentage(order.confirmed_at, order.estimated_ready_time)}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Action Buttons */}
+                  <div className="flex items-center space-x-3 pt-2">
+                    <button
+                      onClick={() => {
+                        setSelectedOrder(order);
+                        setShowOrderDetails(true);
+                      }}
+                      className="flex items-center space-x-2 px-4 py-2 bg-white border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 hover:border-gray-300 transition-colors shadow-sm"
+                    >
+                      <Eye className="w-4 h-4" />
+                      <span>View Details</span>
+                    </button>
+                    
+                    {statusActions.map((action, index) => {
+                      const IconComponent = action.icon;
+                      const isProcessing = processingOrderId === order.id;
+                      
+                      return (
+                        <button
+                          key={index}
+                          onClick={() => {
+                            if (action.action === 'confirm') {
+                              handleConfirmOrder(order.id);
+                            } else if (action.action === 'cancel') {
+                              handleCancelOrder(order);
+                            } else if (action.action === 'ready') {
+                              handleMarkReady(order.id);
+                            } else if (action.action === 'proceed_to_payment') {
+                              handleProceedToPayment(order.id);
+                            } else if (action.action === 'complete') {
+                              handleCompleteOrder(order.id);
+                            } else if (action.action === 'book_delivery') {
+                              handleBookDelivery(order);
+                            } else {
+                              // Fallback to old method
+                              updateOrderStatus(order.id, action.status as OnlineOrder['status']);
+                            }
+                          }}
+                          disabled={isProcessing}
+                          className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-medium transition-all duration-200 ${action.color} disabled:opacity-50 disabled:cursor-not-allowed`}
+                        >
+                          {isProcessing ? (
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <IconComponent className="w-4 h-4" />
+                          )}
+                          <span>{isProcessing ? 'Processing...' : action.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               );
             })}
@@ -1155,6 +1046,89 @@ const OnlineOrdersScreen: React.FC<OnlineOrdersScreenProps> = (props) => {
               </div>
             </div>
 
+            {/* Delivery Information (for delivery orders) */}
+            {selectedOrder.order_type === 'delivery' && (
+              <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                <h3 className="font-semibold text-purple-900 mb-3 flex items-center">
+                  <Truck className="w-4 h-4 mr-2" />
+                  Delivery Information
+                </h3>
+                <div className="space-y-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-sm text-purple-700 font-medium">Delivery Method</p>
+                      <p className="text-purple-900 capitalize">{selectedOrder.delivery_method || 'Maxim'}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-purple-700 font-medium">Delivery Status</p>
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        selectedOrder.delivery_status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                        selectedOrder.delivery_status === 'booked' ? 'bg-blue-100 text-blue-800' :
+                        selectedOrder.delivery_status === 'in_transit' ? 'bg-orange-100 text-orange-800' :
+                        selectedOrder.delivery_status === 'delivered' ? 'bg-green-100 text-green-800' :
+                        selectedOrder.delivery_status === 'failed' ? 'bg-red-100 text-red-800' :
+                        'bg-gray-100 text-gray-800'
+                      }`}>
+                        {selectedOrder.delivery_status ? selectedOrder.delivery_status.charAt(0).toUpperCase() + selectedOrder.delivery_status.slice(1) : 'Pending'}
+                      </span>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <p className="text-sm text-purple-700 font-medium mb-2">Delivery Address</p>
+                    <div className="bg-white border border-purple-200 rounded-lg p-3">
+                      <p className="text-purple-900 font-medium">{selectedOrder.delivery_address || 'Address not specified'}</p>
+                      {selectedOrder.delivery_landmark && (
+                        <p className="text-sm text-purple-600 mt-1">
+                          <MapPin className="w-3 h-3 inline mr-1" />
+                          Near {selectedOrder.delivery_landmark}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-sm text-purple-700 font-medium">Contact Number</p>
+                      <p className="text-purple-900">{selectedOrder.delivery_contact_number || selectedOrder.customer_phone}</p>
+                    </div>
+                    {selectedOrder.delivery_tracking_number && (
+                      <div>
+                        <p className="text-sm text-purple-700 font-medium">Tracking Number</p>
+                        <p className="text-purple-900 font-mono">{selectedOrder.delivery_tracking_number}</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Map Section */}
+                  {selectedOrder.delivery_latitude && selectedOrder.delivery_longitude && (
+                    <div>
+                      <p className="text-sm text-purple-700 font-medium mb-2">Delivery Location</p>
+                      <div className="bg-white border border-purple-200 rounded-lg p-3">
+                        <div className="flex items-center space-x-2 text-sm text-purple-600">
+                          <MapPin className="w-4 h-4" />
+                          <span>Coordinates: {selectedOrder.delivery_latitude.toFixed(6)}, {selectedOrder.delivery_longitude.toFixed(6)}</span>
+                        </div>
+                        <div className="mt-2 text-xs text-purple-500">
+                          <button 
+                            onClick={() => handleShowMap(
+                              selectedOrder.delivery_latitude!, 
+                              selectedOrder.delivery_longitude!, 
+                              selectedOrder.delivery_address || 'Delivery Location'
+                            )}
+                            className="hover:text-purple-700 underline flex items-center space-x-1"
+                          >
+                            <span>📍</span>
+                            <span>View on Map</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Special Instructions */}
             {selectedOrder.special_instructions && (
               <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
@@ -1171,7 +1145,7 @@ const OnlineOrdersScreen: React.FC<OnlineOrdersScreenProps> = (props) => {
               >
                 Close
               </button>
-              {getStatusActions(selectedOrder.status).map((action, index) => {
+              {getStatusActions(selectedOrder.status, selectedOrder).map((action, index) => {
                 const IconComponent = action.icon;
                 const isProcessing = processingOrderId === selectedOrder.id;
                 
@@ -1189,6 +1163,8 @@ const OnlineOrdersScreen: React.FC<OnlineOrdersScreenProps> = (props) => {
                         handleProceedToPayment(selectedOrder.id);
                       } else if (action.action === 'complete') {
                         handleCompleteOrder(selectedOrder.id);
+                      } else if (action.action === 'book_delivery') {
+                        handleBookDelivery(selectedOrder);
                       } else {
                         // Fallback to old method
                         updateOrderStatus(selectedOrder.id, action.status as OnlineOrder['status']);
@@ -1445,8 +1421,281 @@ const OnlineOrdersScreen: React.FC<OnlineOrdersScreenProps> = (props) => {
           </div>
         </div>
       )}
+
+      {/* Book Delivery Modal */}
+      {showBookDeliveryModal && orderForDelivery && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-6 border-b">
+              <div className="flex items-center space-x-3">
+                <div className="p-2 bg-orange-100 rounded-full">
+                  <Truck className="w-5 h-5 text-orange-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Book Delivery</h3>
+                  <p className="text-sm text-gray-600">Order #{orderForDelivery.order_number}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowBookDeliveryModal(false)}
+                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+            
+            {/* Modal Content */}
+            <div className="p-6 space-y-6">
+              {/* Customer Information */}
+              <div className="bg-gray-50 rounded-lg p-4">
+                <h4 className="font-semibold text-gray-900 mb-3">Customer Information</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-gray-600">Name</p>
+                    <p className="font-medium">{orderForDelivery.customer_name}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">Phone</p>
+                    <p className="font-medium">{orderForDelivery.customer_phone}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Delivery Information */}
+              <div className="bg-purple-50 rounded-lg p-4">
+                <h4 className="font-semibold text-purple-900 mb-3 flex items-center">
+                  <MapPin className="w-4 h-4 mr-2" />
+                  Delivery Details
+                </h4>
+                <div className="space-y-2 text-sm">
+                  <p><strong>Address:</strong> {orderForDelivery.delivery_address || 'Not specified'}</p>
+                  {orderForDelivery.delivery_landmark && (
+                    <p><strong>Landmark:</strong> {orderForDelivery.delivery_landmark}</p>
+                  )}
+                  <p><strong>Contact:</strong> {orderForDelivery.delivery_contact_number || orderForDelivery.customer_phone}</p>
+                </div>
+              </div>
+
+              {/* Delivery Booking Form */}
+              <div>
+                <h4 className="font-semibold text-gray-900 mb-3">Delivery Booking</h4>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Delivery Fee (₱)
+                    </label>
+                    <input
+                      type="number"
+                      value={deliveryFee}
+                      onChange={(e) => setDeliveryFee(parseFloat(e.target.value) || 0)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                      placeholder="Enter delivery fee"
+                      min="0"
+                      step="0.01"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Tracking Number (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={trackingNumber}
+                      onChange={(e) => setTrackingNumber(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                      placeholder="Enter tracking number if available"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Rider Name (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={riderName}
+                      onChange={(e) => setRiderName(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                      placeholder="Enter rider name if known"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Instructions */}
+              <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+                <div className="flex items-start space-x-3">
+                  <AlertCircle className="w-5 h-5 text-orange-600 mt-0.5" />
+                  <div>
+                    <h4 className="font-medium text-orange-900 mb-1">Delivery Instructions</h4>
+                    <p className="text-sm text-orange-700">
+                      After booking with Maxim, update the tracking number and rider name above. 
+                      The order will be marked as "For Dispatch" and ready for pickup by the delivery rider.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            {/* Modal Footer */}
+            <div className="flex items-center justify-end space-x-3 p-6 border-t bg-gray-50">
+              <button
+                onClick={() => setShowBookDeliveryModal(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors duration-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleMarkAsDispatched}
+                disabled={isProcessingDelivery || deliveryFee < 0}
+                className="px-4 py-2 text-sm font-medium text-white bg-orange-500 hover:bg-orange-600 rounded-lg transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isProcessingDelivery ? (
+                  <div className="flex items-center space-x-2">
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Processing...</span>
+                  </div>
+                ) : (
+                  'Mark as For Dispatch'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Map Modal */}
+      {showMapModal && mapCoordinates && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-6 border-b">
+              <div className="flex items-center space-x-3">
+                <div className="p-2 bg-purple-100 rounded-full">
+                  <MapPin className="w-5 h-5 text-purple-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Delivery Location</h3>
+                  <p className="text-sm text-gray-600">{mapAddress}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowMapModal(false)}
+                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+            
+            {/* Map Container */}
+            <div className="p-6">
+              <div className="bg-gray-100 rounded-lg overflow-hidden" style={{ height: '500px' }}>
+                <DeliveryMapModal 
+                  latitude={mapCoordinates.lat}
+                  longitude={mapCoordinates.lng}
+                  address={mapAddress}
+                />
+              </div>
+              
+              {/* Coordinates Info */}
+              <div className="mt-4 p-3 bg-gray-50 rounded-lg">
+                <div className="flex items-center justify-between text-sm text-gray-600">
+                  <div className="flex items-center space-x-2">
+                    <MapPin className="w-4 h-4" />
+                    <span>Coordinates: {mapCoordinates.lat.toFixed(6)}, {mapCoordinates.lng.toFixed(6)}</span>
+                  </div>
+                  <a 
+                    href={`https://www.google.com/maps?q=${mapCoordinates.lat},${mapCoordinates.lng}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:text-blue-800 underline"
+                  >
+                    Open in Google Maps
+                  </a>
+                </div>
+              </div>
+            </div>
+            
+            {/* Modal Footer */}
+            <div className="flex items-center justify-end space-x-3 p-6 border-t bg-gray-50">
+              <button
+                onClick={() => setShowMapModal(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors duration-200"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
+};
+
+// Map Modal Component
+const DeliveryMapModal: React.FC<{
+  latitude: number;
+  longitude: number;
+  address: string;
+}> = ({ latitude, longitude, address }) => {
+  const mapRef = React.useRef<HTMLDivElement>(null);
+  const mapInstanceRef = React.useRef<any>(null);
+  const markerRef = React.useRef<any>(null);
+
+  React.useEffect(() => {
+    const initializeMap = async () => {
+      if (!mapRef.current || mapInstanceRef.current) return;
+
+      try {
+        // Dynamically import Leaflet
+        const L = (await import('leaflet')).default;
+        await import('leaflet/dist/leaflet.css');
+
+        // Create map
+        const map = L.map(mapRef.current).setView([latitude, longitude], 15);
+        mapInstanceRef.current = map;
+
+        // Add tile layer
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+
+        // Add marker
+        const marker = L.marker([latitude, longitude]).addTo(map);
+        markerRef.current = marker;
+
+        // Add popup with address
+        marker.bindPopup(`
+          <div class="p-2">
+            <h4 class="font-semibold text-gray-900">Delivery Location</h4>
+            <p class="text-sm text-gray-600 mt-1">${address}</p>
+            <p class="text-xs text-gray-500 mt-1">${latitude.toFixed(6)}, ${longitude.toFixed(6)}</p>
+          </div>
+        `).openPopup();
+
+        // Fit map to marker
+        map.fitBounds(marker.getLatLng().toBounds(1000));
+
+      } catch (error) {
+        console.error('Error initializing map:', error);
+      }
+    };
+
+    initializeMap();
+
+    // Cleanup
+    return () => {
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.remove();
+        mapInstanceRef.current = null;
+        markerRef.current = null;
+      }
+    };
+  }, [latitude, longitude, address]);
+
+  return <div ref={mapRef} className="w-full h-full" />;
 };
 
 export default OnlineOrdersScreen;

@@ -95,6 +95,8 @@ export interface LowStockItem {
   daysUntilEmpty: number;
   avgDailyUsage: number;
   unitLabel: string;
+  branchId: string;
+  branchName: string;
 }
 
 export interface InventoryFilters {
@@ -112,6 +114,9 @@ export interface InventoryMetrics {
   change?: string;
   isPositive?: boolean;
   period: string;
+  description?: string;
+  bgColor?: string;
+  icon?: any;
 }
 
 // Form data interfaces

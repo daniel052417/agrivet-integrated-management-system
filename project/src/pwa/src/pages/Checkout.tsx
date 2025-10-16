@@ -97,6 +97,21 @@ const Checkout: React.FC = () => {
               <OrderSummary
                 cart={cart}
                 branch={selectedBranch}
+                customerInfo={{
+                  name: '',
+                  email: '',
+                  phone: '',
+                  address: '',
+                  city: '',
+                  postalCode: '',
+                  isGuest: true
+                }}
+                paymentInfo={{
+                  method: 'cash',
+                  referenceNumber: '',
+                  notes: ''
+                }}
+                currentStep="customer"
               />
               
               {/* Security & Trust */}

@@ -85,14 +85,15 @@ export const ROLE_SIDEBAR_CONFIG = {
       'sales-pos', 'sales-records', 'sales-dashboard', 'daily-sales', 'product-sales',
       'staff-user-management', 'user-accounts', 'add-staff', 'roles-permissions', 'activity-logs', 'session-history', 'user-roles-overview', 'user-permissions',
       'hr', 'hr-dashboard', 'staff', 'attendance-dashboard', 'leave-management', 'hr-analytics', 'payroll',
-      'marketing', 'marketing-dashboard', 'campaigns', 'templates', 'analytics', 'notifications',
+      'marketing', 'analytics', 'notifications', 'promotions-campaigns', 'campaign-management', 'template-management', 'client-notifications', 'marketing-overview',
       'reports', 'event-center', 'settings',
     ],
   },
   [SYSTEM_ROLES.HR_ADMIN]: {
     sections: [
       'hr-dashboard', 'staff', 'attendance-dashboard', 'leave-management', 'hr-analytics', 'payroll',
-      'user-accounts', 'roles-permissions', 'activity-logs', 'session-history', 'user-roles-overview', 'user-permissions',
+      'user-accounts', 'roles-permissions', 'activity-logs', 'session-history', 'user-roles-overview', 'user-permissions', 'add-staff',
+      'hr',
     ],
   },
   [SYSTEM_ROLES.HR_STAFF]: {

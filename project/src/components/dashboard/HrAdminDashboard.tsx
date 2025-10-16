@@ -4,12 +4,12 @@ import Header from '../shared/layout/Header';
 import { CustomUser } from '../../lib/customAuth';
 
 // HR-specific components
-import HRDashboardContent from '../../components/hr/HRDashboard';
-import StaffList from '../../components/hr/StaffList';
-import AttendanceDashboard from '../../components/hr/AttendanceDashboard';
-import LeaveManagement from '../../components/hr/LeaveManagement';
-import HRAnalytics from '../../components/hr/HRAnalytics';
-import PayrollCompensation from '../../components/hr/PayrollCompensation';
+import HRDashboardContent from '../hr/HRDashboard';
+import StaffList from '../hr/StaffList';
+import AttendanceDashboard from '../hr/AttendanceDashboard';
+import LeaveManagement from '../hr/LeaveManagement';
+import HRAnalytics from '../hr/HRAnalytics';
+import PayrollCompensation from '../hr/PayrollCompensation';
 import UserAccounts from '../users/UserAccounts';
 import AddStaff from '../hr/AddStaff';
 import RolesPermissions from '../staff/RolesPermissions';

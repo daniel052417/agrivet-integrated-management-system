@@ -14,8 +14,9 @@ import {
   Calendar,
   User,
   MoreHorizontal,
-  Star,
-  Megaphone
+  X,
+  Save,
+  Upload
 } from 'lucide-react';
 
 // Mock data for email templates
@@ -82,12 +83,35 @@ const mockTemplates = [
   }
 ];
 
+interface TemplateFormData {
+  name: string;
+  subject: string;
+  type: 'email' | 'sms' | 'notification';
+  category: 'onboarding' | 'promotion' | 'transaction' | 'newsletter';
+  status: 'active' | 'draft' | 'archived';
+  description: string;
+  content: string;
+}
+
 const TemplateManagement: React.FC = () => {
-  const [activeSubTab, setActiveSubTab] = useState('featured-products');
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingTemplate, setEditingTemplate] = useState<any>(null);
+  const [formData, setFormData] = useState<TemplateFormData>({
+    name: '',
+    subject: '',
+    type: 'email',
+    category: 'onboarding',
+    status: 'draft',
+    description: '',
+    content: ''
+  });
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const getTypeIcon = (type: string) => {
     switch (type) {
@@ -134,6 +158,159 @@ const TemplateManagement: React.FC = () => {
     });
   };
 
+  // Form handling functions
+  const openCreateModal = () => {
+    setShowCreateModal(true);
+    setFormData({
+      name: '',
+      subject: '',
+      type: 'email',
+      category: 'onboarding',
+      status: 'draft',
+      description: '',
+      content: ''
+    });
+    setFormErrors({});
+  };
+
+  const closeCreateModal = () => {
+    setShowCreateModal(false);
+    setFormData({
+      name: '',
+      subject: '',
+      type: 'email',
+      category: 'onboarding',
+      status: 'draft',
+      description: '',
+      content: ''
+    });
+    setFormErrors({});
+  };
+
+  const openEditModal = (template: any) => {
+    setEditingTemplate(template);
+    setShowEditModal(true);
+    setFormData({
+      name: template.name,
+      subject: template.subject,
+      type: template.type,
+      category: template.category,
+      status: template.status,
+      description: template.description,
+      content: `This is a sample content for ${template.name}. Replace this with your actual template content.`
+    });
+    setFormErrors({});
+  };
+
+  const closeEditModal = () => {
+    setShowEditModal(false);
+    setEditingTemplate(null);
+    setFormData({
+      name: '',
+      subject: '',
+      type: 'email',
+      category: 'onboarding',
+      status: 'draft',
+      description: '',
+      content: ''
+    });
+    setFormErrors({});
+  };
+
+  const handleInputChange = (field: keyof TemplateFormData, value: any) => {
+    setFormData(prev => ({
+      ...prev,
+      [field]: value
+    }));
+    
+    if (formErrors[field]) {
+      setFormErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors[field];
+        return newErrors;
+      });
+    }
+  };
+
+  const validateForm = (): boolean => {
+    const errors: Record<string, string> = {};
+
+    if (!formData.name.trim()) {
+      errors.name = 'Template name is required';
+    }
+    if (!formData.subject.trim()) {
+      errors.subject = 'Subject is required';
+    }
+    if (!formData.description.trim()) {
+      errors.description = 'Description is required';
+    }
+    if (!formData.content.trim()) {
+      errors.content = 'Content is required';
+    }
+
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!validateForm()) {
+      return;
+    }
+
+    setIsSubmitting(true);
+    
+    try {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      const newTemplate = {
+        id: editingTemplate ? editingTemplate.id : Date.now(),
+        name: formData.name,
+        subject: formData.subject,
+        type: formData.type,
+        category: formData.category,
+        status: formData.status,
+        lastModified: new Date().toISOString().split('T')[0],
+        modifiedBy: 'Current User',
+        usageCount: editingTemplate ? editingTemplate.usageCount : 0,
+        description: formData.description
+      };
+
+      console.log('Template created/updated:', newTemplate);
+      
+      if (showCreateModal) {
+        closeCreateModal();
+      } else {
+        closeEditModal();
+      }
+      
+    } catch (err) {
+      console.error('Error saving template:', err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleCopyTemplate = (template: any) => {
+    setFormData({
+      name: `${template.name} (Copy)`,
+      subject: template.subject,
+      type: template.type,
+      category: template.category,
+      status: 'draft',
+      description: template.description,
+      content: `This is a copy of ${template.name}. Modify as needed.`
+    });
+    setShowCreateModal(true);
+  };
+
+  const handleDeleteTemplate = (templateId: number) => {
+    if (window.confirm('Are you sure you want to delete this template?')) {
+      console.log('Template deleted:', templateId);
+    }
+  };
+
   const filteredTemplates = mockTemplates.filter(template => {
     const matchesSearch = template.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          template.subject.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -144,122 +321,385 @@ const TemplateManagement: React.FC = () => {
     return matchesSearch && matchesType && matchesCategory && matchesStatus;
   });
 
-  const renderFeaturedProducts = () => (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h3 className="text-xl font-semibold text-gray-900">Featured Products</h3>
-        <button className="flex items-center space-x-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700">
-          <Plus className="w-4 h-4" />
-          <span>Add Product</span>
-        </button>
-      </div>
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <p className="text-gray-600">Featured products management functionality will be implemented here.</p>
-      </div>
-    </div>
-  );
-
-  const renderBannersAds = () => (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h3 className="text-xl font-semibold text-gray-900">Banners & Ads</h3>
-        <button className="flex items-center space-x-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700">
-          <Plus className="w-4 h-4" />
-          <span>Create Banner</span>
-        </button>
-      </div>
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <p className="text-gray-600">Banner and ad management functionality will be implemented here.</p>
-      </div>
-    </div>
-  );
-
-  const renderCreativeAssets = () => (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h3 className="text-xl font-semibold text-gray-900">Creative Assets</h3>
-        <button className="flex items-center space-x-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700">
-          <Plus className="w-4 h-4" />
-          <span>Upload Asset</span>
-        </button>
-      </div>
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <p className="text-gray-600">Creative assets management functionality will be implemented here.</p>
-      </div>
-    </div>
-  );
-
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Template Management</h2>
-          <p className="text-gray-600">Manage featured products, banners, and creative assets</p>
+          <p className="text-gray-600">Create and manage email, SMS, and notification templates</p>
         </div>
-        <div className="flex items-center space-x-3">
-          <button className="flex items-center space-x-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700">
-            <Plus className="w-4 h-4" />
-            <span>Add Product</span>
-          </button>
-          <button className="flex items-center space-x-2 border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50">
-            <Plus className="w-4 h-4" />
-            <span>Add Banner</span>
-          </button>
+        <button 
+          onClick={openCreateModal}
+          className="flex items-center space-x-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700"
+        >
+          <Plus className="w-4 h-4" />
+          <span>Create Template</span>
+        </button>
+      </div>
+
+      {/* Filters and Search */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="md:col-span-2">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+              <input
+                type="text"
+                placeholder="Search templates..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+              />
+            </div>
+          </div>
+          <select
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value)}
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+          >
+            <option value="all">All Types</option>
+            <option value="email">Email</option>
+            <option value="sms">SMS</option>
+            <option value="notification">Notification</option>
+          </select>
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+          >
+            <option value="all">All Categories</option>
+            <option value="onboarding">Onboarding</option>
+            <option value="promotion">Promotion</option>
+            <option value="transaction">Transaction</option>
+            <option value="newsletter">Newsletter</option>
+          </select>
         </div>
       </div>
 
-      {/* Sub-tabs */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200">
-        <div className="border-b border-gray-200">
-          <nav className="flex space-x-8 px-6">
-            <button 
-              onClick={() => setActiveSubTab('featured-products')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                activeSubTab === 'featured-products'
-                  ? 'border-emerald-500 text-emerald-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              <div className="flex items-center space-x-2">
-                <Star className="w-4 h-4" />
-                <span>Featured Products</span>
-              </div>
-            </button>
-            <button 
-              onClick={() => setActiveSubTab('banners-ads')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                activeSubTab === 'banners-ads'
-                  ? 'border-emerald-500 text-emerald-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              <div className="flex items-center space-x-2">
-                <Megaphone className="w-4 h-4" />
-                <span>Banners & Ads</span>
-              </div>
-            </button>
-            <button 
-              onClick={() => setActiveSubTab('creative-assets')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                activeSubTab === 'creative-assets'
-                  ? 'border-emerald-500 text-emerald-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              <div className="flex items-center space-x-2">
-                <FileText className="w-4 h-4" />
-                <span>Creative Assets</span>
-              </div>
-            </button>
-          </nav>
+      {/* Template Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Total Templates</p>
+              <p className="text-3xl font-bold text-gray-900">{mockTemplates.length}</p>
+            </div>
+            <div className="p-3 bg-blue-100 rounded-lg">
+              <FileText className="w-6 h-6 text-blue-600" />
+            </div>
+          </div>
         </div>
-        <div className="p-6">
-          {activeSubTab === 'featured-products' && renderFeaturedProducts()}
-          {activeSubTab === 'banners-ads' && renderBannersAds()}
-          {activeSubTab === 'creative-assets' && renderCreativeAssets()}
+
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Active Templates</p>
+              <p className="text-3xl font-bold text-gray-900">{mockTemplates.filter(t => t.status === 'active').length}</p>
+            </div>
+            <div className="p-3 bg-green-100 rounded-lg">
+              <Eye className="w-6 h-6 text-green-600" />
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Email Templates</p>
+              <p className="text-3xl font-bold text-gray-900">{mockTemplates.filter(t => t.type === 'email').length}</p>
+            </div>
+            <div className="p-3 bg-blue-100 rounded-lg">
+              <Mail className="w-6 h-6 text-blue-600" />
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Total Usage</p>
+              <p className="text-3xl font-bold text-gray-900">{mockTemplates.reduce((sum, t) => sum + t.usageCount, 0)}</p>
+            </div>
+            <div className="p-3 bg-purple-100 rounded-lg">
+              <MessageSquare className="w-6 h-6 text-purple-600" />
+            </div>
+          </div>
         </div>
       </div>
+
+      {/* Templates List */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200">
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Template</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Usage</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Modified</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {filteredTemplates.map((template) => (
+                <tr key={template.id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div>
+                      <div className="text-sm font-medium text-gray-900">{template.name}</div>
+                      <div className="text-sm text-gray-500 line-clamp-1">{template.subject}</div>
+                      <div className="text-xs text-gray-400 mt-1">{template.description}</div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center space-x-2">
+                      {getTypeIcon(template.type)}
+                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${getTypeColor(template.type)}`}>
+                        {template.type}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${getCategoryColor(template.category)}`}>
+                      {template.category}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(template.status)}`}>
+                      {template.status}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm text-gray-900">{template.usageCount}</div>
+                    <div className="text-xs text-gray-500">times used</div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm text-gray-900">{formatDate(template.lastModified)}</div>
+                    <div className="text-xs text-gray-500">by {template.modifiedBy}</div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                    <div className="flex items-center space-x-2">
+                      <button className="text-emerald-600 hover:text-emerald-900" title="Preview">
+                        <Eye className="w-4 h-4" />
+                      </button>
+                      <button 
+                        onClick={() => openEditModal(template)}
+                        className="text-blue-600 hover:text-blue-900" 
+                        title="Edit"
+                      >
+                        <Edit className="w-4 h-4" />
+                      </button>
+                      <button 
+                        onClick={() => handleCopyTemplate(template)}
+                        className="text-gray-600 hover:text-gray-900" 
+                        title="Copy"
+                      >
+                        <Copy className="w-4 h-4" />
+                      </button>
+                      <button 
+                        onClick={() => handleDeleteTemplate(template.id)}
+                        className="text-red-600 hover:text-red-900" 
+                        title="Delete"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Empty State */}
+      {filteredTemplates.length === 0 && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
+          <FileText className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-gray-900 mb-2">No templates found</h3>
+          <p className="text-gray-600 mb-6">Try adjusting your search criteria or create a new template.</p>
+          <button 
+            onClick={openCreateModal}
+            className="flex items-center space-x-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 mx-auto"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Create Template</span>
+          </button>
+        </div>
+      )}
+
+      {/* Create/Edit Template Modal */}
+      {(showCreateModal || showEditModal) && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <h2 className="text-xl font-semibold text-gray-900">
+                {showCreateModal ? 'Create New Template' : 'Edit Template'}
+              </h2>
+              <button
+                onClick={showCreateModal ? closeCreateModal : closeEditModal}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmit} className="p-6">
+              <div className="space-y-6">
+                {/* Template Name */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Template Name *
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.name}
+                    onChange={(e) => handleInputChange('name', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    placeholder="Enter template name"
+                  />
+                  {formErrors.name && (
+                    <p className="mt-1 text-sm text-red-600">{formErrors.name}</p>
+                  )}
+                </div>
+
+                {/* Subject */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Subject *
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.subject}
+                    onChange={(e) => handleInputChange('subject', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    placeholder="Enter email subject or SMS title"
+                  />
+                  {formErrors.subject && (
+                    <p className="mt-1 text-sm text-red-600">{formErrors.subject}</p>
+                  )}
+                </div>
+
+                {/* Type and Category */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Type *
+                    </label>
+                    <select
+                      value={formData.type}
+                      onChange={(e) => handleInputChange('type', e.target.value as any)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    >
+                      <option value="email">Email</option>
+                      <option value="sms">SMS</option>
+                      <option value="notification">Notification</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Category *
+                    </label>
+                    <select
+                      value={formData.category}
+                      onChange={(e) => handleInputChange('category', e.target.value as any)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    >
+                      <option value="onboarding">Onboarding</option>
+                      <option value="promotion">Promotion</option>
+                      <option value="transaction">Transaction</option>
+                      <option value="newsletter">Newsletter</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Description */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Description *
+                  </label>
+                  <textarea
+                    value={formData.description}
+                    onChange={(e) => handleInputChange('description', e.target.value)}
+                    rows={2}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    placeholder="Enter template description"
+                  />
+                  {formErrors.description && (
+                    <p className="mt-1 text-sm text-red-600">{formErrors.description}</p>
+                  )}
+                </div>
+
+                {/* Content */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Content *
+                  </label>
+                  <textarea
+                    value={formData.content}
+                    onChange={(e) => handleInputChange('content', e.target.value)}
+                    rows={8}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono text-sm"
+                    placeholder="Enter template content..."
+                  />
+                  {formErrors.content && (
+                    <p className="mt-1 text-sm text-red-600">{formErrors.content}</p>
+                  )}
+                  <p className="mt-1 text-xs text-gray-500">
+                    Use variables like {'{customer_name}'}, {'{order_id}'}, {'{amount}'} for dynamic content
+                  </p>
+                </div>
+
+                {/* Status */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Status
+                  </label>
+                  <select
+                    value={formData.status}
+                    onChange={(e) => handleInputChange('status', e.target.value as any)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  >
+                    <option value="draft">Draft</option>
+                    <option value="active">Active</option>
+                    <option value="archived">Archived</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Modal Actions */}
+              <div className="flex items-center justify-end space-x-3 mt-6 pt-6 border-t border-gray-200">
+                <button
+                  type="button"
+                  onClick={showCreateModal ? closeCreateModal : closeEditModal}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 border border-transparent rounded-md hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                      <span>Saving...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-4 h-4" />
+                      <span>{showCreateModal ? 'Create Template' : 'Update Template'}</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

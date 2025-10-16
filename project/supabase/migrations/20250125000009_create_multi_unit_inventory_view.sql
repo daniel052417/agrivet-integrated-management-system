@@ -142,3 +142,6 @@ GRANT SELECT ON inventory_management_view TO authenticated;
 
 
 
+
+
+

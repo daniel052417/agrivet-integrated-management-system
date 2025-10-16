@@ -553,7 +553,7 @@ export interface OnlineOrder {
   customer_address: string;
   branch_id: string;
   order_type: 'pickup' | 'delivery' | 'reservation';
-  status: 'pending_confirmation' | 'confirmed' | 'ready_for_pickup' | 'completed' | 'cancelled';
+  status: 'pending_confirmation' | 'confirmed' | 'ready_for_pickup' | 'for_payment' | 'for_dispatch' | 'completed' | 'cancelled';
   payment_status: 'pending' | 'paid' | 'failed' | 'refunded';
   payment_method: 'cash' | 'digital' | 'card';
   subtotal: number;
@@ -569,6 +569,16 @@ export interface OnlineOrder {
   updated_at: string;
   confirmed_at?: string;
   completed_at?: string;
+  ready_at?: string;
+  // Delivery-related fields
+  delivery_method?: 'maxim' | 'other';
+  delivery_address?: string;
+  delivery_contact_number?: string;
+  delivery_landmark?: string;
+  delivery_status?: 'pending' | 'booked' | 'in_transit' | 'delivered' | 'failed';
+  delivery_tracking_number?: string;
+  delivery_latitude?: number;
+  delivery_longitude?: number;
   items: OnlineOrderItem[];
 }
 
