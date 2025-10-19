@@ -7,7 +7,7 @@ import { CustomUser } from '../../lib/customAuth';
 import MarketingDashboardMain from '../marketing/MarketingDashboard';
 import CampaignManagement from '../marketing/CampaignManagement';
 import TemplateManagement from '../marketing/TemplateManagement';
-import CampaignAnalytics from '../marketing/CampaignAnalytics';
+// import CampaignAnalytics from '../marketing/CampaignAnalytics';
 import ClientNotifications from '../marketing/ClientNotifications';
 
 interface MarketingDashboardProps {
@@ -26,8 +26,8 @@ const MarketingDashboardComponent: React.FC<MarketingDashboardProps> = ({ user, 
         return <CampaignManagement />;
       case 'templates':
         return <TemplateManagement />;
-      case 'analytics':
-        return <CampaignAnalytics />;
+      // case 'analytics':
+      //   return <CampaignAnalytics />;
       case 'notifications':
         return <ClientNotifications />;
       default:

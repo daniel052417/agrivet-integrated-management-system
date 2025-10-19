@@ -1,5 +1,5 @@
 import React from 'react'
-import { X, ArrowRight, Percent, Tag, Gift, Truck } from 'lucide-react'
+import { X, ArrowRight } from 'lucide-react'
 import { PromoBannerProps } from '../../types'
 
 const PromoBanner: React.FC<PromoBannerProps> = ({ 
@@ -7,50 +7,7 @@ const PromoBanner: React.FC<PromoBannerProps> = ({
   onDismiss, 
   onAction 
 }) => {
-  const getDiscountIcon = () => {
-    switch (promotion.discountType) {
-      case 'percentage':
-        return <Percent className="w-4 h-4" />
-      case 'fixed':
-        return <Tag className="w-4 h-4" />
-      case 'bogo':
-        return <Gift className="w-4 h-4" />
-      case 'free_shipping':
-        return <Truck className="w-4 h-4" />
-      default:
-        return <Tag className="w-4 h-4" />
-    }
-  }
-
-  const getDiscountText = () => {
-    switch (promotion.discountType) {
-      case 'percentage':
-        return `${promotion.discountValue}% OFF`
-      case 'fixed':
-        return `₱${promotion.discountValue} OFF`
-      case 'bogo':
-        return 'BUY 1 GET 1'
-      case 'free_shipping':
-        return 'FREE SHIPPING'
-      default:
-        return 'SPECIAL OFFER'
-    }
-  }
-
-  const getDiscountColor = () => {
-    switch (promotion.discountType) {
-      case 'percentage':
-        return 'bg-red-500'
-      case 'fixed':
-        return 'bg-blue-500'
-      case 'bogo':
-        return 'bg-purple-500'
-      case 'free_shipping':
-        return 'bg-green-500'
-      default:
-        return 'bg-orange-500'
-    }
-  }
+  const getBannerColor = () => 'bg-emerald-600'
 
   const isExpiringSoon = () => {
     const validUntil = new Date(promotion.validUntil)
@@ -60,18 +17,20 @@ const PromoBanner: React.FC<PromoBannerProps> = ({
   }
 
   return (
-    <div className={`relative overflow-hidden ${getDiscountColor()} text-white`}>
+    <div className={`relative overflow-hidden ${getBannerColor()} text-white`}>
       <div className="max-w-7xl mx-auto px-4 py-3">
         <div className="flex items-center justify-between">
-          {/* Left side - Discount info */}
+          {/* Left side - Announcement info */}
           <div className="flex items-center space-x-3">
-            <div className="flex items-center space-x-2 bg-white/20 rounded-full px-3 py-1">
-              {getDiscountIcon()}
-              <span className="font-bold text-sm">
-                {getDiscountText()}
-              </span>
-            </div>
-            
+            {/* Carousel of images if multiple */}
+            {Array.isArray(promotion.imageUrls) && promotion.imageUrls.length > 0 && (
+              <div className="flex space-x-2 overflow-x-auto scrollbar-hide">
+                {promotion.imageUrls.slice(0, 5).map((url, idx) => (
+                  <img key={idx} src={url} alt={`promo-${idx}`} className="h-8 w-14 object-cover rounded-md border border-white/30" />
+                ))}
+              </div>
+            )}
+
             <div className="hidden sm:block">
               <h3 className="font-semibold text-sm">
                 {promotion.title}
@@ -95,7 +54,7 @@ const PromoBanner: React.FC<PromoBannerProps> = ({
                 onClick={onAction}
                 className="bg-white/20 hover:bg-white/30 rounded-full px-4 py-1 text-xs font-medium transition-colors flex items-center space-x-1"
               >
-                <span>Shop Now</span>
+                <span>{promotion.buttonText || 'Start Shopping'}</span>
                 <ArrowRight className="w-3 h-3" />
               </button>
             )}

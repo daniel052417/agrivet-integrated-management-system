@@ -564,19 +564,21 @@ export interface Promotion {
   title: string
   description: string
   imageUrl?: string
-  discountType: 'percentage' | 'fixed' | 'bogo' | 'free_shipping'
-  discountValue: number
+  // Announcement-focused extras
+  imageUrls?: string[]
+  buttonText?: string
+  buttonLink?: string
+  // Legacy fields (kept for backward compatibility; no longer used in UI)
+  discountType?: 'percentage' | 'fixed' | 'bogo' | 'free_shipping'
+  discountValue?: number
   validFrom: string
   validUntil: string
   isActive: boolean
   targetAudience: 'all' | 'new_customers' | 'returning_customers' | 'specific_branch'
   targetBranchIds?: string[]
   branchId?: string // Optional targeting
-  conditions?: {
-    minOrderAmount?: number
-    applicableProducts?: string[]
-    maxUses?: number
-  }
+  // Deprecated: conditions for discounts; retained to avoid breaking imports
+  conditions?: Record<string, any>
   // New display mode system
   displayMode: 'banner' | 'modal' | 'notification' | 'carousel'
   displayPriority: number // Higher number = higher priority

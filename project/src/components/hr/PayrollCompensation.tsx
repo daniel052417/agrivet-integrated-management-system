@@ -1,73 +1,78 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Edit,
-  Plus,
-  Search,
-  Eye,
-  X,
-  Save,
-  User
+  Edit, Plus, Search, Eye, X, Save, User, Download, FileText,
+  DollarSign, Calendar, TrendingUp, Calculator, Printer, CheckCircle,
+  AlertCircle, RefreshCw, Building, Mail, Phone
 } from 'lucide-react';
-
+import { supabase } from '../../lib/supabase';
+import { settingsService } from '../../lib/settingsService';
 interface PayrollPeriod {
   id: string;
   name: string;
   start_date: string;
   end_date: string;
+  period_type: 'monthly' | 'semi-monthly';
   status: 'draft' | 'processing' | 'completed' | 'cancelled';
   total_employees: number;
   total_gross: number;
   total_deductions: number;
   total_net: number;
   created_at: string;
+  updated_at: string;
 }
 
 interface PayrollRecord {
   id: string;
   staff_id: string;
   staff_name: string;
+  employee_id: string;
   position: string;
   department: string;
-  basic_salary: number;
+  branch_id: string;
+  branch_name: string;
+  base_salary: number;
+  days_present: number;
+  daily_allowance: number;
+  total_allowance: number;
   overtime_pay: number;
   bonuses: number;
-  allowances: number;
+  other_earnings: number;
   gross_pay: number;
   tax_deduction: number;
   sss_deduction: number;
   philhealth_deduction: number;
   pagibig_deduction: number;
+  cash_advances: number;
   other_deductions: number;
   total_deductions: number;
   net_pay: number;
   period_id: string;
   status: 'pending' | 'approved' | 'paid';
   created_at: string;
+  updated_at: string;
+  adjustments: Adjustment[];
+}
+
+interface Adjustment {
+  id: string;
+  type: 'bonus' | 'deduction' | 'cash_advance' | 'other';
+  description: string;
+  amount: number;
+  created_at: string;
 }
 
 interface Employee {
   id: string;
   name: string;
+  employee_id: string;
   position: string;
   department: string;
-  basic_salary: number;
+  branch_id: string;
+  branch_name: string;
+  base_salary: number;
+  daily_allowance: number;
   email: string;
   phone: string;
-}
-
-interface PayrollRecordFormData {
-  staff_id: string;
-  basic_salary: number;
-  overtime_pay: number;
-  bonuses: number;
-  allowances: number;
-  tax_deduction: number;
-  sss_deduction: number;
-  philhealth_deduction: number;
-  pagibig_deduction: number;
-  other_deductions: number;
-  period_id: string;
-  status: 'pending' | 'approved' | 'paid';
 }
 
 const PayrollCompensation: React.FC = () => {
@@ -75,340 +80,88 @@ const PayrollCompensation: React.FC = () => {
   const [payrollRecords, setPayrollRecords] = useState<PayrollRecord[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'periods' | 'records'>('periods');
   const [selectedPeriod, setSelectedPeriod] = useState<string>('');
+  const [selectedBranch, setSelectedBranch] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState<string>('');
   
-  // Modal and form states
-  const [showNewRecordModal, setShowNewRecordModal] = useState<boolean>(false);
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
-  const [employeeSearchTerm, setEmployeeSearchTerm] = useState<string>('');
-  const [formData, setFormData] = useState<PayrollRecordFormData>({
-    staff_id: '',
-    basic_salary: 0,
-    overtime_pay: 0,
-    bonuses: 0,
-    allowances: 0,
-    tax_deduction: 0,
-    sss_deduction: 0,
-    philhealth_deduction: 0,
-    pagibig_deduction: 0,
-    other_deductions: 0,
-    period_id: '',
-    status: 'pending'
+  // Modal states
+  const [showNewPeriodModal, setShowNewPeriodModal] = useState(false);
+  const [showGeneratePayrollModal, setShowGeneratePayrollModal] = useState(false);
+  const [showPayslipModal, setShowPayslipModal] = useState(false);
+  const [showAdjustmentModal, setShowAdjustmentModal] = useState(false);
+  const [selectedRecord, setSelectedRecord] = useState<PayrollRecord | null>(null);
+  const [branches, setBranches] = useState<Array<{ id: string; name: string }>>([]);
+  const [hrSettings, setHrSettings] = useState<any>(null);
+  // Period form
+  const [periodForm, setPeriodForm] = useState({
+    name: '',
+    start_date: '',
+    end_date: '',
+    period_type: 'monthly' as 'monthly' | 'semi-monthly'
   });
-  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
-  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
-  // Mock data for demonstration
-  const mockPayrollPeriods: PayrollPeriod[] = [
-    {
-      id: 'period_001',
-      name: 'January 2025',
-      start_date: '2025-01-01',
-      end_date: '2025-01-31',
-      status: 'completed',
-      total_employees: 8,
-      total_gross: 320000,
-      total_deductions: 48000,
-      total_net: 272000,
-      created_at: '2025-01-01T00:00:00Z'
-    },
-    {
-      id: 'period_002',
-      name: 'December 2024',
-      start_date: '2024-12-01',
-      end_date: '2024-12-31',
-      status: 'completed',
-      total_employees: 8,
-      total_gross: 340000,
-      total_deductions: 51000,
-      total_net: 289000,
-      created_at: '2024-12-01T00:00:00Z'
-    },
-    {
-      id: 'period_003',
-      name: 'February 2025',
-      start_date: '2025-02-01',
-      end_date: '2025-02-28',
-      status: 'processing',
-      total_employees: 8,
-      total_gross: 0,
-      total_deductions: 0,
-      total_net: 0,
-      created_at: '2025-02-01T00:00:00Z'
-    }
-  ];
-
-  const mockPayrollRecords: PayrollRecord[] = [
-    {
-      id: 'record_001',
-      staff_id: 'staff_001',
-      staff_name: 'John Smith',
-      position: 'Sales Manager',
-      department: 'Sales',
-      basic_salary: 50000,
-      overtime_pay: 5000,
-      bonuses: 2000,
-      allowances: 3000,
-      gross_pay: 60000,
-      tax_deduction: 9000,
-      sss_deduction: 2000,
-      philhealth_deduction: 1500,
-      pagibig_deduction: 1000,
-      other_deductions: 500,
-      total_deductions: 14000,
-      net_pay: 46000,
-      period_id: 'period_001',
-      status: 'paid',
-      created_at: '2025-01-31T00:00:00Z'
-    },
-    {
-      id: 'record_002',
-      staff_id: 'staff_002',
-      staff_name: 'Maria Garcia',
-      position: 'HR Specialist',
-      department: 'Human Resources',
-      basic_salary: 35000,
-      overtime_pay: 2000,
-      bonuses: 1000,
-      allowances: 2000,
-      gross_pay: 40000,
-      tax_deduction: 6000,
-      sss_deduction: 1400,
-      philhealth_deduction: 1000,
-      pagibig_deduction: 700,
-      other_deductions: 300,
-      total_deductions: 9400,
-      net_pay: 30600,
-      period_id: 'period_001',
-      status: 'paid',
-      created_at: '2025-01-31T00:00:00Z'
-    },
-    {
-      id: 'record_003',
-      staff_id: 'staff_003',
-      staff_name: 'Robert Johnson',
-      position: 'Accountant',
-      department: 'Finance',
-      basic_salary: 45000,
-      overtime_pay: 3000,
-      bonuses: 1500,
-      allowances: 2500,
-      gross_pay: 52000,
-      tax_deduction: 7800,
-      sss_deduction: 1800,
-      philhealth_deduction: 1300,
-      pagibig_deduction: 900,
-      other_deductions: 400,
-      total_deductions: 12200,
-      net_pay: 39800,
-      period_id: 'period_001',
-      status: 'paid',
-      created_at: '2025-01-31T00:00:00Z'
-    },
-    {
-      id: 'record_004',
-      staff_id: 'staff_004',
-      staff_name: 'Sarah Wilson',
-      position: 'Marketing Coordinator',
-      department: 'Marketing',
-      basic_salary: 30000,
-      overtime_pay: 1500,
-      bonuses: 800,
-      allowances: 1500,
-      gross_pay: 34800,
-      tax_deduction: 5220,
-      sss_deduction: 1200,
-      philhealth_deduction: 900,
-      pagibig_deduction: 600,
-      other_deductions: 200,
-      total_deductions: 8120,
-      net_pay: 26680,
-      period_id: 'period_001',
-      status: 'paid',
-      created_at: '2025-01-31T00:00:00Z'
-    },
-    {
-      id: 'record_005',
-      staff_id: 'staff_005',
-      staff_name: 'Michael Brown',
-      position: 'IT Support',
-      department: 'IT',
-      basic_salary: 40000,
-      overtime_pay: 4000,
-      bonuses: 1200,
-      allowances: 2000,
-      gross_pay: 47200,
-      tax_deduction: 7080,
-      sss_deduction: 1600,
-      philhealth_deduction: 1200,
-      pagibig_deduction: 800,
-      other_deductions: 350,
-      total_deductions: 11030,
-      net_pay: 36170,
-      period_id: 'period_001',
-      status: 'paid',
-      created_at: '2025-01-31T00:00:00Z'
-    },
-    {
-      id: 'record_006',
-      staff_id: 'staff_006',
-      staff_name: 'Lisa Davis',
-      position: 'Customer Service Rep',
-      department: 'Customer Service',
-      basic_salary: 25000,
-      overtime_pay: 1000,
-      bonuses: 500,
-      allowances: 1000,
-      gross_pay: 27500,
-      tax_deduction: 4125,
-      sss_deduction: 1000,
-      philhealth_deduction: 750,
-      pagibig_deduction: 500,
-      other_deductions: 150,
-      total_deductions: 6525,
-      net_pay: 20975,
-      period_id: 'period_001',
-      status: 'paid',
-      created_at: '2025-01-31T00:00:00Z'
-    },
-    {
-      id: 'record_007',
-      staff_id: 'staff_007',
-      staff_name: 'David Lee',
-      position: 'Operations Manager',
-      department: 'Operations',
-      basic_salary: 48000,
-      overtime_pay: 6000,
-      bonuses: 2500,
-      allowances: 3000,
-      gross_pay: 59500,
-      tax_deduction: 8925,
-      sss_deduction: 1900,
-      philhealth_deduction: 1400,
-      pagibig_deduction: 950,
-      other_deductions: 450,
-      total_deductions: 13625,
-      net_pay: 45875,
-      period_id: 'period_001',
-      status: 'paid',
-      created_at: '2025-01-31T00:00:00Z'
-    },
-    {
-      id: 'record_008',
-      staff_id: 'staff_008',
-      staff_name: 'Jennifer Taylor',
-      position: 'Administrative Assistant',
-      department: 'Administration',
-      basic_salary: 22000,
-      overtime_pay: 800,
-      bonuses: 300,
-      allowances: 800,
-      gross_pay: 23900,
-      tax_deduction: 3585,
-      sss_deduction: 880,
-      philhealth_deduction: 660,
-      pagibig_deduction: 440,
-      other_deductions: 120,
-      total_deductions: 5685,
-      net_pay: 18215,
-      period_id: 'period_001',
-      status: 'paid',
-      created_at: '2025-01-31T00:00:00Z'
-    }
-  ];
-
-  // Mock employee data
-  const mockEmployees: Employee[] = [
-    {
-      id: 'staff_001',
-      name: 'John Smith',
-      position: 'Sales Manager',
-      department: 'Sales',
-      basic_salary: 50000,
-      email: 'john.smith@company.com',
-      phone: '+63 912 345 6789'
-    },
-    {
-      id: 'staff_002',
-      name: 'Maria Garcia',
-      position: 'HR Specialist',
-      department: 'Human Resources',
-      basic_salary: 35000,
-      email: 'maria.garcia@company.com',
-      phone: '+63 912 345 6788'
-    },
-    {
-      id: 'staff_003',
-      name: 'Robert Johnson',
-      position: 'Accountant',
-      department: 'Finance',
-      basic_salary: 45000,
-      email: 'robert.johnson@company.com',
-      phone: '+63 912 345 6787'
-    },
-    {
-      id: 'staff_004',
-      name: 'Sarah Wilson',
-      position: 'Marketing Coordinator',
-      department: 'Marketing',
-      basic_salary: 30000,
-      email: 'sarah.wilson@company.com',
-      phone: '+63 912 345 6786'
-    },
-    {
-      id: 'staff_005',
-      name: 'Michael Brown',
-      position: 'IT Support',
-      department: 'IT',
-      basic_salary: 40000,
-      email: 'michael.brown@company.com',
-      phone: '+63 912 345 6785'
-    },
-    {
-      id: 'staff_006',
-      name: 'Lisa Davis',
-      position: 'Customer Service Rep',
-      department: 'Customer Service',
-      basic_salary: 25000,
-      email: 'lisa.davis@company.com',
-      phone: '+63 912 345 6784'
-    },
-    {
-      id: 'staff_007',
-      name: 'David Lee',
-      position: 'Operations Manager',
-      department: 'Operations',
-      basic_salary: 48000,
-      email: 'david.lee@company.com',
-      phone: '+63 912 345 6783'
-    },
-    {
-      id: 'staff_008',
-      name: 'Jennifer Taylor',
-      position: 'Administrative Assistant',
-      department: 'Administration',
-      basic_salary: 22000,
-      email: 'jennifer.taylor@company.com',
-      phone: '+63 912 345 6782'
-    }
-  ];
+  // Adjustment form
+  const [adjustmentForm, setAdjustmentForm] = useState({
+    type: 'bonus' as 'bonus' | 'deduction' | 'cash_advance' | 'other',
+    description: '',
+    amount: 0
+  });
 
   useEffect(() => {
     loadPayrollData();
-    loadEmployees();
+    loadBranches();
+    
   }, []);
+  useEffect(() => {
+    loadPayrollData();
+    loadBranches();
+    loadHRSettings(); // Add this line
+  }, []);
+  useEffect(() => {
+    if (selectedPeriod) {
+      loadPayrollRecords(selectedPeriod);
+    }
+  }, [selectedPeriod]);
+
+    const loadHRSettings = async () => {
+  try {
+    const settings = await settingsService.getHRSettings();
+    setHrSettings(settings);
+    console.log('💰 Payroll HR Settings loaded:', settings);
+  } catch (err: any) {
+    console.error('Error loading HR settings:', err);
+  }
+};
+
+  const loadBranches = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('branches')
+        .select('id, name')
+        .eq('is_active', true)
+        .order('name');
+      
+      if (error) throw error;
+      setBranches(data || []);
+    } catch (err: any) {
+      console.error('Error loading branches:', err);
+    }
+  };
 
   const loadPayrollData = async () => {
     try {
       setLoading(true);
       setError(null);
 
-      // Use mock data for demonstration
-      setPayrollPeriods(mockPayrollPeriods);
-      setPayrollRecords(mockPayrollRecords);
+      const { data, error: fetchError } = await supabase
+        .from('payroll_periods')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (fetchError) throw fetchError;
+      setPayrollPeriods(data || []);
     } catch (err: any) {
       console.error('Error loading payroll data:', err);
       setError(err.message || 'Failed to load payroll data');
@@ -417,42 +170,392 @@ const PayrollCompensation: React.FC = () => {
     }
   };
 
-  const loadEmployees = async () => {
+  const loadPayrollRecords = async (periodId: string) => {
     try {
-      // Use mock data for demonstration
-      setEmployees(mockEmployees);
+      setLoading(true);
+      const { data, error } = await supabase
+        .rpc('get_payroll_records_with_attendance', {
+          p_period_id: periodId
+        });
+
+      if (error) throw error;
+      setPayrollRecords(data || []);
     } catch (err: any) {
-      console.error('Error loading employees:', err);
+      console.error('Error loading payroll records:', err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
+  const computePayrollWithSettings = (record: any, attendance: any) => {
+  let grossPay = record.base_salary || 0;
+  let deductions = 0;
+  
+  // Add allowance if enabled
+  if (hrSettings?.include_allowance_in_pay && record.days_present) {
+    grossPay += (record.days_present * record.daily_allowance);
+  }
+  
+  // Deduct for absences if enabled
+  if (hrSettings?.enable_deduction_for_absences && attendance.absentDays) {
+    const dailyRate = (record.base_salary || 0) / 26; // Semi-monthly
+    grossPay -= (attendance.absentDays * dailyRate);
+  }
+  
+  // Add overtime if enabled
+  if (hrSettings?.enable_overtime_tracking && attendance.overtimeHours) {
+    const hourlyRate = (record.base_salary || 0) / 208; // 26 days * 8 hours
+    const overtimePay = attendance.overtimeHours * hourlyRate * 1.25;
+    grossPay += overtimePay;
+  }
+  
+  // Calculate deductions
+  if (hrSettings?.enable_tax_computation) {
+    deductions += computeTax(grossPay);
+  }
+  
+  if (hrSettings?.include_sss_deductions) {
+    deductions += computeSSS(grossPay);
+  }
+  
+  if (hrSettings?.include_philhealth_deductions) {
+    deductions += computePhilHealth(grossPay);
+  }
+  
+  if (hrSettings?.include_pagibig_deductions) {
+    deductions += computePagIBIG(grossPay);
+  }
+  
+  const netPay = grossPay - deductions;
+  
+  return {
+    grossPay,
+    deductions,
+    netPay
+  };
+};
+
+const computeTax = (income: number) => {
+  if (income <= 20833) return 0;
+  if (income <= 33332) return (income - 20833) * 0.20;
+  if (income <= 66666) return 2500 + (income - 33332) * 0.25;
+  return income * 0.15;
+};
+
+const computeSSS = (income: number) => {
+  return Math.min(income * 0.045, 900);
+};
+
+const computePhilHealth = (income: number) => {
+  return Math.min(income * 0.025, 2400);
+};
+
+const computePagIBIG = (income: number) => {
+  return income <= 1500 ? income * 0.01 : income * 0.02;
+};
+
+  const handleCreatePeriod = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      setLoading(true);
+      setError(null);
+
+      const { error: insertError } = await supabase
+        .from('payroll_periods')
+        .insert({
+          name: periodForm.name,
+          start_date: periodForm.start_date,
+          end_date: periodForm.end_date,
+          period_type: periodForm.period_type,
+          status: 'draft'
+        });
+
+      if (insertError) throw insertError;
+
+      setSuccess('Payroll period created successfully!');
+      setShowNewPeriodModal(false);
+      setPeriodForm({
+        name: '',
+        start_date: '',
+        end_date: '',
+        period_type: 'monthly'
+      });
+      await loadPayrollData();
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err: any) {
+      console.error('Error creating period:', err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGeneratePayroll = async (periodId: string) => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Call stored procedure to generate payroll
+      const { data, error: generateError } = await supabase
+        .rpc('generate_payroll_for_period', {
+          p_period_id: periodId
+        });
+
+      if (generateError) throw generateError;
+
+      setSuccess(`Payroll generated for ${data.total_records} employees!`);
+      await loadPayrollRecords(periodId);
+      setShowGeneratePayrollModal(false);
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err: any) {
+      console.error('Error generating payroll:', err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAddAdjustment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedRecord) return;
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      const { error: insertError } = await supabase
+        .from('payroll_adjustments')
+        .insert({
+          payroll_record_id: selectedRecord.id,
+          type: adjustmentForm.type,
+          description: adjustmentForm.description,
+          amount: adjustmentForm.amount
+        });
+
+      if (insertError) throw insertError;
+
+      // Recalculate payroll record
+      await recalculatePayrollRecord(selectedRecord.id);
+
+      setSuccess('Adjustment added successfully!');
+      setShowAdjustmentModal(false);
+      setAdjustmentForm({
+        type: 'bonus',
+        description: '',
+        amount: 0
+      });
+      await loadPayrollRecords(selectedRecord.period_id);
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err: any) {
+      console.error('Error adding adjustment:', err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const recalculatePayrollRecord = async (recordId: string) => {
+    try {
+      await supabase.rpc('recalculate_payroll_record', {
+        p_record_id: recordId
+      });
+    } catch (err: any) {
+      console.error('Error recalculating record:', err);
+    }
+  };
+
+  const handleApprovePayroll = async (recordId: string) => {
+    try {
+      setLoading(true);
+      const { error } = await supabase
+        .from('payroll_records')
+        .update({ status: 'approved', updated_at: new Date().toISOString() })
+        .eq('id', recordId);
+
+      if (error) throw error;
+
+      setSuccess('Payroll approved successfully!');
+      await loadPayrollRecords(selectedPeriod);
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err: any) {
+      console.error('Error approving payroll:', err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleMarkAsPaid = async (recordId: string) => {
+    try {
+      setLoading(true);
+      const { error } = await supabase
+        .from('payroll_records')
+        .update({ status: 'paid', updated_at: new Date().toISOString() })
+        .eq('id', recordId);
+
+      if (error) throw error;
+
+      setSuccess('Payroll marked as paid!');
+      await loadPayrollRecords(selectedPeriod);
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err: any) {
+      console.error('Error marking as paid:', err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleExportToExcel = async () => {
+    try {
+      const period = payrollPeriods.find(p => p.id === selectedPeriod);
+      if (!period) return;
+
+      // Generate CSV
+      const headers = ['Employee ID', 'Name', 'Position', 'Department', 'Branch', 
+        'Base Salary', 'Days Present', 'Allowance', 'Gross Pay', 'Deductions', 'Net Pay', 'Status'];
+      
+      const rows = filteredRecords.map(record => [
+        record.employee_id,
+        record.staff_name,
+        record.position,
+        record.department,
+        record.branch_name,
+        record.base_salary.toFixed(2),
+        record.days_present,
+        record.total_allowance.toFixed(2),
+        record.gross_pay.toFixed(2),
+        record.total_deductions.toFixed(2),
+        record.net_pay.toFixed(2),
+        record.status
+      ]);
+
+      const csvContent = [
+        headers.join(','),
+        ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+      ].join('\n');
+
+      const blob = new Blob([csvContent], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `payroll_${period.name.replace(/\s+/g, '_')}.csv`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+
+      setSuccess('Payroll exported successfully!');
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err: any) {
+      console.error('Error exporting payroll:', err);
+      setError('Failed to export payroll');
+    }
+  };
+
+  const handlePrintPayslip = () => {
+    if (!selectedRecord) return;
+    
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    const payslipHTML = generatePayslipHTML(selectedRecord);
+    printWindow.document.write(payslipHTML);
+    printWindow.document.close();
+    printWindow.print();
+  };
+
+  const generatePayslipHTML = (record: PayrollRecord) => {
+    const period = payrollPeriods.find(p => p.id === record.period_id);
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Payslip - ${record.staff_name}</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 20px; }
+          .payslip { max-width: 800px; margin: 0 auto; border: 2px solid #333; padding: 20px; }
+          .header { text-align: center; margin-bottom: 20px; border-bottom: 2px solid #333; padding-bottom: 10px; }
+          .section { margin: 15px 0; }
+          .row { display: flex; justify-between; margin: 5px 0; }
+          .label { font-weight: bold; }
+          .total { font-size: 18px; font-weight: bold; border-top: 2px solid #333; padding-top: 10px; margin-top: 10px; }
+        </style>
+      </head>
+      <body>
+        <div class="payslip">
+          <div class="header">
+            <h1>AGRIVET SUPPLY CO.</h1>
+            <h2>PAYSLIP</h2>
+            <p>${period?.name || 'N/A'}</p>
+          </div>
+          
+          <div class="section">
+            <h3>Employee Information</h3>
+            <div class="row"><span class="label">Employee ID:</span><span>${record.employee_id}</span></div>
+            <div class="row"><span class="label">Name:</span><span>${record.staff_name}</span></div>
+            <div class="row"><span class="label">Position:</span><span>${record.position}</span></div>
+            <div class="row"><span class="label">Department:</span><span>${record.department}</span></div>
+            <div class="row"><span class="label">Branch:</span><span>${record.branch_name}</span></div>
+          </div>
+
+          <div class="section">
+            <h3>Earnings</h3>
+            <div class="row"><span class="label">Base Salary:</span><span>₱${record.base_salary.toLocaleString('en-PH', {minimumFractionDigits: 2})}</span></div>
+            <div class="row"><span class="label">Days Present:</span><span>${record.days_present} days</span></div>
+            <div class="row"><span class="label">Daily Allowance (₱${record.daily_allowance}):</span><span>₱${record.total_allowance.toLocaleString('en-PH', {minimumFractionDigits: 2})}</span></div>
+            ${record.overtime_pay > 0 ? `<div class="row"><span class="label">Overtime Pay:</span><span>₱${record.overtime_pay.toLocaleString('en-PH', {minimumFractionDigits: 2})}</span></div>` : ''}
+            ${record.bonuses > 0 ? `<div class="row"><span class="label">Bonuses:</span><span>₱${record.bonuses.toLocaleString('en-PH', {minimumFractionDigits: 2})}</span></div>` : ''}
+            ${record.other_earnings > 0 ? `<div class="row"><span class="label">Other Earnings:</span><span>₱${record.other_earnings.toLocaleString('en-PH', {minimumFractionDigits: 2})}</span></div>` : ''}
+            <div class="row total"><span class="label">Gross Pay:</span><span>₱${record.gross_pay.toLocaleString('en-PH', {minimumFractionDigits: 2})}</span></div>
+          </div>
+
+          <div class="section">
+            <h3>Deductions</h3>
+            <div class="row"><span class="label">Tax:</span><span>₱${record.tax_deduction.toLocaleString('en-PH', {minimumFractionDigits: 2})}</span></div>
+            <div class="row"><span class="label">SSS:</span><span>₱${record.sss_deduction.toLocaleString('en-PH', {minimumFractionDigits: 2})}</span></div>
+            <div class="row"><span class="label">PhilHealth:</span><span>₱${record.philhealth_deduction.toLocaleString('en-PH', {minimumFractionDigits: 2})}</span></div>
+            <div class="row"><span class="label">Pag-IBIG:</span><span>₱${record.pagibig_deduction.toLocaleString('en-PH', {minimumFractionDigits: 2})}</span></div>
+            ${record.cash_advances > 0 ? `<div class="row"><span class="label">Cash Advances:</span><span>₱${record.cash_advances.toLocaleString('en-PH', {minimumFractionDigits: 2})}</span></div>` : ''}
+            ${record.other_deductions > 0 ? `<div class="row"><span class="label">Other Deductions:</span><span>₱${record.other_deductions.toLocaleString('en-PH', {minimumFractionDigits: 2})}</span></div>` : ''}
+            <div class="row total"><span class="label">Total Deductions:</span><span>₱${record.total_deductions.toLocaleString('en-PH', {minimumFractionDigits: 2})}</span></div>
+          </div>
+
+          <div class="section">
+            <div class="row total" style="font-size: 20px; color: green;">
+              <span class="label">NET PAY:</span>
+              <span>₱${record.net_pay.toLocaleString('en-PH', {minimumFractionDigits: 2})}</span>
+            </div>
+          </div>
+
+          <div class="section" style="margin-top: 40px; text-align: center; font-size: 12px; color: #666;">
+            <p>This is a computer-generated payslip. No signature required.</p>
+            <p>Generated on: ${new Date().toLocaleDateString()}</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+  };
+
   const filteredRecords = payrollRecords.filter(record => {
-    const matchesPeriod = !selectedPeriod || record.period_id === selectedPeriod;
+    const matchesBranch = selectedBranch === 'all' || record.branch_id === selectedBranch;
     const matchesSearch = record.staff_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         record.position.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         record.department.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesPeriod && matchesSearch;
+                         record.employee_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         record.position.toLowerCase().includes(searchTerm.toLowerCase());
+    return matchesBranch && matchesSearch;
   });
 
   const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'completed':
-        return 'bg-green-100 text-green-800';
-      case 'processing':
-        return 'bg-blue-100 text-blue-800';
-      case 'draft':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'cancelled':
-        return 'bg-red-100 text-red-800';
-      case 'paid':
-        return 'bg-green-100 text-green-800';
-      case 'approved':
-        return 'bg-blue-100 text-blue-800';
-      case 'pending':
-        return 'bg-yellow-100 text-yellow-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
+    const colors = {
+      'completed': 'bg-green-100 text-green-800',
+      'processing': 'bg-blue-100 text-blue-800',
+      'draft': 'bg-yellow-100 text-yellow-800',
+      'cancelled': 'bg-red-100 text-red-800',
+      'paid': 'bg-green-100 text-green-800',
+      'approved': 'bg-blue-100 text-blue-800',
+      'pending': 'bg-yellow-100 text-yellow-800'
+    };
+    return colors[status as keyof typeof colors] || 'bg-gray-100 text-gray-800';
   };
 
   const formatCurrency = (amount: number) => {
@@ -463,197 +566,25 @@ const PayrollCompensation: React.FC = () => {
     }).format(amount);
   };
 
-  // Form handling functions
-  const openNewRecordModal = () => {
-    setShowNewRecordModal(true);
-    setFormData({
-      staff_id: '',
-      basic_salary: 0,
-      overtime_pay: 0,
-      bonuses: 0,
-      allowances: 0,
-      tax_deduction: 0,
-      sss_deduction: 0,
-      philhealth_deduction: 0,
-      pagibig_deduction: 0,
-      other_deductions: 0,
-      period_id: selectedPeriod || (payrollPeriods.length > 0 ? payrollPeriods[0].id : ''),
-      status: 'pending'
-    });
-    setSelectedEmployee(null);
-    setEmployeeSearchTerm('');
-    setFormErrors({});
-  };
-
-  const closeNewRecordModal = () => {
-    setShowNewRecordModal(false);
-    setSelectedEmployee(null);
-    setEmployeeSearchTerm('');
-    setFormData({
-      staff_id: '',
-      basic_salary: 0,
-      overtime_pay: 0,
-      bonuses: 0,
-      allowances: 0,
-      tax_deduction: 0,
-      sss_deduction: 0,
-      philhealth_deduction: 0,
-      pagibig_deduction: 0,
-      other_deductions: 0,
-      period_id: '',
-      status: 'pending'
-    });
-    setFormErrors({});
-  };
-
-  const handleEmployeeSelect = (employee: Employee) => {
-    setSelectedEmployee(employee);
-    setFormData(prev => ({
-      ...prev,
-      staff_id: employee.id,
-      basic_salary: employee.basic_salary
-    }));
-    setEmployeeSearchTerm(employee.name);
-    setFormErrors(prev => ({ ...prev, staff_id: '' }));
-  };
-
-  const handleInputChange = (field: keyof PayrollRecordFormData, value: string | number) => {
-    setFormData(prev => ({
-      ...prev,
-      [field]: value
-    }));
+  const calculateBranchSummary = () => {
+    const summary: Record<string, {name: string, employees: number, total: number}> = {};
     
-    // Clear error for this field
-    if (formErrors[field]) {
-      setFormErrors(prev => {
-        const newErrors = { ...prev };
-        delete newErrors[field];
-        return newErrors;
-      });
-    }
-  };
-
-  const calculateGrossPay = () => {
-    return formData.basic_salary + formData.overtime_pay + formData.bonuses + formData.allowances;
-  };
-
-  const calculateTotalDeductions = () => {
-    return formData.tax_deduction + formData.sss_deduction + formData.philhealth_deduction + 
-           formData.pagibig_deduction + formData.other_deductions;
-  };
-
-  const calculateNetPay = () => {
-    return calculateGrossPay() - calculateTotalDeductions();
-  };
-
-  const validateForm = (): boolean => {
-    const errors: Record<string, string> = {};
-
-    if (!formData.staff_id) {
-      errors.staff_id = 'Please select an employee';
-    }
-    if (!formData.period_id) {
-      errors.period_id = 'Please select a payroll period';
-    }
-    if (formData.basic_salary < 0) {
-      errors.basic_salary = 'Basic salary cannot be negative';
-    }
-    if (formData.overtime_pay < 0) {
-      errors.overtime_pay = 'Overtime pay cannot be negative';
-    }
-    if (formData.bonuses < 0) {
-      errors.bonuses = 'Bonuses cannot be negative';
-    }
-    if (formData.allowances < 0) {
-      errors.allowances = 'Allowances cannot be negative';
-    }
-    if (formData.tax_deduction < 0) {
-      errors.tax_deduction = 'Tax deduction cannot be negative';
-    }
-    if (formData.sss_deduction < 0) {
-      errors.sss_deduction = 'SSS deduction cannot be negative';
-    }
-    if (formData.philhealth_deduction < 0) {
-      errors.philhealth_deduction = 'PhilHealth deduction cannot be negative';
-    }
-    if (formData.pagibig_deduction < 0) {
-      errors.pagibig_deduction = 'Pag-IBIG deduction cannot be negative';
-    }
-    if (formData.other_deductions < 0) {
-      errors.other_deductions = 'Other deductions cannot be negative';
-    }
-
-    setFormErrors(errors);
-    return Object.keys(errors).length === 0;
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!validateForm()) {
-      return;
-    }
-
-    setIsSubmitting(true);
-    
-    try {
-      const grossPay = calculateGrossPay();
-      const totalDeductions = calculateTotalDeductions();
-      const netPay = calculateNetPay();
-      
-      const selectedEmp = employees.find(emp => emp.id === formData.staff_id);
-      
-      if (!selectedEmp) {
-        throw new Error('Selected employee not found');
+    filteredRecords.forEach(record => {
+      if (!summary[record.branch_id]) {
+        summary[record.branch_id] = {
+          name: record.branch_name,
+          employees: 0,
+          total: 0
+        };
       }
-
-      const newRecord: PayrollRecord = {
-        id: `record_${Date.now()}`,
-        staff_id: formData.staff_id,
-        staff_name: selectedEmp.name,
-        position: selectedEmp.position,
-        department: selectedEmp.department,
-        basic_salary: formData.basic_salary,
-        overtime_pay: formData.overtime_pay,
-        bonuses: formData.bonuses,
-        allowances: formData.allowances,
-        gross_pay: grossPay,
-        tax_deduction: formData.tax_deduction,
-        sss_deduction: formData.sss_deduction,
-        philhealth_deduction: formData.philhealth_deduction,
-        pagibig_deduction: formData.pagibig_deduction,
-        other_deductions: formData.other_deductions,
-        total_deductions: totalDeductions,
-        net_pay: netPay,
-        period_id: formData.period_id,
-        status: formData.status,
-        created_at: new Date().toISOString()
-      };
-
-      // Add to existing records
-      setPayrollRecords(prev => [newRecord, ...prev]);
-      
-      // Close modal
-      closeNewRecordModal();
-      
-      // Show success message (you can add a toast notification here)
-      console.log('Payroll record created successfully');
-      
-    } catch (err: any) {
-      console.error('Error creating payroll record:', err);
-      setError(err.message || 'Failed to create payroll record');
-    } finally {
-      setIsSubmitting(false);
-    }
+      summary[record.branch_id].employees++;
+      summary[record.branch_id].total += record.net_pay;
+    });
+    
+    return Object.values(summary);
   };
 
-  const filteredEmployees = employees.filter(employee =>
-    employee.name.toLowerCase().includes(employeeSearchTerm.toLowerCase()) ||
-    employee.position.toLowerCase().includes(employeeSearchTerm.toLowerCase()) ||
-    employee.department.toLowerCase().includes(employeeSearchTerm.toLowerCase())
-  );
-
-  if (loading) {
+  if (loading && payrollPeriods.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
@@ -661,187 +592,253 @@ const PayrollCompensation: React.FC = () => {
     );
   }
 
-  if (error) {
-    return (
-      <div className="text-center py-12">
-        <div className="text-red-600 text-4xl mb-4">⚠️</div>
-        <h3 className="text-lg font-medium text-red-900 mb-2">Error Loading Payroll Data</h3>
-        <p className="text-red-700 mb-4">{error}</p>
-        <button
-          onClick={loadPayrollData}
-          className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-        >
-          Retry
-        </button>
-      </div>
-    );
-  }
-
   return (
-    <div className="payroll-compensation">
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Payroll & Compensation</h1>
-          <p className="text-gray-600">Manage payroll periods, records, and compensation</p>
+    <div className="payroll-compensation space-y-6">
+      {/* Header */}
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Payroll & Compensation</h1>
+          <p className="text-gray-600">Automated salary computation with attendance-based allowances</p>
         </div>
+      </div>
 
-        {/* Tab Navigation */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-6">
-          <nav className="flex space-x-8 px-6">
-            <button
-              onClick={() => setActiveTab('periods')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                activeTab === 'periods'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              Payroll Periods
-            </button>
-            <button
-              onClick={() => setActiveTab('records')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                activeTab === 'records'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              Payroll Records
-            </button>
-            {/* <button
-              onClick={() => setActiveTab('reports')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                activeTab === 'reports'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              Reports
-            </button> */}
-          </nav>
+      {/* Alerts */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-md p-4">
+          <div className="flex">
+            <AlertCircle className="w-5 h-5 text-red-400 mr-2" />
+            <p className="text-red-700">{error}</p>
+          </div>
         </div>
+      )}
 
-        {/* Tab Content */}
-        {activeTab === 'periods' && (
-          <div className="space-y-6">
-            <div className="flex justify-between items-center">
-              <h2 className="text-xl font-semibold text-gray-900">Payroll Periods</h2>
-              <button className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors">
-                <Plus className="w-4 h-4" />
-                <span>New Period</span>
+      {success && (
+        <div className="bg-green-50 border border-green-200 rounded-md p-4">
+          <div className="flex">
+            <CheckCircle className="w-5 h-5 text-green-400 mr-2" />
+            <p className="text-green-700">{success}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Tab Navigation */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+        <nav className="flex space-x-8 px-6">
+          <button
+            onClick={() => setActiveTab('periods')}
+            className={`py-4 px-1 border-b-2 font-medium text-sm ${
+              activeTab === 'periods'
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            Payroll Periods
+          </button>
+          <button
+            onClick={() => setActiveTab('records')}
+            className={`py-4 px-1 border-b-2 font-medium text-sm ${
+              activeTab === 'records'
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            Payroll Records
+          </button>
+        </nav>
+      </div>
+
+      {/* Periods Tab */}
+      {activeTab === 'periods' && (
+        <div className="space-y-6">
+          <div className="flex justify-between items-center">
+            <h2 className="text-xl font-semibold text-gray-900">Payroll Periods</h2>
+            <button 
+              onClick={() => setShowNewPeriodModal(true)}
+              className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+            >
+              <Plus className="w-4 h-4" />
+              <span>New Period</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {payrollPeriods.map((period) => (
+              <div key={period.id} className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-gray-900">{period.name}</h3>
+                  <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(period.status)}`}>
+                    {period.status.toUpperCase()}
+                  </span>
+                </div>
+                
+                <div className="space-y-2 text-sm text-gray-600 mb-4">
+                  <div className="flex justify-between">
+                    <span>Period Type:</span>
+                    <span className="font-medium">{period.period_type === 'monthly' ? 'Monthly' : 'Semi-Monthly'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Start:</span>
+                    <span>{new Date(period.start_date).toLocaleDateString()}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>End:</span>
+                    <span>{new Date(period.end_date).toLocaleDateString()}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Employees:</span>
+                    <span className="font-semibold">{period.total_employees}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Total Net:</span>
+                    <span className="font-semibold text-green-600">{formatCurrency(period.total_net)}</span>
+                  </div>
+                </div>
+
+                <div className="flex space-x-2">
+                  {period.status === 'draft' && (
+                    <button 
+                      onClick={() => {
+                        setSelectedPeriod(period.id);
+                        setShowGeneratePayrollModal(true);
+                      }}
+                      className="flex-1 px-3 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700"
+                    >
+                      <Calculator className="w-4 h-4 inline mr-1" />
+                      Generate
+                    </button>
+                  )}
+                  {/* ✅ ADD THIS ENTIRE SECTION */}
+                    {(period.status === 'processing' || period.status === 'completed') && (
+                      <button 
+                        onClick={() => {
+                          setSelectedPeriod(period.id);
+                          setShowGeneratePayrollModal(true);
+                        }}
+                        className="flex-1 px-3 py-2 bg-orange-600 text-white text-sm rounded-md hover:bg-orange-700 flex items-center justify-center"
+                        title="Regenerate with current HR settings"
+                      >
+                        <RefreshCw className="w-4 h-4 mr-1" />
+                        Regenerate
+                      </button>
+                    )}
+                    {/* ✅ END OF NEW SECTION */}
+                  <button 
+                    onClick={() => {
+                      setSelectedPeriod(period.id);
+                      setActiveTab('records');
+                    }}
+                    className="flex-1 px-3 py-2 border border-gray-300 text-gray-700 text-sm rounded-md hover:bg-gray-50"
+                  >
+                    View Details
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {payrollPeriods.length === 0 && (
+            <div className="text-center py-12 bg-white rounded-lg border border-gray-200">
+              <Calendar className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">No Payroll Periods</h3>
+              <p className="text-gray-500 mb-4">Create your first payroll period to get started</p>
+              <button
+                onClick={() => setShowNewPeriodModal(true)}
+                className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Create Period
               </button>
             </div>
+          )}
+        </div>
+      )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {payrollPeriods.map((period) => (
-                <div key={period.id} className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-semibold text-gray-900">{period.name}</h3>
-                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(period.status)}`}>
-                      {period.status.toUpperCase()}
-                    </span>
-                  </div>
-                  
-                  <div className="space-y-2 text-sm text-gray-600">
-                    <div className="flex justify-between">
-                      <span>Start Date:</span>
-                      <span>{new Date(period.start_date).toLocaleDateString()}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>End Date:</span>
-                      <span>{new Date(period.end_date).toLocaleDateString()}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Employees:</span>
-                      <span>{period.total_employees}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Total Gross:</span>
-                      <span className="font-semibold">{formatCurrency(period.total_gross)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Total Net:</span>
-                      <span className="font-semibold text-green-600">{formatCurrency(period.total_net)}</span>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 flex space-x-2">
-                    <button className="flex-1 text-blue-600 hover:text-blue-800 text-sm font-medium">
-                      View Details
-                    </button>
-                    <button className="flex-1 text-gray-600 hover:text-gray-800 text-sm font-medium">
-                      Edit
-                    </button>
-                  </div>
-                </div>
-              ))}
+      {/* Records Tab */}
+      {activeTab === 'records' && (
+        <div className="space-y-6">
+          <div className="flex flex-col md:flex-row md:justify-between md:items-center space-y-4 md:space-y-0">
+            <h2 className="text-xl font-semibold text-gray-900">Payroll Records</h2>
+            <div className="flex flex-wrap items-center gap-3">
+              <select
+                value={selectedPeriod}
+                onChange={(e) => setSelectedPeriod(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Select Period</option>
+                {payrollPeriods.map(period => (
+                  <option key={period.id} value={period.id}>{period.name}</option>
+                ))}
+              </select>
+              <select
+                value={selectedBranch}
+                onChange={(e) => setSelectedBranch(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="all">All Branches</option>
+                {branches.map(branch => (
+                  <option key={branch.id} value={branch.id}>{branch.name}</option>
+                ))}
+              </select>
+              <button
+                onClick={handleExportToExcel}
+                disabled={!selectedPeriod || filteredRecords.length === 0}
+                className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Download className="w-4 h-4" />
+                <span>Export</span>
+              </button>
             </div>
           </div>
-        )}
 
-        {activeTab === 'records' && (
-          <div className="space-y-6">
-            <div className="flex justify-between items-center">
-              <h2 className="text-xl font-semibold text-gray-900">Payroll Records</h2>
-              <div className="flex items-center space-x-4">
-                <select
-                  value={selectedPeriod}
-                  onChange={(e) => setSelectedPeriod(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">All Periods</option>
-                  {payrollPeriods.map(period => (
-                    <option key={period.id} value={period.id}>{period.name}</option>
-                  ))}
-                </select>
-                <button 
-                  onClick={openNewRecordModal}
-                  className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>New Record</span>
-                </button>
+          {/* Branch Summary */}
+          {selectedPeriod && calculateBranchSummary().length > 0 && (
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Branch Summary</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {calculateBranchSummary().map((branch, index) => (
+                  <div key={index} className="bg-blue-50 rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <Building className="w-5 h-5 text-blue-600" />
+                      <span className="text-sm font-medium text-gray-600">{branch.employees} employees</span>
+                    </div>
+                    <h4 className="font-semibold text-gray-900 mb-1">{branch.name}</h4>
+                    <p className="text-2xl font-bold text-blue-600">{formatCurrency(branch.total)}</p>
+                  </div>
+                ))}
               </div>
             </div>
+          )}
 
+          {/* Search */}
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+              <input
+                type="text"
+                placeholder="Search by name, employee ID, or position..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          </div>
+
+          {/* Payroll Records Table */}
+          {selectedPeriod ? (
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-              <div className="p-4 border-b border-gray-200">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                  <input
-                    type="text"
-                    placeholder="Search payroll records..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
-
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Employee
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Basic Salary
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Gross Pay
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Deductions
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Net Pay
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Status
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Actions
-                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Employee</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Base Salary</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Days Present</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Allowance</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Gross Pay</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Deductions</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Net Pay</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
@@ -849,25 +846,33 @@ const PayrollCompensation: React.FC = () => {
                       <tr key={record.id} className="hover:bg-gray-50">
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div>
-                            <div className="text-sm font-medium text-gray-900">
-                              {record.staff_name}
-                            </div>
-                            <div className="text-sm text-gray-500">
-                              {record.position} • {record.department}
-                            </div>
+                            <div className="text-sm font-medium text-gray-900">{record.staff_name}</div>
+                            <div className="text-sm text-gray-500">{record.employee_id}</div>
+                            <div className="text-xs text-gray-400">{record.position}</div>
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {formatCurrency(record.basic_salary)}
+                          {formatCurrency(record.base_salary)}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {formatCurrency(record.gross_pay)}
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className="inline-flex items-center px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">
+                            {record.days_present} days
+                          </span>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {formatCurrency(record.total_deductions)}
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm text-gray-900">{formatCurrency(record.total_allowance)}</div>
+                          <div className="text-xs text-gray-500">₱{record.daily_allowance} × {record.days_present}</div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-green-600">
-                          {formatCurrency(record.net_pay)}
+                          {formatCurrency(record.gross_pay)}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-red-600">
+                          {formatCurrency(record.total_deductions)}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-lg font-bold text-blue-600">
+                            {formatCurrency(record.net_pay)}
+                          </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(record.status)}`}>
@@ -876,12 +881,44 @@ const PayrollCompensation: React.FC = () => {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                           <div className="flex space-x-2">
-                            <button className="text-blue-600 hover:text-blue-900">
+                            <button 
+                              onClick={() => {
+                                setSelectedRecord(record);
+                                setShowPayslipModal(true);
+                              }}
+                              className="text-blue-600 hover:text-blue-900"
+                              title="View Payslip"
+                            >
                               <Eye className="w-4 h-4" />
                             </button>
-                            <button className="text-gray-600 hover:text-gray-900">
-                              <Edit className="w-4 h-4" />
+                            <button 
+                              onClick={() => {
+                                setSelectedRecord(record);
+                                setShowAdjustmentModal(true);
+                              }}
+                              className="text-green-600 hover:text-green-900"
+                              title="Add Adjustment"
+                            >
+                              <DollarSign className="w-4 h-4" />
                             </button>
+                            {record.status === 'pending' && (
+                              <button
+                                onClick={() => handleApprovePayroll(record.id)}
+                                className="text-purple-600 hover:text-purple-900"
+                                title="Approve"
+                              >
+                                <CheckCircle className="w-4 h-4" />
+                              </button>
+                            )}
+                            {record.status === 'approved' && (
+                              <button
+                                onClick={() => handleMarkAsPaid(record.id)}
+                                className="text-green-600 hover:text-green-900"
+                                title="Mark as Paid"
+                              >
+                                <CheckCircle className="w-4 h-4" />
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -889,459 +926,421 @@ const PayrollCompensation: React.FC = () => {
                   </tbody>
                 </table>
               </div>
+
+              {filteredRecords.length === 0 && (
+                <div className="text-center py-12">
+                  <DollarSign className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">No Payroll Records</h3>
+                  <p className="text-gray-500">No payroll records found for the selected period and filters.</p>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="text-center py-12 bg-white rounded-lg border border-gray-200">
+              <Calendar className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">Select a Payroll Period</h3>
+              <p className="text-gray-500">Choose a payroll period from the dropdown to view records</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* New Period Modal */}
+      {showNewPeriodModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <h2 className="text-xl font-semibold text-gray-900">Create Payroll Period</h2>
+              <button onClick={() => setShowNewPeriodModal(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreatePeriod} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Period Name *</label>
+                <input
+                  type="text"
+                  value={periodForm.name}
+                  onChange={(e) => setPeriodForm({...periodForm, name: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="e.g., January 2025"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Period Type *</label>
+                <select
+                  value={periodForm.period_type}
+                  onChange={(e) => setPeriodForm({...periodForm, period_type: e.target.value as 'monthly' | 'semi-monthly'})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="monthly">Monthly</option>
+                  <option value="semi-monthly">Semi-Monthly</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Start Date *</label>
+                <input
+                  type="date"
+                  value={periodForm.start_date}
+                  onChange={(e) => setPeriodForm({...periodForm, start_date: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">End Date *</label>
+                <input
+                  type="date"
+                  value={periodForm.end_date}
+                  onChange={(e) => setPeriodForm({...periodForm, end_date: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+
+              <div className="flex space-x-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowNewPeriodModal(false)}
+                  className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center justify-center"
+                >
+                  <Save className="w-4 h-4 mr-2" />
+                  Create Period
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Generate Payroll Modal */}
+{showGeneratePayrollModal && (
+  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
+      <div className="p-6">
+        <div className="flex items-center justify-center mb-4">
+          <div className="p-3 bg-blue-100 rounded-full">
+            <Calculator className="w-8 h-8 text-blue-600" />
+          </div>
+        </div>
+        
+        {/* ✅ UPDATED: Dynamic title based on period status */}
+        <h2 className="text-xl font-semibold text-gray-900 text-center mb-2">
+          {payrollPeriods.find(p => p.id === selectedPeriod)?.status === 'draft' 
+            ? 'Generate Payroll' 
+            : 'Regenerate Payroll'}
+        </h2>
+        
+        {/* ✅ UPDATED: Dynamic description */}
+        <p className="text-gray-600 text-center mb-6">
+          {payrollPeriods.find(p => p.id === selectedPeriod)?.status === 'draft'
+            ? 'This will automatically calculate payroll for all active employees based on their attendance records and salary information.'
+            : 'This will recalculate payroll using the CURRENT HR settings. Existing records will be updated with new calculations.'}
+        </p>
+        
+        {/* ✅ NEW: Show current HR settings */}
+        {hrSettings && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+            <p className="text-sm font-semibold text-blue-900 mb-3">Current HR Settings:</p>
+            <div className="grid grid-cols-2 gap-2 text-xs text-blue-800">
+              <div className="flex items-center">
+                {hrSettings.include_allowance_in_pay ? (
+                  <CheckCircle className="w-3 h-3 text-green-600 mr-1" />
+                ) : (
+                  <X className="w-3 h-3 text-red-600 mr-1" />
+                )}
+                <span>Allowance</span>
+              </div>
+              <div className="flex items-center">
+                {hrSettings.enable_deduction_for_absences ? (
+                  <CheckCircle className="w-3 h-3 text-green-600 mr-1" />
+                ) : (
+                  <X className="w-3 h-3 text-red-600 mr-1" />
+                )}
+                <span>Absence Deduction</span>
+              </div>
+              <div className="flex items-center">
+                {hrSettings.enable_overtime_tracking ? (
+                  <CheckCircle className="w-3 h-3 text-green-600 mr-1" />
+                ) : (
+                  <X className="w-3 h-3 text-red-600 mr-1" />
+                )}
+                <span>Overtime</span>
+              </div>
+              <div className="flex items-center">
+                {hrSettings.enable_tax_computation ? (
+                  <CheckCircle className="w-3 h-3 text-green-600 mr-1" />
+                ) : (
+                  <X className="w-3 h-3 text-red-600 mr-1" />
+                )}
+                <span>Tax</span>
+              </div>
+              <div className="flex items-center">
+                {hrSettings.include_sss_deductions ? (
+                  <CheckCircle className="w-3 h-3 text-green-600 mr-1" />
+                ) : (
+                  <X className="w-3 h-3 text-red-600 mr-1" />
+                )}
+                <span>SSS</span>
+              </div>
+              <div className="flex items-center">
+                {hrSettings.include_philhealth_deductions ? (
+                  <CheckCircle className="w-3 h-3 text-green-600 mr-1" />
+                ) : (
+                  <X className="w-3 h-3 text-red-600 mr-1" />
+                )}
+                <span>PhilHealth</span>
+              </div>
+              <div className="flex items-center">
+                {hrSettings.include_pagibig_deductions ? (
+                  <CheckCircle className="w-3 h-3 text-green-600 mr-1" />
+                ) : (
+                  <X className="w-3 h-3 text-red-600 mr-1" />
+                )}
+                <span>Pag-IBIG</span>
+              </div>
             </div>
           </div>
         )}
+        
+        <div className="flex space-x-3">
+          <button
+            onClick={() => setShowGeneratePayrollModal(false)}
+            className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => handleGeneratePayroll(selectedPeriod)}
+            className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+          >
+            {payrollPeriods.find(p => p.id === selectedPeriod)?.status === 'draft'
+              ? 'Generate Now'
+              : 'Regenerate Now'}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+)}
 
-        {/* {activeTab === 'reports' && (
-          <div className="space-y-6">
-            <h2 className="text-xl font-semibold text-gray-900">Payroll Reports</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-                <div className="flex items-center space-x-3 mb-4">
-                  <div className="p-2 bg-blue-100 rounded-lg">
-                    <FileText className="w-6 h-6 text-blue-600" />
-                  </div>
-                  <h3 className="text-lg font-semibold text-gray-900">Payroll Summary</h3>
-                </div>
-                <p className="text-sm text-gray-600 mb-4">Generate comprehensive payroll summary reports</p>
-                <button className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors">
-                  Generate Report
-                </button>
-              </div>
-
-              <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-                <div className="flex items-center space-x-3 mb-4">
-                  <div className="p-2 bg-green-100 rounded-lg">
-                    <TrendingUp className="w-6 h-6 text-green-600" />
-                  </div>
-                  <h3 className="text-lg font-semibold text-gray-900">Tax Reports</h3>
-                </div>
-                <p className="text-sm text-gray-600 mb-4">Generate tax deduction and compliance reports</p>
-                <button className="w-full px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors">
-                  Generate Report
-                </button>
-              </div>
-
-              <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-                <div className="flex items-center space-x-3 mb-4">
-                  <div className="p-2 bg-purple-100 rounded-lg">
-                    <Download className="w-6 h-6 text-purple-600" />
-                  </div>
-                  <h3 className="text-lg font-semibold text-gray-900">Export Data</h3>
-                </div>
-                <p className="text-sm text-gray-600 mb-4">Export payroll data to Excel or CSV</p>
-                <button className="w-full px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors">
-                  Export Data
-                </button>
-              </div>
-            </div>
-          </div>
-        )} */}
-
-        {/* New Record Modal */}
-        {showNewRecordModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
-              <div className="flex items-center justify-between p-6 border-b border-gray-200">
-                <h2 className="text-xl font-semibold text-gray-900">Create New Payroll Record</h2>
+      {/* Payslip Modal */}
+      {showPayslipModal && selectedRecord && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl my-8">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <h2 className="text-xl font-semibold text-gray-900">Payslip Details</h2>
+              <div className="flex space-x-2">
                 <button
-                  onClick={closeNewRecordModal}
-                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                  onClick={handlePrintPayslip}
+                  className="flex items-center space-x-2 px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
                 >
+                  <Printer className="w-4 h-4" />
+                  <span>Print</span>
+                </button>
+                <button onClick={() => setShowPayslipModal(false)} className="text-gray-400 hover:text-gray-600">
                   <X className="w-6 h-6" />
                 </button>
               </div>
+            </div>
 
-              <form onSubmit={handleSubmit} className="p-6">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {/* Employee Selection */}
-                  <div className="lg:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Select Employee *
-                    </label>
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                      <input
-                        type="text"
-                        placeholder="Search employees by name, position, or department..."
-                        value={employeeSearchTerm}
-                        onChange={(e) => setEmployeeSearchTerm(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
+            <div className="p-6 space-y-6">
+              {/* Employee Info */}
+              <div className="bg-gray-50 rounded-lg p-4">
+                <h3 className="font-semibold text-gray-900 mb-3">Employee Information</h3>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div><span className="text-gray-600">Employee ID:</span> <span className="font-medium">{selectedRecord.employee_id}</span></div>
+                  <div><span className="text-gray-600">Name:</span> <span className="font-medium">{selectedRecord.staff_name}</span></div>
+                  <div><span className="text-gray-600">Position:</span> <span className="font-medium">{selectedRecord.position}</span></div>
+                  <div><span className="text-gray-600">Department:</span> <span className="font-medium">{selectedRecord.department}</span></div>
+                  <div className="col-span-2"><span className="text-gray-600">Branch:</span> <span className="font-medium">{selectedRecord.branch_name}</span></div>
+                </div>
+              </div>
+
+              {/* Earnings */}
+              <div>
+                <h3 className="font-semibold text-gray-900 mb-3">Earnings</h3>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between py-2 border-b border-gray-200">
+                    <span className="text-gray-600">Base Salary</span>
+                    <span className="font-medium">{formatCurrency(selectedRecord.base_salary)}</span>
+                  </div>
+                  <div className="flex justify-between py-2 border-b border-gray-200">
+                    <span className="text-gray-600">Daily Allowance (₱{selectedRecord.daily_allowance} × {selectedRecord.days_present} days)</span>
+                    <span className="font-medium text-blue-600">{formatCurrency(selectedRecord.total_allowance)}</span>
+                  </div>
+                  {selectedRecord.overtime_pay > 0 && (
+                    <div className="flex justify-between py-2 border-b border-gray-200">
+                      <span className="text-gray-600">Overtime Pay</span>
+                      <span className="font-medium">{formatCurrency(selectedRecord.overtime_pay)}</span>
                     </div>
-                    {formErrors.staff_id && (
-                      <p className="mt-1 text-sm text-red-600">{formErrors.staff_id}</p>
-                    )}
-                    
-                    {/* Employee List */}
-                    {employeeSearchTerm && (
-                      <div className="mt-2 max-h-48 overflow-y-auto border border-gray-200 rounded-md">
-                        {filteredEmployees.map((employee) => (
-                          <div
-                            key={employee.id}
-                            onClick={() => handleEmployeeSelect(employee)}
-                            className="p-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0"
-                          >
-                            <div className="flex items-center space-x-3">
-                              <div className="flex-shrink-0">
-                                <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                                  <User className="w-4 h-4 text-blue-600" />
-                                </div>
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium text-gray-900 truncate">
-                                  {employee.name}
-                                </p>
-                                <p className="text-sm text-gray-500 truncate">
-                                  {employee.position} • {employee.department}
-                                </p>
-                                <p className="text-xs text-gray-400">
-                                  Basic Salary: {formatCurrency(employee.basic_salary)}
-                                </p>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                        {filteredEmployees.length === 0 && (
-                          <div className="p-3 text-center text-gray-500 text-sm">
-                            No employees found
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Selected Employee Display */}
-                    {selectedEmployee && (
-                      <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-md">
-                        <div className="flex items-center space-x-3">
-                          <div className="flex-shrink-0">
-                            <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                              <User className="w-4 h-4 text-blue-600" />
-                            </div>
-                          </div>
-                          <div className="flex-1">
-                            <p className="text-sm font-medium text-gray-900">
-                              {selectedEmployee.name}
-                            </p>
-                            <p className="text-sm text-gray-500">
-                              {selectedEmployee.position} • {selectedEmployee.department}
-                            </p>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSelectedEmployee(null);
-                              setFormData(prev => ({ ...prev, staff_id: '', basic_salary: 0 }));
-                              setEmployeeSearchTerm('');
-                            }}
-                            className="text-blue-600 hover:text-blue-800"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Payroll Period */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Payroll Period *
-                    </label>
-                    <select
-                      value={formData.period_id}
-                      onChange={(e) => handleInputChange('period_id', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="">Select a period</option>
-                      {payrollPeriods.map(period => (
-                        <option key={period.id} value={period.id}>
-                          {period.name} ({new Date(period.start_date).toLocaleDateString()} - {new Date(period.end_date).toLocaleDateString()})
-                        </option>
-                      ))}
-                    </select>
-                    {formErrors.period_id && (
-                      <p className="mt-1 text-sm text-red-600">{formErrors.period_id}</p>
-                    )}
-                  </div>
-
-                  {/* Status */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Status
-                    </label>
-                    <select
-                      value={formData.status}
-                      onChange={(e) => handleInputChange('status', e.target.value as 'pending' | 'approved' | 'paid')}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="pending">Pending</option>
-                      <option value="approved">Approved</option>
-                      <option value="paid">Paid</option>
-                    </select>
-                  </div>
-
-                  {/* Earnings Section */}
-                  <div className="lg:col-span-2">
-                    <h3 className="text-lg font-medium text-gray-900 mb-4">Earnings</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Basic Salary *
-                        </label>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={formData.basic_salary}
-                          onChange={(e) => handleInputChange('basic_salary', parseFloat(e.target.value) || 0)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          placeholder="0.00"
-                        />
-                        {formErrors.basic_salary && (
-                          <p className="mt-1 text-sm text-red-600">{formErrors.basic_salary}</p>
-                        )}
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Overtime Pay
-                        </label>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={formData.overtime_pay}
-                          onChange={(e) => handleInputChange('overtime_pay', parseFloat(e.target.value) || 0)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          placeholder="0.00"
-                        />
-                        {formErrors.overtime_pay && (
-                          <p className="mt-1 text-sm text-red-600">{formErrors.overtime_pay}</p>
-                        )}
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Bonuses
-                        </label>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={formData.bonuses}
-                          onChange={(e) => handleInputChange('bonuses', parseFloat(e.target.value) || 0)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          placeholder="0.00"
-                        />
-                        {formErrors.bonuses && (
-                          <p className="mt-1 text-sm text-red-600">{formErrors.bonuses}</p>
-                        )}
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Allowances
-                        </label>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={formData.allowances}
-                          onChange={(e) => handleInputChange('allowances', parseFloat(e.target.value) || 0)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          placeholder="0.00"
-                        />
-                        {formErrors.allowances && (
-                          <p className="mt-1 text-sm text-red-600">{formErrors.allowances}</p>
-                        )}
-                      </div>
+                  )}
+                  {selectedRecord.bonuses > 0 && (
+                    <div className="flex justify-between py-2 border-b border-gray-200">
+                      <span className="text-gray-600">Bonuses</span>
+                      <span className="font-medium">{formatCurrency(selectedRecord.bonuses)}</span>
                     </div>
-                  </div>
-
-                  {/* Deductions Section */}
-                  <div className="lg:col-span-2">
-                    <h3 className="text-lg font-medium text-gray-900 mb-4">Deductions</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Tax Deduction
-                        </label>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={formData.tax_deduction}
-                          onChange={(e) => handleInputChange('tax_deduction', parseFloat(e.target.value) || 0)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          placeholder="0.00"
-                        />
-                        {formErrors.tax_deduction && (
-                          <p className="mt-1 text-sm text-red-600">{formErrors.tax_deduction}</p>
-                        )}
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          SSS Deduction
-                        </label>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={formData.sss_deduction}
-                          onChange={(e) => handleInputChange('sss_deduction', parseFloat(e.target.value) || 0)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          placeholder="0.00"
-                        />
-                        {formErrors.sss_deduction && (
-                          <p className="mt-1 text-sm text-red-600">{formErrors.sss_deduction}</p>
-                        )}
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          PhilHealth Deduction
-                        </label>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={formData.philhealth_deduction}
-                          onChange={(e) => handleInputChange('philhealth_deduction', parseFloat(e.target.value) || 0)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          placeholder="0.00"
-                        />
-                        {formErrors.philhealth_deduction && (
-                          <p className="mt-1 text-sm text-red-600">{formErrors.philhealth_deduction}</p>
-                        )}
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Pag-IBIG Deduction
-                        </label>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={formData.pagibig_deduction}
-                          onChange={(e) => handleInputChange('pagibig_deduction', parseFloat(e.target.value) || 0)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          placeholder="0.00"
-                        />
-                        {formErrors.pagibig_deduction && (
-                          <p className="mt-1 text-sm text-red-600">{formErrors.pagibig_deduction}</p>
-                        )}
-                      </div>
-
-                      <div className="md:col-span-2">
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Other Deductions
-                        </label>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={formData.other_deductions}
-                          onChange={(e) => handleInputChange('other_deductions', parseFloat(e.target.value) || 0)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          placeholder="0.00"
-                        />
-                        {formErrors.other_deductions && (
-                          <p className="mt-1 text-sm text-red-600">{formErrors.other_deductions}</p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Summary Section */}
-                  <div className="lg:col-span-2">
-                    <h3 className="text-lg font-medium text-gray-900 mb-4">Payroll Summary</h3>
-                    <div className="bg-gray-50 p-4 rounded-lg">
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div className="text-center">
-                          <p className="text-sm text-gray-600">Gross Pay</p>
-                          <p className="text-lg font-semibold text-green-600">
-                            {formatCurrency(calculateGrossPay())}
-                          </p>
-                        </div>
-                        <div className="text-center">
-                          <p className="text-sm text-gray-600">Total Deductions</p>
-                          <p className="text-lg font-semibold text-red-600">
-                            {formatCurrency(calculateTotalDeductions())}
-                          </p>
-                        </div>
-                        <div className="text-center">
-                          <p className="text-sm text-gray-600">Net Pay</p>
-                          <p className="text-lg font-semibold text-blue-600">
-                            {formatCurrency(calculateNetPay())}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
+                  )}
+                  <div className="flex justify-between py-2 bg-green-50 px-3 rounded">
+                    <span className="font-semibold text-gray-900">Gross Pay</span>
+                    <span className="font-bold text-green-600">{formatCurrency(selectedRecord.gross_pay)}</span>
                   </div>
                 </div>
+              </div>
 
-                {/* Modal Actions */}
-                <div className="flex items-center justify-end space-x-3 mt-6 pt-6 border-t border-gray-200">
-                  <button
-                    type="button"
-                    onClick={closeNewRecordModal}
-                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isSubmitting}
-                    className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
-                  >
-                    {isSubmitting ? (
-                      <>
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                        <span>Creating...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Save className="w-4 h-4" />
-                        <span>Create Record</span>
-                      </>
-                    )}
-                  </button>
+              {/* Deductions */}
+              <div>
+                <h3 className="font-semibold text-gray-900 mb-3">Deductions</h3>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between py-2 border-b border-gray-200">
+                    <span className="text-gray-600">Tax</span>
+                    <span className="font-medium">{formatCurrency(selectedRecord.tax_deduction)}</span>
+                  </div>
+                  <div className="flex justify-between py-2 border-b border-gray-200">
+                    <span className="text-gray-600">SSS</span>
+                    <span className="font-medium">{formatCurrency(selectedRecord.sss_deduction)}</span>
+                  </div>
+                  <div className="flex justify-between py-2 border-b border-gray-200">
+                    <span className="text-gray-600">PhilHealth</span>
+                    <span className="font-medium">{formatCurrency(selectedRecord.philhealth_deduction)}</span>
+                  </div>
+                  <div className="flex justify-between py-2 border-b border-gray-200">
+                    <span className="text-gray-600">Pag-IBIG</span>
+                    <span className="font-medium">{formatCurrency(selectedRecord.pagibig_deduction)}</span>
+                  </div>
+                  {selectedRecord.cash_advances > 0 && (
+                    <div className="flex justify-between py-2 border-b border-gray-200">
+                      <span className="text-gray-600">Cash Advances</span>
+                      <span className="font-medium">{formatCurrency(selectedRecord.cash_advances)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between py-2 bg-red-50 px-3 rounded">
+                    <span className="font-semibold text-gray-900">Total Deductions</span>
+                    <span className="font-bold text-red-600">{formatCurrency(selectedRecord.total_deductions)}</span>
+                  </div>
                 </div>
-              </form>
+              </div>
+
+              {/* Net Pay */}
+              <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4">
+                <div className="flex justify-between items-center">
+                  <span className="text-lg font-bold text-gray-900">NET PAY</span>
+                  <span className="text-2xl font-bold text-blue-600">{formatCurrency(selectedRecord.net_pay)}</span>
+                </div>
+              </div>
+
+              {/* Adjustments */}
+              {selectedRecord.adjustments && selectedRecord.adjustments.length > 0 && (
+                <div>
+                  <h3 className="font-semibold text-gray-900 mb-3">Adjustments</h3>
+                  <div className="space-y-2">
+                    {selectedRecord.adjustments.map((adj) => (
+                      <div key={adj.id} className="flex justify-between py-2 px-3 bg-yellow-50 rounded text-sm">
+                        <div>
+                          <span className="font-medium">{adj.description}</span>
+                          <span className="text-gray-500 ml-2">({adj.type})</span>
+                        </div>
+                        <span className="font-medium">{formatCurrency(adj.amount)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
+
+      {/* Add Adjustment Modal */}
+      {showAdjustmentModal && selectedRecord && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <h2 className="text-xl font-semibold text-gray-900">Add Adjustment</h2>
+              <button onClick={() => setShowAdjustmentModal(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddAdjustment} className="p-6 space-y-4">
+              <div className="bg-blue-50 rounded-lg p-3 mb-4">
+                <p className="text-sm text-blue-800">
+                  <strong>Employee:</strong> {selectedRecord.staff_name}
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Type *</label>
+                <select
+                  value={adjustmentForm.type}
+                  onChange={(e) => setAdjustmentForm({...adjustmentForm, type: e.target.value as any})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="bonus">Bonus (Add)</option>
+                  <option value="deduction">Deduction (Subtract)</option>
+                  <option value="cash_advance">Cash Advance (Subtract)</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Description *</label>
+                <input
+                  type="text"
+                  value={adjustmentForm.description}
+                  onChange={(e) => setAdjustmentForm({...adjustmentForm, description: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="e.g., Performance Bonus"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Amount *</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={adjustmentForm.amount}
+                  onChange={(e) => setAdjustmentForm({...adjustmentForm, amount: parseFloat(e.target.value) || 0})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="0.00"
+                  required
+                />
+              </div>
+
+              <div className="flex space-x-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowAdjustmentModal(false)}
+                  className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                >
+                  Add Adjustment
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
   );
 };
 
 export default PayrollCompensation;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

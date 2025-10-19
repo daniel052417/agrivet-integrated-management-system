@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Home, BarChart3, Package, TrendingUp, AlertTriangle, ShoppingCart, 
   Users, FileText, Settings, MessageSquare,
@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import logo from '../../../assets/logo.png';
 import { CustomUser } from '../../../lib/customAuth';
+import { settingsService } from '../../../lib/settingsService'; // ✅ ADD THIS
 
 interface SimplifiedSidebarProps {
   user: CustomUser;
@@ -29,9 +30,26 @@ interface MenuItem {
 const SimplifiedSidebar: React.FC<SimplifiedSidebarProps> = ({ user, activeSection, onSectionChange, onLogout }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [expandedCategories, setExpandedCategories] = useState<string[]>(['Default']);
+  const [hrSettings, setHrSettings] = useState<any>(null); // ✅ Already exists
   
   // Check if user is super admin
   const isSuperAdmin = user.role_name === 'super-admin' || user.role === 'super-admin';
+
+  // ✅ ADD THIS useEffect to load HR settings
+  useEffect(() => {
+    loadHRSettings();
+  }, []);
+
+  // ✅ ADD THIS function
+  const loadHRSettings = async () => {
+    try {
+      const settings = await settingsService.getHRSettings();
+      setHrSettings(settings);
+      console.log('🔧 HR Settings loaded in sidebar:', settings);
+    } catch (err) {
+      console.error('Error loading HR settings:', err);
+    }
+  };
 
   // Function to flatten menu items for non-super-admin users
   const flattenMenuItems = (items: MenuItem[]): MenuItem[] => {
@@ -98,15 +116,19 @@ const SimplifiedSidebar: React.FC<SimplifiedSidebarProps> = ({ user, activeSecti
       ]
     },
     
-    { id: 'staff-user-management',
-       label: 'User Management',
-        icon: Users, category: 'Staff & Users',
-         children: [ { id: 'user-accounts', label: 'User Accounts', icon: Users, category: 'Staff & Users' },
-                     { id: 'activity-logs', label: 'Activity Logs', icon: BarChart3, category: 'Staff & Users' },
-                     { id: 'session-history', label: 'Session History', icon: Clock, category: 'Staff & Users' }, ]
-                    //  { id: 'user-roles-overview', label: 'User Roles Overview', icon: Shield, category: 'Staff & Users' }, ] 
+    { 
+      id: 'staff-user-management',
+      label: 'User Management',
+      icon: Users, 
+      category: 'Staff & Users',
+      children: [ 
+        { id: 'user-accounts', label: 'User Accounts', icon: Users, category: 'Staff & Users' },
+        { id: 'activity-logs', label: 'Activity Logs', icon: BarChart3, category: 'Staff & Users' },
+        { id: 'session-history', label: 'Session History', icon: Clock, category: 'Staff & Users' }, 
+      ]
     },
     
+    // ✅ UPDATED HR MENU - Conditionally show children based on settings
     { 
       id: 'hr', 
       label: 'HR', 
@@ -114,9 +136,12 @@ const SimplifiedSidebar: React.FC<SimplifiedSidebarProps> = ({ user, activeSecti
       category: 'HR',
       children: [
         { id: 'hr-dashboard', label: 'HR Dashboard', icon: Users, category: 'Default' },
-        { id: 'staff', label: 'Staff', icon: UserCheck, category: 'HR' },
+        { id: 'staff', label: 'Employee Management', icon: UserCheck, category: 'HR' },
         { id: 'attendance-dashboard', label: 'Attendance Dashboard', icon: Clock, category: 'HR' },
-        { id: 'leave-management', label: 'Leave Management', icon: Calendar, category: 'HR' },
+        // ✅ Only show Leave Management if enabled in settings
+        ...(hrSettings?.enable_leave_management ? [
+          { id: 'leave-management', label: 'Leave Management', icon: Calendar, category: 'HR' }
+        ] : []),
         { id: 'payroll', label: 'Payroll Management', icon: DollarSign, category: 'HR' },
       ]
     },
@@ -128,11 +153,10 @@ const SimplifiedSidebar: React.FC<SimplifiedSidebarProps> = ({ user, activeSecti
       category: 'Marketing',
       children: [
         { id: 'marketing-overview', label: 'Overview', icon: BarChart3, category: 'Marketing' },
-        { id: 'promotions-campaigns',label: 'Promotions & Campaigns', icon: Tag, category: 'Marketing'},
+        { id: 'promotions-announcements', label: 'Promotions & Announcements', icon: Tag, category: 'Marketing'},
         { id: 'insights-analytics', label: 'Insights & Analytics', icon: TrendingUp, category: 'Marketing' },
-        { id: 'campaign-management', label: 'Campaign Management',icon: Target,category: 'Marketing'},
-        { id: 'template-management', label: 'Template Management', icon: Star, category: 'Marketing' },
         { id: 'client-notifications', label: 'Client Notifications', icon: Gift, category: 'Marketing' },
+        { id: 'facebook-integration', label: 'Facebook Integration', icon: Users, category: 'Marketing' },
       ]
     },
     
@@ -150,16 +174,7 @@ const SimplifiedSidebar: React.FC<SimplifiedSidebarProps> = ({ user, activeSecti
 
   // Filter menu items based on user's sidebar config and role
   const filteredMenuItems = isSuperAdmin 
-    ? menuItems.filter(item => {
-        // Check if the main item or any of its children are in the user's allowed sections
-        if (user.sidebar_config.sections.includes(item.id)) {
-          return true;
-        }
-        if (item.children) {
-          return item.children.some(child => user.sidebar_config.sections.includes(child.id));
-        }
-        return false;
-      })
+    ? menuItems // Super admin sees all menu items
     : flattenMenuItems(menuItems); // Use flattened structure for non-super-admin
 
   const toggleCategory = (category: string) => {
@@ -196,8 +211,7 @@ const SimplifiedSidebar: React.FC<SimplifiedSidebarProps> = ({ user, activeSecti
 
     // For non-super-admin users, check visibility differently
     const isVisible = isSuperAdmin 
-      ? (user.sidebar_config.sections.includes(item.id) || 
-         (item.children && item.children.some(child => user.sidebar_config.sections.includes(child.id))))
+      ? true // Super admin sees all items
       : user.sidebar_config.sections.includes(item.id);
 
     if (!isVisible) return null;
@@ -227,17 +241,17 @@ const SimplifiedSidebar: React.FC<SimplifiedSidebarProps> = ({ user, activeSecti
             <Icon className={`flex-shrink-0 transition-colors duration-200 ${
               isActive ? 'text-white' : 'text-gray-500 group-hover:text-gray-700'
             } ${
-              isCollapsed ? 'w-6 h-6' : 'w-5 h-5 mr-4'
+              isCollapsed ? 'w-5 h-5' : 'w-4 h-4 mr-3'
             }`} />
             {!isCollapsed && (
-              <span className={`text-base font-semibold truncate ${item.indent ? 'ml-2' : ''}`}>
+              <span className={`text-sm font-medium truncate ${item.indent ? 'ml-2' : ''}`}>
                 {item.label}
               </span>
             )}
           </div>
           
           {!isCollapsed && hasChildren && isSuperAdmin && (
-            <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${
+            <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${
               isExpanded ? 'rotate-180' : ''
             } ${
               isActive ? 'text-white' : 'text-gray-400'
@@ -249,11 +263,8 @@ const SimplifiedSidebar: React.FC<SimplifiedSidebarProps> = ({ user, activeSecti
         {!isCollapsed && hasChildren && isExpanded && isSuperAdmin && (
           <div className="bg-gray-50/50 space-y-1">
             {item.children?.map(child => {
-              // Only render child if user has permission
-              if (user.sidebar_config.sections.includes(child.id)) {
-                return renderMenuItem(child, true);
-              }
-              return null;
+              // Super admin sees all children
+              return renderMenuItem(child, true);
             })}
           </div>
         )}

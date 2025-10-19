@@ -98,3 +98,7 @@ COMMENT ON COLUMN public.orders.delivery_tracking_number IS 'Tracking number fro
 -- FROM pg_indexes 
 -- WHERE tablename = 'orders' 
 -- AND indexname LIKE '%delivery%';
+
+
+
+

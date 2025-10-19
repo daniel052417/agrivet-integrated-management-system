@@ -2,53 +2,50 @@ import React, { useState } from 'react';
 import { 
   Plus, 
   Search, 
-  Filter, 
-  Calendar, 
   Target, 
-  DollarSign, 
   Users, 
   Eye, 
   Edit, 
   Trash2,
   MoreHorizontal,
   Image as ImageIcon,
-  TrendingUp,
-  TrendingDown
+  TrendingUp
 } from 'lucide-react';
 
-// Mock data for campaigns
+// Mock data for event campaigns
 const mockCampaigns = [
   {
     id: 1,
-    name: "Summer Sale 2025",
-    description: "Biggest summer promotion with up to 30% off on fertilizers",
+    name: "Farmers' Workshop 2025",
+    description: "Free workshop on modern farming techniques and sustainable agriculture practices",
     status: "active",
     startDate: "2025-01-15",
     endDate: "2025-02-15",
-    totalDiscount: 15420,
-    totalSales: 125000,
-    targetSales: 100000,
-    branches: ["Poblacion Branch", "Downtown Branch"],
+    eventType: "workshop",
+    location: "Main Store - Poblacion Branch",
+    maxAttendees: 50,
+    currentAttendees: 32,
+    branches: ["Poblacion Branch"],
     image: "/api/placeholder/300/150",
     createdAt: "2025-01-10",
     createdBy: "John Doe",
     metrics: {
       views: 1250,
       clicks: 340,
-      conversions: 45,
-      conversionRate: 13.2
+      registrations: 32
     }
   },
   {
     id: 2,
-    name: "New Year Promotion",
-    description: "Start the year right with special offers on all products",
+    name: "New Product Launch Event",
+    description: "Come see our latest agricultural equipment and tools demonstration",
     status: "ended",
     startDate: "2024-12-20",
     endDate: "2025-01-10",
-    totalDiscount: 8750,
-    totalSales: 89000,
-    targetSales: 75000,
+    eventType: "launch",
+    location: "All Branches",
+    maxAttendees: 100,
+    currentAttendees: 78,
     branches: ["All Branches"],
     image: "/api/placeholder/300/150",
     createdAt: "2024-12-15",
@@ -56,20 +53,20 @@ const mockCampaigns = [
     metrics: {
       views: 980,
       clicks: 245,
-      conversions: 32,
-      conversionRate: 13.1
+      registrations: 78
     }
   },
   {
     id: 3,
-    name: "Farmer's Choice",
-    description: "Exclusive deals for our loyal farming customers",
+    name: "Community Giveaway Event",
+    description: "Free seeds and farming supplies giveaway for local farmers",
     status: "upcoming",
     startDate: "2025-02-01",
     endDate: "2025-02-28",
-    totalDiscount: 0,
-    totalSales: 0,
-    targetSales: 150000,
+    eventType: "giveaway",
+    location: "Poblacion Branch",
+    maxAttendees: 200,
+    currentAttendees: 0,
     branches: ["Poblacion Branch"],
     image: "/api/placeholder/300/150",
     createdAt: "2025-01-20",
@@ -77,20 +74,20 @@ const mockCampaigns = [
     metrics: {
       views: 0,
       clicks: 0,
-      conversions: 0,
-      conversionRate: 0
+      registrations: 0
     }
   },
   {
     id: 4,
-    name: "Valentine's Special",
-    description: "Spread love with our special Valentine's offers",
+    name: "Anniversary Celebration",
+    description: "Join us for our 10th anniversary celebration with special activities",
     status: "draft",
     startDate: "2025-02-10",
     endDate: "2025-02-17",
-    totalDiscount: 0,
-    totalSales: 0,
-    targetSales: 50000,
+    eventType: "celebration",
+    location: "All Branches",
+    maxAttendees: 150,
+    currentAttendees: 0,
     branches: ["All Branches"],
     image: "/api/placeholder/300/150",
     createdAt: "2025-01-25",
@@ -98,10 +95,17 @@ const mockCampaigns = [
     metrics: {
       views: 0,
       clicks: 0,
-      conversions: 0,
-      conversionRate: 0
+      registrations: 0
     }
   }
+];
+
+// Event types for selection
+const eventTypes = [
+  { value: 'workshop', label: 'Workshop', icon: '🎓' },
+  { value: 'launch', label: 'Product Launch', icon: '🚀' },
+  { value: 'giveaway', label: 'Giveaway', icon: '🎁' },
+  { value: 'celebration', label: 'Celebration', icon: '🎉' }
 ];
 
 const CampaignManagement: React.FC = () => {
@@ -119,12 +123,20 @@ const CampaignManagement: React.FC = () => {
     }
   };
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-PH', {
-      style: 'currency',
-      currency: 'PHP'
-    }).format(amount);
+  const getEventTypeInfo = (type: string) => {
+    return eventTypes.find(t => t.value === type) || { value: type, label: type, icon: '🎪' };
   };
+
+  const getEventTypeColor = (type: string) => {
+    switch (type) {
+      case 'workshop': return 'bg-blue-100 text-blue-800';
+      case 'launch': return 'bg-purple-100 text-purple-800';
+      case 'giveaway': return 'bg-green-100 text-green-800';
+      case 'celebration': return 'bg-pink-100 text-pink-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-PH', {
@@ -172,24 +184,29 @@ const CampaignManagement: React.FC = () => {
               
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-600">Sales Progress</span>
-                  <span className="font-medium">{formatCurrency(campaign.totalSales)} / {formatCurrency(campaign.targetSales)}</span>
+                  <span className="text-gray-600">Event Type</span>
+                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${getEventTypeColor(campaign.eventType)}`}>
+                    {getEventTypeInfo(campaign.eventType).icon} {getEventTypeInfo(campaign.eventType).label}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-gray-600">Location</span>
+                  <span className="font-medium text-sm">{campaign.location}</span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-gray-600">Attendees</span>
+                  <span className="font-medium">{campaign.currentAttendees} / {campaign.maxAttendees}</span>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-2">
                   <div 
                     className="bg-emerald-500 h-2 rounded-full" 
-                    style={{ width: `${Math.min((campaign.totalSales / campaign.targetSales) * 100, 100)}%` }}
+                    style={{ width: `${Math.min((campaign.currentAttendees / campaign.maxAttendees) * 100, 100)}%` }}
                   ></div>
                 </div>
                 <div className="flex items-center justify-between text-xs text-gray-500">
-                  <span>Target: {formatCurrency(campaign.targetSales)}</span>
-                  <span>{Math.round((campaign.totalSales / campaign.targetSales) * 100)}%</span>
+                  <span>Capacity: {campaign.maxAttendees}</span>
+                  <span>{Math.round((campaign.currentAttendees / campaign.maxAttendees) * 100)}%</span>
                 </div>
-              </div>
-              
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-600">Total Discount</span>
-                <span className="font-medium text-red-600">{formatCurrency(campaign.totalDiscount)}</span>
               </div>
               
               {campaign.status === 'active' && (
@@ -199,8 +216,8 @@ const CampaignManagement: React.FC = () => {
                     <div className="text-xs text-gray-500">Views</div>
                   </div>
                   <div className="text-center">
-                    <div className="text-lg font-semibold text-gray-900">{campaign.metrics.conversions}</div>
-                    <div className="text-xs text-gray-500">Conversions</div>
+                    <div className="text-lg font-semibold text-gray-900">{campaign.metrics.registrations}</div>
+                    <div className="text-xs text-gray-500">Registrations</div>
                   </div>
                 </div>
               )}
@@ -231,11 +248,11 @@ const CampaignManagement: React.FC = () => {
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Campaign</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Event</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Duration</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sales</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Progress</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Attendees</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
             </tr>
           </thead>
@@ -250,8 +267,14 @@ const CampaignManagement: React.FC = () => {
                     <div>
                       <div className="text-sm font-medium text-gray-900">{campaign.name}</div>
                       <div className="text-sm text-gray-500 line-clamp-1">{campaign.description}</div>
+                      <div className="text-xs text-gray-400">{campaign.location}</div>
                     </div>
                   </div>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <span className={`px-2 py-1 text-xs font-medium rounded-full ${getEventTypeColor(campaign.eventType)}`}>
+                    {getEventTypeInfo(campaign.eventType).icon} {getEventTypeInfo(campaign.eventType).label}
+                  </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(campaign.status)}`}>
@@ -263,18 +286,15 @@ const CampaignManagement: React.FC = () => {
                   <div className="text-gray-500">to {formatDate(campaign.endDate)}</div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="text-sm font-medium text-gray-900">{formatCurrency(campaign.totalSales)}</div>
-                  <div className="text-xs text-gray-500">Target: {formatCurrency(campaign.targetSales)}</div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
+                  <div className="text-sm font-medium text-gray-900">{campaign.currentAttendees} / {campaign.maxAttendees}</div>
                   <div className="flex items-center">
                     <div className="w-16 bg-gray-200 rounded-full h-2 mr-2">
                       <div 
                         className="bg-emerald-500 h-2 rounded-full" 
-                        style={{ width: `${Math.min((campaign.totalSales / campaign.targetSales) * 100, 100)}%` }}
+                        style={{ width: `${Math.min((campaign.currentAttendees / campaign.maxAttendees) * 100, 100)}%` }}
                       ></div>
                     </div>
-                    <span className="text-xs text-gray-500">{Math.round((campaign.totalSales / campaign.targetSales) * 100)}%</span>
+                    <span className="text-xs text-gray-500">{Math.round((campaign.currentAttendees / campaign.maxAttendees) * 100)}%</span>
                   </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
@@ -303,12 +323,12 @@ const CampaignManagement: React.FC = () => {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Campaign Management</h2>
-          <p className="text-gray-600">Create and manage marketing campaigns</p>
+          <h2 className="text-2xl font-bold text-gray-900">Event Campaigns</h2>
+          <p className="text-gray-600">Create and manage community events and workshops</p>
         </div>
         <button className="flex items-center space-x-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700">
           <Plus className="w-4 h-4" />
-          <span>Create Campaign</span>
+          <span>Create Event</span>
         </button>
       </div>
 
@@ -366,12 +386,12 @@ const CampaignManagement: React.FC = () => {
         </div>
       </div>
 
-      {/* Campaign Stats */}
+      {/* Event Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">Total Campaigns</p>
+              <p className="text-sm font-medium text-gray-600">Total Events</p>
               <p className="text-3xl font-bold text-gray-900">{mockCampaigns.length}</p>
             </div>
             <div className="p-3 bg-blue-100 rounded-lg">
@@ -383,7 +403,7 @@ const CampaignManagement: React.FC = () => {
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">Active Campaigns</p>
+              <p className="text-sm font-medium text-gray-600">Active Events</p>
               <p className="text-3xl font-bold text-gray-900">{mockCampaigns.filter(c => c.status === 'active').length}</p>
             </div>
             <div className="p-3 bg-green-100 rounded-lg">
@@ -395,11 +415,11 @@ const CampaignManagement: React.FC = () => {
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">Total Sales</p>
-              <p className="text-3xl font-bold text-gray-900">{formatCurrency(mockCampaigns.reduce((sum, c) => sum + c.totalSales, 0))}</p>
+              <p className="text-sm font-medium text-gray-600">Total Registrations</p>
+              <p className="text-3xl font-bold text-gray-900">{mockCampaigns.reduce((sum, c) => sum + c.currentAttendees, 0)}</p>
             </div>
-            <div className="p-3 bg-emerald-100 rounded-lg">
-              <DollarSign className="w-6 h-6 text-emerald-600" />
+            <div className="p-3 bg-purple-100 rounded-lg">
+              <Users className="w-6 h-6 text-purple-600" />
             </div>
           </div>
         </div>
@@ -407,11 +427,11 @@ const CampaignManagement: React.FC = () => {
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">Total Discounts</p>
-              <p className="text-3xl font-bold text-gray-900">{formatCurrency(mockCampaigns.reduce((sum, c) => sum + c.totalDiscount, 0))}</p>
+              <p className="text-sm font-medium text-gray-600">Total Views</p>
+              <p className="text-3xl font-bold text-gray-900">{mockCampaigns.reduce((sum, c) => sum + c.metrics.views, 0)}</p>
             </div>
-            <div className="p-3 bg-red-100 rounded-lg">
-              <TrendingDown className="w-6 h-6 text-red-600" />
+            <div className="p-3 bg-orange-100 rounded-lg">
+              <Eye className="w-6 h-6 text-orange-600" />
             </div>
           </div>
         </div>

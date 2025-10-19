@@ -103,12 +103,12 @@ export const ROLE_SIDEBAR_CONFIG = {
   },
   [SYSTEM_ROLES.MARKETING_ADMIN]: {
     sections: [
-      'marketing-dashboard', 'campaigns', 'templates', 'analytics', 'notifications',
+      'overview', 'marketing', 'marketing-overview', 'promotions-announcements', 'event-campaigns', 'insights-analytics', 'template-management', 'client-notifications', 'facebook-integration', 'reports'
     ],
   },
   [SYSTEM_ROLES.MARKETING_STAFF]: {
     sections: [
-      'marketing-dashboard', 'campaigns', 'analytics',
+      'overview', 'marketing', 'marketing-overview', 'promotions-announcements', 'event-campaigns', 'insights-analytics', 'template-management', 'client-notifications'
     ],
   },
   [SYSTEM_ROLES.CASHIER]: {

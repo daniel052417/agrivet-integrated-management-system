@@ -51,7 +51,7 @@ export const ROLE_SIDEBAR_CONFIG = {
       'sales-pos', 'sales-records', 'sales-dashboard', 'daily-sales', 'product-sales',
       'staff-user-management', 'user-accounts', 'session-history', 'user-roles-overview', 'roles-permissions', 'activity-logs',
       'hr', 'hr-dashboard', 'staff', 'attendance-dashboard', 'leave-management', 'hr-analytics', 'payroll',
-      'marketing', 'marketing-dashboard', 'campaigns', 'templates', 'analytics', 'notifications',
+      'marketing', 'marketing-overview', 'promotions-announcements', 'insights-analytics', 'client-notifications', 'facebook-integration',
       'reports', 'exports', 'claims', 'settings'
     ]
   },
@@ -68,12 +68,12 @@ export const ROLE_SIDEBAR_CONFIG = {
   },
   [SYSTEM_ROLES.MARKETING_ADMIN]: {
     sections: [
-      'overview', 'marketing', 'marketing-dashboard', 'campaigns', 'templates', 'analytics', 'notifications', 'reports'
+      'overview', 'marketing', 'marketing-overview', 'promotions-announcements', 'event-campaigns', 'insights-analytics', 'template-management', 'client-notifications', 'facebook-integration', 'reports'
     ]
   },
   [SYSTEM_ROLES.MARKETING_STAFF]: {
     sections: [
-      'overview', 'marketing', 'marketing-dashboard', 'campaigns', 'analytics', 'notifications'
+      'overview', 'marketing', 'marketing-overview', 'promotions-announcements', 'event-campaigns', 'insights-analytics', 'template-management', 'client-notifications'
     ]
   },
   [SYSTEM_ROLES.CASHIER]: {

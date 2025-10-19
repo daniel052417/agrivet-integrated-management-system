@@ -1,197 +1,130 @@
-import React, { useState } from 'react';
+//MarketingDashboard.tsx
+
+import React from 'react';
 import { 
   TrendingUp, 
-  Percent, 
   Target,
-  Star, 
-  Image as ImageIcon, 
-  BarChart3,
+  Users,
+  ImageIcon,
   Plus,
-  DollarSign,
-  Eye,
-  Edit,
-  Trash2,
   MoreHorizontal,
-  Tag,
-  Gift,
-  Users
 } from 'lucide-react';
-import InsightsAnalytics from './InsightsAnalytics';
-import RewardsNotifications from './RewardsNotifications';
-import CampaignManagement from './CampaignManagement';
-import PromotionsManagement from './PromotionsManagement';
-import TemplateManagement from './TemplateManagement';
-import ClientNotifications from './ClientNotifications';
-import FacebookIntegration from './FacebookIntegration';
 
-// Mock data for marketing dashboard
+// Type definitions
+interface Product {
+  id: number;
+  name: string;
+  sku: string;
+  type: string;
+  priority: string;
+  views: number;
+}
+
+// Mock data for marketing overview dashboard
 const mockData = {
   campaigns: [
     {
       id: 1,
-      name: "Summer Sale 2025",
-      description: "Biggest summer promotion with up to 30% off on fertilizers",
+      name: "Farmers' Workshop 2025",
+      description: "Free workshop on modern farming techniques and sustainable agriculture practices",
       status: "active",
       startDate: "2025-01-15",
       endDate: "2025-02-15",
-      totalDiscount: 15420,
-      totalSales: 125000,
-      targetSales: 100000,
-      branches: ["Poblacion Branch", "Downtown Branch"],
-      image: "/api/placeholder/300/150"
+      eventType: "workshop",
+      location: "Main Store - Poblacion Branch",
+      maxAttendees: 50,
+      currentAttendees: 32,
+      branches: ["Poblacion Branch"],
+      image: "/api/placeholder/300/150",
+      metrics: {
+        views: 1250,
+        clicks: 340,
+        registrations: 32
+      }
     },
     {
       id: 2,
-      name: "New Year Promotion",
-      description: "Start the year right with special offers on all products",
+      name: "New Product Launch Event",
+      description: "Come see our latest agricultural equipment and tools demonstration",
       status: "ended",
       startDate: "2024-12-20",
       endDate: "2025-01-10",
-      totalDiscount: 8750,
-      totalSales: 89000,
-      targetSales: 75000,
+      eventType: "launch",
+      location: "All Branches",
+      maxAttendees: 100,
+      currentAttendees: 78,
       branches: ["All Branches"],
-      image: "/api/placeholder/300/150"
+      image: "/api/placeholder/300/150",
+      metrics: {
+        views: 2100,
+        clicks: 450,
+        registrations: 78
+      }
     },
     {
       id: 3,
-      name: "Farmer's Choice",
-      description: "Exclusive deals for our loyal farming customers",
+      name: "Community Giveaway Event",
+      description: "Free seeds and farming supplies giveaway for local farmers",
       status: "upcoming",
       startDate: "2025-02-01",
       endDate: "2025-02-28",
-      totalDiscount: 0,
-      totalSales: 0,
-      targetSales: 150000,
+      eventType: "giveaway",
+      location: "Poblacion Branch",
+      maxAttendees: 200,
+      currentAttendees: 0,
       branches: ["Poblacion Branch"],
-      image: "/api/placeholder/300/150"
+      image: "/api/placeholder/300/150",
+      metrics: {
+        views: 0,
+        clicks: 0,
+        registrations: 0
+      }
     }
   ],
-  discounts: [
-    {
-      id: 1,
-      name: "10% Off All Fertilizers",
-      type: "percentage",
-      value: 10,
-      status: "active",
-      usageCount: 45,
-      usageLimit: 100,
-      startDate: "2025-01-15",
-      endDate: "2025-02-15",
-      appliesTo: "category",
-      target: "Fertilizers",
-      branches: ["All Branches"]
-    },
-    {
-      id: 2,
-      name: "₱50 Off Orders Above ₱1000",
-      type: "fixed",
-      value: 50,
-      status: "active",
-      usageCount: 23,
-      usageLimit: 50,
-      startDate: "2025-01-15",
-      endDate: "2025-02-15",
-      appliesTo: "order",
-      target: "₱1000+",
-      branches: ["Poblacion Branch", "Downtown Branch"]
-    },
-    {
-      id: 3,
-      name: "Buy 5 Get 1 Free - Seeds",
-      type: "buy_x_get_y",
-      value: "5:1",
-      status: "active",
-      usageCount: 12,
-      usageLimit: 30,
-      startDate: "2025-01-15",
-      endDate: "2025-02-15",
-      appliesTo: "product",
-      target: "Premium Seeds",
-      branches: ["All Branches"]
-    }
-  ],
-  featuredProducts: [
-    {
-      id: 1,
-      name: "Ammonium Sulfate 21-0-0",
-      sku: "FERT-001",
-      type: "featured",
-      priority: 1,
-      image: "/api/placeholder/200/200",
-      originalPrice: 1400,
-      salePrice: 980,
-      discount: 30,
-      salesCount: 45
-    },
-    {
-      id: 2,
-      name: "Premium Seeds Mix",
-      sku: "SEED-001",
-      type: "new_arrival",
-      priority: 2,
-      image: "/api/placeholder/200/200",
-      originalPrice: 250,
-      salePrice: 250,
-      discount: 0,
-      salesCount: 23
-    },
-    {
-      id: 3,
-      name: "Organic Compost 50kg",
-      sku: "COMP-001",
-      type: "best_seller",
-      priority: 3,
-      image: "/api/placeholder/200/200",
-      originalPrice: 800,
-      salePrice: 800,
-      discount: 0,
-      salesCount: 67
-    }
-  ],
-  banners: [
-    {
-      id: 1,
-      title: "Summer Sale 2025",
-      subtitle: "Up to 30% off on all fertilizers",
-      image: "/api/placeholder/800/300",
-      status: "active",
-      priority: 1,
-      linkTo: "/campaigns/summer-sale-2025"
-    },
-    {
-      id: 2,
-      title: "New Products Available",
-      subtitle: "Check out our latest farming solutions",
-      image: "/api/placeholder/800/300",
-      status: "active",
-      priority: 2,
-      linkTo: "/products/new"
-    }
-  ],
-  loyaltyStats: {
-    totalMembers: 1250,
-    activeMembers: 890,
-    totalPointsIssued: 45600,
-    totalPointsRedeemed: 23400,
-    averagePointsPerMember: 36.5
-  },
   analytics: {
     totalCampaigns: 3,
     activeCampaigns: 1,
-    totalDiscounts: 3,
-    totalDiscountValue: 24170,
-    totalSales: 214000,
-    conversionRate: 12.5,
-    topPerformingCampaign: "Summer Sale 2025",
-    mostUsedDiscount: "10% Off All Fertilizers"
-  }
+    totalPromotions: 3,
+    totalViews: 1250,
+    totalClicks: 340,
+    totalRegistrations: 110,
+    topPerformingCampaign: "Farmers' Workshop 2025",
+    topPerformingPromotion: "New Fertilizer Arrival",
+    customerEngagement: 78.5,
+    socialMediaReach: 12500,
+    pwaNotifications: 2450,
+    facebookPosts: 12,
+    conversionRate: 27.2
+  },
+  featuredProducts: [
+    {
+      id: 1,
+      name: "Premium Fertilizer",
+      sku: "FERT-001",
+      type: "featured",
+      priority: "High",
+      views: 156
+    },
+    {
+      id: 2,
+      name: "Seed Pack Mix",
+      sku: "SEED-002",
+      type: "new_arrival",
+      priority: "Medium",
+      views: 89
+    },
+    {
+      id: 3,
+      name: "Garden Tools Set",
+      sku: "TOOL-003",
+      type: "best_seller",
+      priority: "High",
+      views: 234
+    }
+  ]
 };
 
 const MarketingDashboard: React.FC = () => {
-  const [activeTab, setActiveTab] = useState('overview');
-  const [activeSubTab, setActiveSubTab] = useState('overview');
-
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'active': return 'bg-green-100 text-green-800';
@@ -210,13 +143,6 @@ const MarketingDashboard: React.FC = () => {
     }
   };
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-PH', {
-      style: 'currency',
-      currency: 'PHP'
-    }).format(amount);
-  };
-
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-PH', {
       year: 'numeric',
@@ -225,333 +151,14 @@ const MarketingDashboard: React.FC = () => {
     });
   };
 
-
-
-  const renderPromotionsCampaigns = () => (
+  return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900">Promotions & Campaigns</h2>
-          <p className="text-gray-600">Manage all promotional activities and marketing campaigns in one place</p>
-        </div>
-        <div className="flex items-center space-x-3">
-          <button className="flex items-center space-x-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700">
-            <Plus className="w-4 h-4" />
-            <span>New Promotion</span>
-          </button>
-          <button className="flex items-center space-x-2 border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50">
-            <Plus className="w-4 h-4" />
-            <span>New Campaign</span>
-          </button>
-        </div>
+      {/* Page Header */}
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900">Promotions & Engagement Overview</h1>
+        <p className="text-gray-600">Monitor your marketing performance and engagement metrics</p>
       </div>
 
-      {/* Quick Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Active Promotions</p>
-              <p className="text-3xl font-bold text-gray-900">{mockData.analytics.totalDiscounts}</p>
-            </div>
-            <div className="p-3 bg-green-100 rounded-lg">
-              <Percent className="w-6 h-6 text-green-600" />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Active Campaigns</p>
-              <p className="text-3xl font-bold text-gray-900">{mockData.analytics.activeCampaigns}</p>
-            </div>
-            <div className="p-3 bg-blue-100 rounded-lg">
-              <Target className="w-6 h-6 text-blue-600" />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Total Sales</p>
-              <p className="text-3xl font-bold text-gray-900">{formatCurrency(mockData.analytics.totalSales)}</p>
-            </div>
-            <div className="p-3 bg-emerald-100 rounded-lg">
-              <DollarSign className="w-6 h-6 text-emerald-600" />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Conversion Rate</p>
-              <p className="text-3xl font-bold text-gray-900">{mockData.analytics.conversionRate}%</p>
-            </div>
-            <div className="p-3 bg-purple-100 rounded-lg">
-              <TrendingUp className="w-6 h-6 text-purple-600" />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Sub-tabs for Promotions & Campaigns */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200">
-        <div className="border-b border-gray-200">
-          <nav className="flex space-x-8 px-6">
-            <button 
-              onClick={() => setActiveSubTab('campaigns')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                activeSubTab === 'campaigns' 
-                  ? 'border-emerald-500 text-emerald-600' 
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              All Campaigns
-            </button>
-            <button 
-              onClick={() => setActiveSubTab('promotions')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                activeSubTab === 'promotions' 
-                  ? 'border-emerald-500 text-emerald-600' 
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              Active Promotions
-            </button>
-            <button 
-              onClick={() => setActiveSubTab('upcoming')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                activeSubTab === 'upcoming' 
-                  ? 'border-emerald-500 text-emerald-600' 
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              Upcoming
-            </button>
-            <button 
-              onClick={() => setActiveSubTab('analytics')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                activeSubTab === 'analytics' 
-                  ? 'border-emerald-500 text-emerald-600' 
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              Analytics
-            </button>
-          </nav>
-        </div>
-        <div className="p-6">
-          {activeSubTab === 'campaigns' && renderCampaigns()}
-          {activeSubTab === 'promotions' && <PromotionsManagement />}
-          {activeSubTab === 'upcoming' && renderUpcomingCampaigns()}
-          {activeSubTab === 'analytics' && <InsightsAnalytics />}
-        </div>
-      </div>
-    </div>
-  );
-
-  const renderCampaignManagement = () => (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900">Campaign Management</h2>
-          <p className="text-gray-600">Comprehensive campaign management with discounts, banners, and social media integration</p>
-        </div>
-        <button className="flex items-center space-x-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700">
-          <Plus className="w-4 h-4" />
-          <span>Create Campaign</span>
-        </button>
-      </div>
-
-      {/* Campaign Management Sub-tabs */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200">
-        <div className="border-b border-gray-200">
-          <nav className="flex space-x-8 px-6">
-            <button 
-              onClick={() => setActiveSubTab('campaigns')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                activeSubTab === 'campaigns' 
-                  ? 'border-emerald-500 text-emerald-600' 
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              Campaigns
-            </button>
-            <button 
-              onClick={() => setActiveSubTab('discounts')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                activeSubTab === 'discounts' 
-                  ? 'border-emerald-500 text-emerald-600' 
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              Discounts
-            </button>
-            <button 
-              onClick={() => setActiveSubTab('banners')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                activeSubTab === 'banners' 
-                  ? 'border-emerald-500 text-emerald-600' 
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              Banners & Ads
-            </button>
-            <button 
-              onClick={() => setActiveSubTab('social')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                activeSubTab === 'social' 
-                  ? 'border-emerald-500 text-emerald-600' 
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              Social Media
-            </button>
-          </nav>
-        </div>
-        <div className="p-6">
-          {activeSubTab === 'campaigns' && <CampaignManagement />}
-          {activeSubTab === 'discounts' && renderDiscounts()}
-          {activeSubTab === 'banners' && renderBannersAds()}
-          {activeSubTab === 'social' && <FacebookIntegration />}
-        </div>
-      </div>
-    </div>
-  );
-
-  const renderTemplateManagement = () => (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900">Template Management</h2>
-          <p className="text-gray-600">Manage featured products, banners, and creative assets</p>
-        </div>
-        <div className="flex items-center space-x-3">
-          <button className="flex items-center space-x-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700">
-            <Plus className="w-4 h-4" />
-            <span>Add Product</span>
-          </button>
-          <button className="flex items-center space-x-2 border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50">
-            <Plus className="w-4 h-4" />
-            <span>Add Banner</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Template Management Sub-tabs */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200">
-        <div className="border-b border-gray-200">
-          <nav className="flex space-x-8 px-6">
-            <button 
-              onClick={() => setActiveSubTab('featured')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                activeSubTab === 'featured' 
-                  ? 'border-emerald-500 text-emerald-600' 
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              Featured Products
-            </button>
-            <button 
-              onClick={() => setActiveSubTab('banners')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                activeSubTab === 'banners' 
-                  ? 'border-emerald-500 text-emerald-600' 
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              Banners & Ads
-            </button>
-            <button 
-              onClick={() => setActiveSubTab('assets')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                activeSubTab === 'assets' 
-                  ? 'border-emerald-500 text-emerald-600' 
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              Creative Assets
-            </button>
-          </nav>
-        </div>
-        <div className="p-6">
-          {activeSubTab === 'featured' && renderFeaturedProducts()}
-          {activeSubTab === 'banners' && renderBannersAds()}
-          {activeSubTab === 'assets' && <TemplateManagement />}
-        </div>
-      </div>
-    </div>
-  );
-
-  const renderClientNotifications = () => (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900">Client Notifications</h2>
-          <p className="text-gray-600">Manage rewards, notifications, and loyalty programs for customer engagement</p>
-        </div>
-        <div className="flex items-center space-x-3">
-          <button className="flex items-center space-x-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700">
-            <Plus className="w-4 h-4" />
-            <span>Send Notification</span>
-          </button>
-          <button className="flex items-center space-x-2 border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50">
-            <Plus className="w-4 h-4" />
-            <span>Manage Rewards</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Client Notifications Sub-tabs */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200">
-        <div className="border-b border-gray-200">
-          <nav className="flex space-x-8 px-6">
-            <button 
-              onClick={() => setActiveSubTab('rewards')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                activeSubTab === 'rewards' 
-                  ? 'border-emerald-500 text-emerald-600' 
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              Rewards & Notifications
-            </button>
-            <button 
-              onClick={() => setActiveSubTab('loyalty')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                activeSubTab === 'loyalty' 
-                  ? 'border-emerald-500 text-emerald-600' 
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              Loyalty Program
-            </button>
-            <button 
-              onClick={() => setActiveSubTab('email')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                activeSubTab === 'email' 
-                  ? 'border-emerald-500 text-emerald-600' 
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              Email Campaigns
-            </button>
-          </nav>
-        </div>
-        <div className="p-6">
-          {activeSubTab === 'rewards' && <RewardsNotifications />}
-          {activeSubTab === 'loyalty' && renderLoyaltyProgram()}
-          {activeSubTab === 'email' && <ClientNotifications />}
-        </div>
-      </div>
-    </div>
-  );
-
-  const renderOverview = () => (
-    <div className="space-y-6">
       {/* Key Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
@@ -570,12 +177,12 @@ const MarketingDashboard: React.FC = () => {
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">Total Discounts</p>
-              <p className="text-3xl font-bold text-gray-900">{mockData.analytics.totalDiscounts}</p>
+              <p className="text-sm font-medium text-gray-600">Total Promotions</p>
+              <p className="text-3xl font-bold text-gray-900">{mockData.analytics.totalPromotions}</p>
               <p className="text-sm text-gray-500">Currently active</p>
             </div>
             <div className="p-3 bg-green-100 rounded-lg">
-              <Percent className="w-6 h-6 text-green-600" />
+              <TrendingUp className="w-6 h-6 text-green-600" />
             </div>
           </div>
         </div>
@@ -583,12 +190,12 @@ const MarketingDashboard: React.FC = () => {
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">Total Sales</p>
-              <p className="text-3xl font-bold text-gray-900">{formatCurrency(mockData.analytics.totalSales)}</p>
+              <p className="text-sm font-medium text-gray-600">Total Registrations</p>
+              <p className="text-3xl font-bold text-gray-900">{mockData.analytics.totalRegistrations}</p>
               <p className="text-sm text-gray-500">From campaigns</p>
             </div>
             <div className="p-3 bg-emerald-100 rounded-lg">
-              <DollarSign className="w-6 h-6 text-emerald-600" />
+              <Users className="w-6 h-6 text-emerald-600" />
             </div>
           </div>
         </div>
@@ -621,7 +228,7 @@ const MarketingDashboard: React.FC = () => {
         <div className="p-6">
           <div className="space-y-4">
             {mockData.campaigns.map((campaign) => (
-              <div key={campaign.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+              <div key={campaign.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
                 <div className="flex items-center space-x-4">
                   <div className="w-16 h-12 bg-gray-200 rounded-lg flex items-center justify-center">
                     <ImageIcon className="w-6 h-6 text-gray-400" />
@@ -641,12 +248,12 @@ const MarketingDashboard: React.FC = () => {
                 </div>
                 <div className="flex items-center space-x-4">
                   <div className="text-right">
-                    <p className="text-sm font-medium text-gray-900">{formatCurrency(campaign.totalSales)}</p>
-                    <p className="text-xs text-gray-500">Sales</p>
+                    <p className="text-sm font-medium text-gray-900">{campaign.metrics?.views || 0}</p>
+                    <p className="text-xs text-gray-500">Views</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm font-medium text-gray-900">{formatCurrency(campaign.totalDiscount)}</p>
-                    <p className="text-xs text-gray-500">Discount</p>
+                    <p className="text-sm font-medium text-gray-900">{campaign.currentAttendees}</p>
+                    <p className="text-xs text-gray-500">Attendees</p>
                   </div>
                   <button className="p-2 text-gray-400 hover:text-gray-600">
                     <MoreHorizontal className="w-4 h-4" />
@@ -671,8 +278,8 @@ const MarketingDashboard: React.FC = () => {
         </div>
         <div className="p-6">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {mockData.featuredProducts.map((product) => (
-              <div key={product.id} className="border border-gray-200 rounded-lg p-4">
+            {mockData.featuredProducts.map((product: Product) => (
+              <div key={product.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
                 <div className="flex items-center space-x-3">
                   <div className="w-16 h-16 bg-gray-200 rounded-lg flex items-center justify-center">
                     <ImageIcon className="w-8 h-8 text-gray-400" />
@@ -688,468 +295,16 @@ const MarketingDashboard: React.FC = () => {
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center justify-between mt-3">
-                  <div className="flex items-center space-x-2">
-                    {product.discount > 0 ? (
-                      <>
-                        <span className="text-lg font-bold text-emerald-600">{formatCurrency(product.salePrice)}</span>
-                        <span className="text-sm text-gray-500 line-through">{formatCurrency(product.originalPrice)}</span>
-                        <span className="text-xs bg-red-100 text-red-800 px-2 py-1 rounded-full">-{product.discount}%</span>
-                      </>
-                    ) : (
-                      <span className="text-lg font-bold text-gray-900">{formatCurrency(product.originalPrice)}</span>
-                    )}
-                  </div>
+                <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-200">
                   <div className="text-right">
-                    <p className="text-sm font-medium text-gray-900">{product.salesCount}</p>
-                    <p className="text-xs text-gray-500">Sales</p>
+                    <p className="text-sm font-medium text-gray-900">{product.views || 0}</p>
+                    <p className="text-xs text-gray-500">Views</p>
                   </div>
                 </div>
               </div>
             ))}
           </div>
         </div>
-      </div>
-    </div>
-  );
-
-  const renderCampaigns = () => (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-gray-900">Campaign Management</h2>
-        <button className="flex items-center space-x-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700">
-          <Plus className="w-4 h-4" />
-          <span>Create Campaign</span>
-        </button>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-        {mockData.campaigns.map((campaign) => (
-          <div key={campaign.id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-            <div className="h-32 bg-gradient-to-r from-emerald-500 to-blue-500 relative">
-              <div className="absolute inset-0 bg-black bg-opacity-20"></div>
-              <div className="absolute top-4 right-4">
-                <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(campaign.status)}`}>
-                  {campaign.status}
-                </span>
-              </div>
-              <div className="absolute bottom-4 left-4 text-white">
-                <h3 className="text-lg font-semibold">{campaign.name}</h3>
-                <p className="text-sm opacity-90">{campaign.description}</p>
-              </div>
-            </div>
-            <div className="p-6">
-              <div className="space-y-4">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-600">Duration</span>
-                  <span className="font-medium">{formatDate(campaign.startDate)} - {formatDate(campaign.endDate)}</span>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-600">Branches</span>
-                  <span className="font-medium">{campaign.branches.length} branch{campaign.branches.length > 1 ? 'es' : ''}</span>
-                </div>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-gray-600">Sales Progress</span>
-                    <span className="font-medium">{formatCurrency(campaign.totalSales)} / {formatCurrency(campaign.targetSales)}</span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div 
-                      className="bg-emerald-500 h-2 rounded-full" 
-                      style={{ width: `${Math.min((campaign.totalSales / campaign.targetSales) * 100, 100)}%` }}
-                    ></div>
-                  </div>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-600">Total Discount</span>
-                  <span className="font-medium text-red-600">{formatCurrency(campaign.totalDiscount)}</span>
-                </div>
-              </div>
-              <div className="flex items-center space-x-2 mt-6">
-                <button className="flex-1 flex items-center justify-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
-                  <Eye className="w-4 h-4" />
-                  <span>View</span>
-                </button>
-                <button className="flex-1 flex items-center justify-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
-                  <Edit className="w-4 h-4" />
-                  <span>Edit</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-
-
-  const renderFeaturedProducts = () => (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-gray-900">Featured Products</h2>
-        <button className="flex items-center space-x-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700">
-          <Plus className="w-4 h-4" />
-          <span>Add Product</span>
-        </button>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {mockData.featuredProducts.map((product) => (
-          <div key={product.id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-            <div className="h-48 bg-gray-200 flex items-center justify-center">
-              <ImageIcon className="w-16 h-16 text-gray-400" />
-            </div>
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="text-lg font-semibold text-gray-900">{product.name}</h3>
-                <span className={`px-2 py-1 text-xs font-medium rounded-full ${getTypeColor(product.type)}`}>
-                  {product.type.replace('_', ' ')}
-                </span>
-              </div>
-              <p className="text-sm text-gray-600 mb-4">SKU: {product.sku}</p>
-              
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center space-x-2">
-                  {product.discount > 0 ? (
-                    <>
-                      <span className="text-xl font-bold text-emerald-600">{formatCurrency(product.salePrice)}</span>
-                      <span className="text-sm text-gray-500 line-through">{formatCurrency(product.originalPrice)}</span>
-                    </>
-                  ) : (
-                    <span className="text-xl font-bold text-gray-900">{formatCurrency(product.originalPrice)}</span>
-                  )}
-                </div>
-                <div className="text-right">
-                  <div className="text-sm font-medium text-gray-900">{product.salesCount} sales</div>
-                  <div className="text-xs text-gray-500">Priority: {product.priority}</div>
-                </div>
-              </div>
-
-              <div className="flex items-center space-x-2">
-                <button className="flex-1 flex items-center justify-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
-                  <Edit className="w-4 h-4" />
-                  <span>Edit</span>
-                </button>
-                <button className="flex-1 flex items-center justify-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
-                  <Trash2 className="w-4 h-4" />
-                  <span>Remove</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-
-  const renderUpcomingCampaigns = () => (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-gray-900">Upcoming Campaigns</h2>
-        <button className="flex items-center space-x-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700">
-          <Plus className="w-4 h-4" />
-          <span>Schedule Campaign</span>
-        </button>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-        {mockData.campaigns.filter(campaign => campaign.status === 'upcoming').map((campaign) => (
-          <div key={campaign.id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-            <div className="h-32 bg-gradient-to-r from-blue-500 to-purple-500 relative">
-              <div className="absolute inset-0 bg-black bg-opacity-20"></div>
-              <div className="absolute top-4 right-4">
-                <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(campaign.status)}`}>
-                  {campaign.status}
-                </span>
-              </div>
-              <div className="absolute bottom-4 left-4 text-white">
-                <h3 className="text-lg font-semibold">{campaign.name}</h3>
-                <p className="text-sm opacity-90">{campaign.description}</p>
-              </div>
-            </div>
-            <div className="p-6">
-              <div className="space-y-4">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-600">Starts</span>
-                  <span className="font-medium">{formatDate(campaign.startDate)}</span>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-600">Ends</span>
-                  <span className="font-medium">{formatDate(campaign.endDate)}</span>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-600">Target Sales</span>
-                  <span className="font-medium">{formatCurrency(campaign.targetSales)}</span>
-                </div>
-              </div>
-              <div className="flex items-center space-x-2 mt-6">
-                <button className="flex-1 flex items-center justify-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
-                  <Eye className="w-4 h-4" />
-                  <span>Preview</span>
-                </button>
-                <button className="flex-1 flex items-center justify-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
-                  <Edit className="w-4 h-4" />
-                  <span>Edit</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-
-  const renderDiscounts = () => (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-gray-900">Discount Management</h2>
-        <button className="flex items-center space-x-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700">
-          <Plus className="w-4 h-4" />
-          <span>Create Discount</span>
-        </button>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-        {mockData.discounts.map((discount) => (
-          <div key={discount.id} className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">{discount.name}</h3>
-              <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(discount.status)}`}>
-                {discount.status}
-              </span>
-            </div>
-            
-            <div className="space-y-3">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-600">Type</span>
-                <span className="font-medium">{discount.type}</span>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-600">Value</span>
-                <span className="font-medium">
-                  {discount.type === 'percentage' ? `${discount.value}%` : formatCurrency(Number(discount.value))}
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-600">Usage</span>
-                <span className="font-medium">{discount.usageCount} / {discount.usageLimit}</span>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-600">Applies to</span>
-                <span className="font-medium">{discount.target}</span>
-              </div>
-              <div className="w-full bg-gray-200 rounded-full h-2">
-                <div 
-                  className="bg-emerald-500 h-2 rounded-full" 
-                  style={{ width: `${(discount.usageCount / discount.usageLimit) * 100}%` }}
-                ></div>
-              </div>
-            </div>
-
-            <div className="flex items-center space-x-2 mt-6">
-              <button className="flex-1 flex items-center justify-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
-                <Edit className="w-4 h-4" />
-                <span>Edit</span>
-              </button>
-              <button className="flex-1 flex items-center justify-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
-                <Trash2 className="w-4 h-4" />
-                <span>Delete</span>
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-
-  const renderBannersAds = () => (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-gray-900">Banners & Ads Management</h2>
-        <button className="flex items-center space-x-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700">
-          <Plus className="w-4 h-4" />
-          <span>Create Banner</span>
-        </button>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {mockData.banners.map((banner) => (
-          <div key={banner.id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-            <div className="h-48 bg-gray-200 flex items-center justify-center">
-              <ImageIcon className="w-16 h-16 text-gray-400" />
-            </div>
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="text-lg font-semibold text-gray-900">{banner.title}</h3>
-                <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(banner.status)}`}>
-                  {banner.status}
-                </span>
-              </div>
-              <p className="text-sm text-gray-600 mb-4">{banner.subtitle}</p>
-              
-              <div className="flex items-center justify-between text-sm mb-4">
-                <span className="text-gray-600">Priority</span>
-                <span className="font-medium">{banner.priority}</span>
-              </div>
-
-              <div className="flex items-center space-x-2">
-                <button className="flex-1 flex items-center justify-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
-                  <Eye className="w-4 h-4" />
-                  <span>Preview</span>
-                </button>
-                <button className="flex-1 flex items-center justify-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
-                  <Edit className="w-4 h-4" />
-                  <span>Edit</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-
-  const renderLoyaltyProgram = () => (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-gray-900">Loyalty Program</h2>
-        <button className="flex items-center space-x-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700">
-          <Plus className="w-4 h-4" />
-          <span>Configure Program</span>
-        </button>
-      </div>
-
-      {/* Loyalty Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Total Members</p>
-              <p className="text-3xl font-bold text-gray-900">{mockData.loyaltyStats.totalMembers}</p>
-            </div>
-            <div className="p-3 bg-blue-100 rounded-lg">
-              <Users className="w-6 h-6 text-blue-600" />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Active Members</p>
-              <p className="text-3xl font-bold text-gray-900">{mockData.loyaltyStats.activeMembers}</p>
-            </div>
-            <div className="p-3 bg-green-100 rounded-lg">
-              <Users className="w-6 h-6 text-green-600" />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Points Issued</p>
-              <p className="text-3xl font-bold text-gray-900">{mockData.loyaltyStats.totalPointsIssued.toLocaleString()}</p>
-            </div>
-            <div className="p-3 bg-purple-100 rounded-lg">
-              <Star className="w-6 h-6 text-purple-600" />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Avg Points/Member</p>
-              <p className="text-3xl font-bold text-gray-900">{mockData.loyaltyStats.averagePointsPerMember}</p>
-            </div>
-            <div className="p-3 bg-orange-100 rounded-lg">
-              <TrendingUp className="w-6 h-6 text-orange-600" />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Loyalty Program Details */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Program Configuration</h3>
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <span className="text-gray-600">Points per peso spent</span>
-            <span className="font-medium">1 point = ₱1.00</span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-gray-600">Redemption rate</span>
-            <span className="font-medium">100 points = ₱10.00</span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-gray-600">Minimum redemption</span>
-            <span className="font-medium">500 points</span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-gray-600">Points expiry</span>
-            <span className="font-medium">12 months</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-
-
-
-
-  const tabs = [
-    { id: 'overview', name: 'Overview', icon: BarChart3 },
-    { id: 'promotions-campaigns', name: 'Promotions & Campaigns', icon: Tag },
-    { id: 'insights', name: 'Insights & Analytics', icon: TrendingUp },
-    { id: 'campaign-management', name: 'Campaign Management', icon: Target },
-    { id: 'template-management', name: 'Template Management', icon: Star },
-    { id: 'client-notifications', name: 'Client Notifications', icon: Gift }
-  ];
-
-  // Reset sub-tab when main tab changes
-  const handleTabChange = (tabId: string) => {
-    setActiveTab(tabId);
-    setActiveSubTab('overview');
-  };
-
-  return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="bg-white shadow-sm border-b border-gray-200">
-        <div className="px-6 py-4">
-          <h1 className="text-2xl font-bold text-gray-900">Marketing Dashboard</h1>
-          <p className="text-gray-600">Manage campaigns, discounts, and customer engagement</p>
-      </div>
-        <div className="px-6">
-          <nav className="flex space-x-8">
-            {tabs.map((tab) => {
-              const Icon = tab.icon;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => handleTabChange(tab.id)}
-                  className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-medium text-sm ${
-                    activeTab === tab.id
-                      ? 'border-emerald-500 text-emerald-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                  }`}
-                >
-                  <Icon className="w-4 h-4" />
-                  <span>{tab.name}</span>
-                </button>
-              );
-            })}
-          </nav>
-        </div>
-      </div>
-
-      <div className="p-6">
-        {activeTab === 'overview' && renderOverview()}
-        {activeTab === 'promotions-campaigns' && renderPromotionsCampaigns()}
-        {activeTab === 'insights' && <InsightsAnalytics />}
-        {activeTab === 'campaign-management' && renderCampaignManagement()}
-        {activeTab === 'template-management' && renderTemplateManagement()}
-        {activeTab === 'client-notifications' && renderClientNotifications()}
       </div>
     </div>
   );

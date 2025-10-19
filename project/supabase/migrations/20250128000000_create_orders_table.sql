@@ -130,3 +130,7 @@ COMMENT ON COLUMN public.orders.order_type IS 'Type of order: pickup or delivery
 COMMENT ON COLUMN public.orders.status IS 'Order status: pending_confirmation, confirmed, preparing, ready, completed, cancelled';
 COMMENT ON COLUMN public.orders.payment_status IS 'Payment status: pending, paid, failed, refunded';
 COMMENT ON COLUMN public.orders.is_guest_order IS 'Whether this is a guest order (no customer account)';
+
+
+
+

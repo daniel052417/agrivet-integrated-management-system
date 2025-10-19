@@ -18,6 +18,9 @@ export interface Promotion {
   created_by?: string;
   created_at: string;
   updated_at: string;
+  displayStyle: 'banner' | 'modal' | 'carousel';
+  images: string[]; // Array of image URLs instead of single imageUrl
+  carouselInterval?: number; 
 }
 
 export interface PromotionStats {
@@ -359,7 +362,7 @@ export class PromotionsService {
       }
 
       // Parse JSON fields
-      return data?.map(promo => ({
+      return data?.map((promo: Promotion) => ({
         ...promo,
         products: typeof promo.products === 'string' ? JSON.parse(promo.products) : promo.products,
         categories: typeof promo.categories === 'string' ? JSON.parse(promo.categories) : promo.categories,

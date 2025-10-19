@@ -160,3 +160,7 @@ GRANT EXECUTE ON FUNCTION get_inventory_with_details(UUID) TO authenticated;
 
 
 
+
+
+
+

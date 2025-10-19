@@ -40,37 +40,60 @@ class PromotionService {
    * Updated to match the actual database schema with new display modes
    */
   private mapPromotions(dbPromotions: any[]): Promotion[] {
-    return dbPromotions.map(dbPromo => ({
-      id: dbPromo.id,
-      title: dbPromo.name || dbPromo.title || 'Promotion',
-      description: dbPromo.description || '',
-      imageUrl: dbPromo.image_url,
-      discountType: dbPromo.type || dbPromo.discount_type || 'percentage',
-      discountValue: dbPromo.discount_value || 0,
-      validFrom: dbPromo.valid_from || dbPromo.start_date,
-      validUntil: dbPromo.valid_until || dbPromo.end_date,
-      isActive: dbPromo.is_active || false,
-      targetAudience: dbPromo.target_audience || 'all',
-      targetBranchIds: dbPromo.target_branch_ids || [],
-      branchId: dbPromo.branch_id || undefined,
-      conditions: dbPromo.conditions || {},
-      // New display mode system
-      displayMode: dbPromo.display_mode || this.inferDisplayMode(dbPromo),
-      displayPriority: dbPromo.display_priority || 0,
-      displaySettings: {
-        showAsBanner: dbPromo.display_settings?.showAsBanner || false,
-        showAsModal: dbPromo.display_settings?.showAsModal || false,
-        showAsNotification: dbPromo.display_settings?.showAsNotification || false,
-        showAsCarousel: dbPromo.display_settings?.showAsCarousel || false,
-        bannerPosition: dbPromo.display_settings?.bannerPosition || 'top',
-        modalTrigger: dbPromo.display_settings?.modalTrigger || 'immediate',
-        notificationTrigger: dbPromo.display_settings?.notificationTrigger || 'immediate',
-        carouselInterval: dbPromo.display_settings?.carouselInterval || 5000,
-        carouselPosition: dbPromo.display_settings?.carouselPosition || 'both'
-      },
-      createdAt: dbPromo.created_at,
-      updatedAt: dbPromo.updated_at
-    }))
+    return dbPromotions.map(dbPromo => {
+      // Parse display_settings if it's a string
+      let displaySettings = dbPromo.display_settings
+      if (typeof displaySettings === 'string') {
+        try {
+          displaySettings = JSON.parse(displaySettings)
+        } catch (e) {
+          console.error('Error parsing display_settings:', e)
+          displaySettings = {}
+        }
+      }
+  
+      const promotion = {
+        id: dbPromo.id,
+        title: dbPromo.name || dbPromo.title || 'Promotion',
+        description: dbPromo.description || '',
+        imageUrl: dbPromo.image_url,
+        imageUrls: dbPromo.image_urls || undefined,
+        buttonText: dbPromo.button_text || undefined,
+        buttonLink: dbPromo.button_link || undefined,
+        validFrom: dbPromo.valid_from || dbPromo.start_date,
+        validUntil: dbPromo.valid_until || dbPromo.end_date,
+        isActive: ((dbPromo.is_active === true) || (dbPromo.status === 'active')) && (dbPromo.show_on_pwa === true),
+        targetAudience: dbPromo.target_audience || 'all',
+        targetBranchIds: dbPromo.target_branch_ids || [],
+        branchId: dbPromo.branch_id || undefined,
+        conditions: dbPromo.conditions || {},
+        displayMode: dbPromo.display_mode || this.inferDisplayMode(dbPromo),
+        displayPriority: dbPromo.display_priority || 0,
+        displaySettings: {
+          showAsBanner: displaySettings?.showAsBanner === true || false,
+          showAsModal: displaySettings?.showAsModal === true || false,
+          showAsNotification: displaySettings?.showAsNotification === true || false,
+          showAsCarousel: displaySettings?.showAsCarousel === true || false,
+          bannerPosition: displaySettings?.bannerPosition || 'top',
+          modalTrigger: displaySettings?.modalTrigger || 'immediate',
+          notificationTrigger: displaySettings?.notificationTrigger || 'immediate',
+          carouselInterval: displaySettings?.carouselInterval || 5000,
+          carouselPosition: displaySettings?.carouselPosition || 'both'
+        },
+        createdAt: dbPromo.created_at,
+        updatedAt: dbPromo.updated_at
+      }
+  
+      console.log('Mapped promotion:', {
+        id: promotion.id,
+        title: promotion.title,
+        displayMode: promotion.displayMode,
+        showAsModal: promotion.displaySettings.showAsModal,
+        isActive: promotion.isActive
+      })
+  
+      return promotion
+    })
   }
 
   /**
@@ -97,12 +120,14 @@ class PromotionService {
    */
   async getActivePromotions(targeting?: PromotionTargeting): Promise<Promotion[]> {
     try {
+      const today = new Date().toISOString().slice(0, 10)
       const { data, error } = await supabase
         .from('promotions')
         .select('*')
+        .eq('show_on_pwa', true)
         .eq('is_active', true)
-        .gte('valid_until', new Date().toISOString())
-        .lte('valid_from', new Date().toISOString())
+        .lte('start_date', today)
+        .gte('end_date', today)
         .order('created_at', { ascending: false })
 
       if (error) throw error
@@ -122,13 +147,14 @@ class PromotionService {
    */
   async getBannerPromotions(targeting?: PromotionTargeting): Promise<Promotion[]> {
     try {
+      const today = new Date().toISOString().slice(0, 10)
       const { data, error } = await supabase
         .from('promotions')
         .select('*')
+        .eq('show_on_pwa', true)
         .eq('is_active', true)
-        .eq('display_settings->>showAsBanner', 'true')
-        .gte('valid_until', new Date().toISOString())
-        .lte('valid_from', new Date().toISOString())
+        .lte('start_date', today)
+        .gte('end_date', today)
         .order('created_at', { ascending: false })
 
       if (error) throw error
@@ -149,22 +175,46 @@ class PromotionService {
    */
   async getModalPromotions(targeting?: PromotionTargeting): Promise<Promotion[]> {
     try {
+      const today = new Date().toISOString().slice(0, 10)
+      
+      // Query with proper JSONB filtering for display_settings
       const { data, error } = await supabase
         .from('promotions')
         .select('*')
+        .eq('show_on_pwa', true)
         .eq('is_active', true)
-        .eq('display_settings->>showAsModal', 'true')
-        .gte('valid_until', new Date().toISOString())
-        .lte('valid_from', new Date().toISOString())
+        .lte('start_date', today)
+        .gte('end_date', today)
+        .order('display_priority', { ascending: false })
         .order('created_at', { ascending: false })
-
-      if (error) throw error
-
+  
+      if (error) {
+        console.error('Error fetching modal promotions:', error)
+        throw error
+      }
+  
+      console.log('Raw promotions from DB:', data?.length || 0)
+  
       const promotions = this.mapPromotions(data || [])
       
-      // Apply targeting filters and check if modal was shown
-      const filteredPromotions = this.applyTargetingFilters(promotions, targeting)
-      return this.filterShownModals(filteredPromotions)
+      // Filter for modal display mode
+      const modalPromotions = promotions.filter(promo => {
+        const isModal = promo.displaySettings?.showAsModal === true || promo.displayMode === 'modal'
+        console.log(`Promotion "${promo.title}": showAsModal=${promo.displaySettings?.showAsModal}, displayMode=${promo.displayMode}, isModal=${isModal}`)
+        return isModal
+      })
+  
+      console.log('Filtered modal promotions:', modalPromotions.length)
+      
+      // Apply targeting filters
+      const targetedPromotions = this.applyTargetingFilters(modalPromotions, targeting)
+      
+      // Check if already shown in this session
+      const notShownYet = this.filterShownModals(targetedPromotions)
+      
+      console.log('Modal promotions after filtering shown:', notShownYet.length)
+      
+      return notShownYet
     } catch (error) {
       console.error('Error fetching modal promotions:', error)
       return []
@@ -235,6 +285,40 @@ class PromotionService {
     }
   }
 
+
+  async getModalPromotionsForCarousel(targeting?: PromotionTargeting): Promise<{
+    promotions: Promotion[]
+    useCarousel: boolean
+    autoplayInterval: number
+  }> {
+    try {
+      const modalPromotions = await this.getModalPromotions(targeting)
+      
+      // Sort by display priority (highest first) and then by created date
+      const sortedPromotions = modalPromotions.sort((a, b) => {
+        if (b.displayPriority !== a.displayPriority) {
+          return b.displayPriority - a.displayPriority
+        }
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      })
+  
+      // Determine autoplay interval from the first promotion or use default
+      const autoplayInterval = sortedPromotions[0]?.displaySettings?.carouselInterval || 5000
+  
+      return {
+        promotions: sortedPromotions,
+        useCarousel: this.shouldUseCarouselMode(sortedPromotions),
+        autoplayInterval
+      }
+    } catch (error) {
+      console.error('Error getting modal promotions for carousel:', error)
+      return {
+        promotions: [],
+        useCarousel: false,
+        autoplayInterval: 5000
+      }
+    }
+  }
   /**
    * Get all promotions grouped by display mode
    */
@@ -262,6 +346,31 @@ class PromotionService {
     }
   }
 
+  async trackCarouselAction(
+    promotion: Promotion,
+    carouselIndex: number,
+    totalCarouselItems: number,
+    branchId?: string,
+    customerId?: string
+  ): Promise<void> {
+    const sessionId = this.getSessionId()
+    
+    await this.trackPromotionEvent({
+      promotionId: promotion.id,
+      eventType: 'click',
+      sessionId,
+      branchId,
+      customerId,
+      eventData: {
+        displayMode: 'carousel',
+        carouselIndex,
+        carouselSize: totalCarouselItems,
+        buttonText: promotion.buttonText,
+        buttonLink: promotion.buttonLink
+      }
+    })
+  }
+
   /**
    * Filter notification promotions (show only once per session)
    */
@@ -287,7 +396,53 @@ class PromotionService {
   // ============================================================================
   // TASK 3: ADD PROMOTION VALIDATION (VALID_FROM/VALID_UNTIL, IS_ACTIVE)
   // ============================================================================
+  shouldUseCarouselMode(promotions: Promotion[]): boolean {
+    return promotions.length > 1
+  }
 
+  markCarouselAsShown(promotionIds: string[]): void {
+    if (typeof window === 'undefined') return
+    
+    const sessionId = this.getSessionId()
+    const shownKey = `${this.MODAL_SHOWN_KEY}-${sessionId}`
+    
+    try {
+      const shown = JSON.parse(sessionStorage.getItem(shownKey) || '[]')
+      promotionIds.forEach(id => {
+        if (!shown.includes(id)) {
+          shown.push(id)
+        }
+      })
+      sessionStorage.setItem(shownKey, JSON.stringify(shown))
+      console.log('Marked carousel modals as shown:', { promotionIds, shown })
+    } catch (e) {
+      console.error('Error marking carousel modals as shown:', e)
+    }
+  }
+
+  async trackCarouselView(
+    promotions: Promotion[],
+    branchId?: string,
+    customerId?: string
+  ): Promise<void> {
+    const sessionId = this.getSessionId()
+    
+    // Track view event for all promotions in the carousel
+    for (const promotion of promotions) {
+      await this.trackPromotionEvent({
+        promotionId: promotion.id,
+        eventType: 'view',
+        sessionId,
+        branchId,
+        customerId,
+        eventData: {
+          displayMode: 'carousel',
+          carouselSize: promotions.length,
+          carouselPosition: promotions.indexOf(promotion)
+        }
+      })
+    }
+  }
   /**
    * Validate promotion based on database schema requirements
    */
@@ -349,20 +504,7 @@ class PromotionService {
    * Validate promotion conditions
    */
   private validatePromotionConditions(promotion: Promotion, targeting?: PromotionTargeting): boolean {
-    const conditions = promotion.conditions || {}
-    
-    // Check minimum order amount (if applicable)
-    if (conditions.minOrderAmount && targeting?.eventData?.orderAmount) {
-      if (targeting.eventData.orderAmount < conditions.minOrderAmount) {
-        return false
-      }
-    }
-
-    // Check usage limits
-    if (conditions.maxUses && promotion.usage_count >= conditions.maxUses) {
-      return false
-    }
-
+    // Announcement-only mode: ignore discount/usage constraints
     return true
   }
 
@@ -468,16 +610,30 @@ class PromotionService {
    */
   private filterShownModals(promotions: Promotion[]): Promotion[] {
     if (typeof window === 'undefined') return promotions
-
+  
     const sessionId = this.getSessionId()
-    const shown = sessionStorage.getItem(`${this.MODAL_SHOWN_KEY}-${sessionId}`)
+    const shownKey = `${this.MODAL_SHOWN_KEY}-${sessionId}`
+    const shownData = sessionStorage.getItem(shownKey)
     
-    if (!shown) return promotions
-
-    return promotions.filter(promotion => {
-      const shownModals = JSON.parse(shown)
-      return !shownModals.includes(promotion.id)
-    })
+    console.log('Checking shown modals:', { sessionId, shownKey, shownData })
+    
+    if (!shownData) {
+      console.log('No modals shown yet in this session')
+      return promotions
+    }
+  
+    try {
+      const shownModals = JSON.parse(shownData)
+      console.log('Already shown modal IDs:', shownModals)
+      
+      const filtered = promotions.filter(promotion => !shownModals.includes(promotion.id))
+      console.log('Promotions after filtering shown:', filtered.length)
+      
+      return filtered
+    } catch (e) {
+      console.error('Error parsing shown modals:', e)
+      return promotions
+    }
   }
 
   // ============================================================================
@@ -529,16 +685,16 @@ class PromotionService {
       
       switch (eventType) {
         case 'view':
-          updateData.total_views = supabase.raw('total_views + 1')
+          updateData.total_views = supabase.rpc('increment_promotion_view', { p_promotion_id: promotionId })
           break
         case 'click':
-          updateData.total_clicks = supabase.raw('total_clicks + 1')
+          updateData.total_clicks = supabase.rpc('increment_promotion_click', { p_promotion_id: promotionId })
           break
         case 'conversion':
-          updateData.total_conversions = supabase.raw('total_conversions + 1')
+          updateData.total_conversions = supabase.rpc('increment_promotion_conversion', { p_promotion_id: promotionId })
           break
         case 'use':
-          updateData.total_uses = supabase.raw('total_uses + 1')
+          updateData.total_uses = supabase.rpc('increment_promotion_use', { p_promotion_id: promotionId })
           break
       }
 
@@ -561,9 +717,9 @@ class PromotionService {
     orderId: string,
     customerId?: string,
     branchId?: string,
-    discountApplied: number,
-    originalAmount: number,
-    finalAmount: number
+    discountApplied?: number,
+    originalAmount?: number,
+    finalAmount?: number
   ): Promise<void> {
     try {
       const sessionId = this.getSessionId()
@@ -680,17 +836,45 @@ class PromotionService {
     if (typeof window === 'undefined') return false
     
     const sessionId = this.getSessionId()
-    const shown = sessionStorage.getItem(`${this.MODAL_SHOWN_KEY}-${sessionId}`)
-    return !shown
+    const shownKey = `${this.MODAL_SHOWN_KEY}-${sessionId}`
+    const shown = sessionStorage.getItem(shownKey)
+    
+    console.log('shouldShowModal check:', { sessionId, shownKey, shown })
+    
+    // If nothing has been shown yet, return true
+    if (!shown) {
+      console.log('No modals shown yet - should show modal: true')
+      return true
+    }
+    
+    try {
+      const shownModals = JSON.parse(shown)
+      const shouldShow = !shownModals || shownModals.length === 0
+      console.log('Parsed shown modals:', shownModals, 'should show:', shouldShow)
+      return shouldShow
+    } catch (e) {
+      console.error('Error parsing shown modals:', e)
+      return true // If there's an error parsing, show the modal
+    }
   }
+  
 
   markModalAsShown(promotionId: string): void {
     if (typeof window === 'undefined') return
     
     const sessionId = this.getSessionId()
-    const shown = JSON.parse(sessionStorage.getItem(`${this.MODAL_SHOWN_KEY}-${sessionId}`) || '[]')
-    shown.push(promotionId)
-    sessionStorage.setItem(`${this.MODAL_SHOWN_KEY}-${sessionId}`, JSON.stringify(shown))
+    const shownKey = `${this.MODAL_SHOWN_KEY}-${sessionId}`
+    
+    try {
+      const shown = JSON.parse(sessionStorage.getItem(shownKey) || '[]')
+      if (!shown.includes(promotionId)) {
+        shown.push(promotionId)
+        sessionStorage.setItem(shownKey, JSON.stringify(shown))
+        console.log('Marked modal as shown:', { promotionId, shown })
+      }
+    } catch (e) {
+      console.error('Error marking modal as shown:', e)
+    }
   }
 
   markBannerAsDismissed(promotionId: string): void {
