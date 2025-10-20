@@ -6,7 +6,6 @@ import {
   Mail, 
   Lock, 
   Smartphone, 
-  Facebook, 
   Eye, 
   EyeOff,
   CheckCircle,
@@ -16,17 +15,24 @@ import {
 } from 'lucide-react'
 import { useBranch } from '../contexts/BranchContext'
 import { useCart } from '../contexts/CartContext'
+import { useAuth } from '../contexts/AuthContext'
+import { useGuestSession } from '../hooks/useAnonymousSession'
 import LoadingSpinner from '../components/common/LoadingSpinner'
 import ErrorMessage from '../components/common/ErrorMessage'
+import facebookLogo from '../assets/facebook.png'
+import googleLogo from '../assets/google.png'
 
 const AuthSelection: React.FC = () => {
   const navigate = useNavigate()
   const { selectedBranch } = useBranch()
   const { clearCart } = useCart()
+  const { login, register, upgradeGuestAccount, socialLogin, isLoading } = useAuth()
+  const { startSession, isLoading: isGuestLoading } = useGuestSession()
   
   const [authMethod, setAuthMethod] = useState<'login' | 'register' | 'guest' | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [showVerificationPrompt, setShowVerificationPrompt] = useState(false)
+  const [registeredEmail, setRegisteredEmail] = useState('')
   
   // Login form state
   const [loginForm, setLoginForm] = useState({
@@ -38,7 +44,8 @@ const AuthSelection: React.FC = () => {
   
   // Register form state
   const [registerForm, setRegisterForm] = useState({
-    name: '',
+    firstName: '',
+    lastName: '',
     email: '',
     phone: '',
     password: '',
@@ -48,59 +55,127 @@ const AuthSelection: React.FC = () => {
     acceptTerms: false
   })
 
-  const handleGuestContinue = () => {
-    // Clear any existing cart for fresh guest session
-    clearCart()
-    navigate('/catalog')
+  const handleGuestContinue = async () => {
+    try {
+      setError(null)
+      
+      // Start guest session first
+      const success = await startSession()
+      
+      if (success) {
+        // Clear any existing cart for fresh guest session
+        clearCart()
+        navigate('/catalog')
+      } else {
+        setError('Failed to start guest session. Please try again.')
+      }
+    } catch (error) {
+      setError('Failed to start guest session. Please try again.')
+      console.error('Guest session error:', error)
+    }
   }
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
-    setIsLoading(true)
     setError(null)
-    
+
+    console.log('🔐 AuthSelection: Starting login process...', {
+      email: loginForm.email,
+      passwordLength: loginForm.password.length,
+      rememberMe: loginForm.rememberMe
+    })
+
     try {
-      // Simulate login API call
-      await new Promise(resolve => setTimeout(resolve, 1500))
+      const result = await login(loginForm.email, loginForm.password)
       
-      // Mock successful login
-      console.log('Login successful:', loginForm.email)
-      navigate('/catalog')
-    } catch (err) {
-      setError('Login failed. Please check your credentials.')
-    } finally {
-      setIsLoading(false)
+      console.log('🔐 AuthSelection: Login result received:', {
+        success: result.success,
+        error: result.error,
+        fullResult: result
+      })
+      
+      if (result.success) {
+        console.log('✅ AuthSelection: Login successful, navigating to catalog')
+        navigate('/catalog')
+      } else {
+        console.error('❌ AuthSelection: Login failed:', result.error)
+        setError(result.error || 'Login failed')
+      }
+    } catch (error) {
+      console.error('❌ AuthSelection: Login threw an error:', error)
+      setError(`Login error: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault()
-    setIsLoading(true)
     setError(null)
+
+    // Check if current user is a guest FIRST (before any auth changes)
+    const { guestUpgradeService } = await import('../services/guestUpgradeService')
+    const isGuest = await guestUpgradeService.isCurrentUserGuest()
     
-    try {
-      // Simulate registration API call
-      await new Promise(resolve => setTimeout(resolve, 2000))
+    if (isGuest) {
+      console.log('🔄 Upgrading existing guest account')
+      // Upgrade existing guest account using context
+      const result = await upgradeGuestAccount({
+        email: registerForm.email,
+        password: registerForm.password,
+        first_name: registerForm.firstName,
+        last_name: registerForm.lastName,
+        phone: registerForm.phone
+      })
       
-      // Mock successful registration
-      console.log('Registration successful:', registerForm.email)
-      navigate('/catalog')
-    } catch (err) {
-      setError('Registration failed. Please try again.')
-    } finally {
-      setIsLoading(false)
+      if (result.success) {
+        setShowVerificationPrompt(true)
+        setRegisteredEmail(registerForm.email)
+      } else {
+        setError(result.error || 'Account upgrade failed')
+      }
+    } else {
+      console.log('🆕 Creating new account')
+      // Create new account (existing flow)
+      const result = await register({
+        email: registerForm.email,
+        password: registerForm.password,
+        first_name: registerForm.firstName,
+        last_name: registerForm.lastName,
+        phone: registerForm.phone
+      })
+      
+      if (result.success) {
+        setShowVerificationPrompt(true)
+        setRegisteredEmail(registerForm.email)
+      } else {
+        setError(result.error || 'Registration failed')
+      }
     }
   }
 
-  const handleSocialLogin = (provider: 'google' | 'facebook') => {
-    setIsLoading(true)
+  const handleSocialLogin = async (provider: 'google' | 'facebook') => {
     setError(null)
     
-    // Simulate social login
-    setTimeout(() => {
-      console.log(`${provider} login successful`)
-      navigate('/catalog')
-    }, 1500)
+    try {
+      // Start guest session first for RLS access
+      const guestSuccess = await startSession()
+      if (!guestSuccess) {
+        setError('Failed to initialize session. Please try again.')
+        return
+      }
+
+      // Updated to use new socialLogin signature
+      const result = await socialLogin(provider)
+      
+      if (result.error) {
+        setError(result.error)
+      } else {
+        // For OAuth, the user will be redirected to the provider
+        // The actual login happens in the callback
+        console.log('Redirecting to OAuth provider...')
+      }
+    } catch (error) {
+      setError(`${provider} login failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
   }
 
   const resetForm = () => {
@@ -113,7 +188,8 @@ const AuthSelection: React.FC = () => {
       rememberMe: false
     })
     setRegisterForm({
-      name: '',
+      firstName: '',
+      lastName: '',
       email: '',
       phone: '',
       password: '',
@@ -291,16 +367,22 @@ const AuthSelection: React.FC = () => {
                   onClick={() => handleSocialLogin('google')}
                   className="flex items-center justify-center space-x-3 py-3 px-4 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
                 >
-                  <div className="w-5 h-5 bg-red-500 rounded flex items-center justify-center">
-                    <span className="text-white text-xs font-bold">G</span>
-                  </div>
+                  <img 
+                    src={googleLogo} 
+                    alt="Google" 
+                    className="w-5 h-5"
+                  />
                   <span className="font-medium text-gray-700">Google</span>
                 </button>
                 <button
                   onClick={() => handleSocialLogin('facebook')}
                   className="flex items-center justify-center space-x-3 py-3 px-4 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
                 >
-                  <Facebook className="w-5 h-5 text-blue-600" />
+                  <img 
+                    src={facebookLogo} 
+                    alt="Facebook" 
+                    className="w-5 h-5"
+                  />
                   <span className="font-medium text-gray-700">Facebook</span>
                 </button>
               </div>
@@ -345,9 +427,17 @@ const AuthSelection: React.FC = () => {
                 </button>
                 <button
                   onClick={handleGuestContinue}
-                  className="flex-1 btn-primary"
+                  disabled={isGuestLoading}
+                  className="flex-1 btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Continue Shopping
+                  {isGuestLoading ? (
+                    <div className="flex items-center justify-center">
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      Starting Session...
+                    </div>
+                  ) : (
+                    'Continue Shopping'
+                  )}
                 </button>
               </div>
             </div>
@@ -451,20 +541,38 @@ const AuthSelection: React.FC = () => {
               ) : (
                 /* Register Form */
                 <form onSubmit={handleRegister} className="space-y-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Full Name
-                    </label>
-                    <div className="relative">
-                      <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                      <input
-                        type="text"
-                        value={registerForm.name}
-                        onChange={(e) => setRegisterForm(prev => ({ ...prev, name: e.target.value }))}
-                        className="input-field pl-10"
-                        placeholder="Enter your full name"
-                        required
-                      />
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        First Name
+                      </label>
+                      <div className="relative">
+                        <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                        <input
+                          type="text"
+                          value={registerForm.firstName}
+                          onChange={(e) => setRegisterForm(prev => ({ ...prev, firstName: e.target.value }))}
+                          className="input-field pl-10"
+                          placeholder="First name"
+                          required
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Last Name
+                      </label>
+                      <div className="relative">
+                        <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                        <input
+                          type="text"
+                          value={registerForm.lastName}
+                          onChange={(e) => setRegisterForm(prev => ({ ...prev, lastName: e.target.value }))}
+                          className="input-field pl-10"
+                          placeholder="Last name"
+                          required
+                        />
+                      </div>
                     </div>
                   </div>
 
@@ -605,6 +713,37 @@ const AuthSelection: React.FC = () => {
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white rounded-2xl p-8 text-center">
               <LoadingSpinner message={authMethod === 'login' ? 'Signing you in...' : 'Creating your account...'} />
+            </div>
+          </div>
+        )}
+
+        {showVerificationPrompt && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-2xl p-8 max-w-md mx-4 text-center">
+              <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Mail className="w-8 h-8 text-green-600" />
+              </div>
+              <h2 className="text-2xl font-bold mb-2">Check Your Email</h2>
+              <p className="text-gray-600 mb-6">
+                We've sent a verification link to <strong>{registeredEmail}</strong>
+              </p>
+              <p className="text-sm text-gray-500 mb-6">
+                Click the link in the email to verify your account.
+              </p>
+              <div className="space-y-3">
+                <button
+                  onClick={() => window.open('https://mail.google.com', '_blank')}
+                  className="w-full btn-primary"
+                >
+                  Open Gmail
+                </button>
+                <button
+                  onClick={() => setShowVerificationPrompt(false)}
+                  className="w-full btn-outline"
+                >
+                  I'll verify later
+                </button>
+              </div>
             </div>
           </div>
         )}

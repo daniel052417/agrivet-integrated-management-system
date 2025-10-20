@@ -63,7 +63,7 @@ const OrderSummary: React.FC<OrderSummaryProps> = ({
             <div key={item.id} className="flex justify-between items-start text-sm">
               <div className="flex-1 min-w-0">
                 <p className="font-medium text-gray-900 truncate">
-                  {item.product.name}
+                  {item.product.variant_name}
                 </p>
                 <p className="text-gray-600">
                   {item.quantity} × {formatPrice(item.unitPrice)}
@@ -82,11 +82,6 @@ const OrderSummary: React.FC<OrderSummaryProps> = ({
         <div className="flex justify-between text-sm">
           <span className="text-gray-600">Subtotal</span>
           <span className="text-gray-900">{formatPrice(cart.subtotal)}</span>
-        </div>
-        
-        <div className="flex justify-between text-sm">
-          <span className="text-gray-600">VAT (12%)</span>
-          <span className="text-gray-900">{formatPrice(cart.tax)}</span>
         </div>
         
         <div className="border-t border-gray-200 pt-2">
@@ -122,7 +117,7 @@ const OrderSummary: React.FC<OrderSummaryProps> = ({
             <h3 className="font-medium text-gray-900">Pickup Location</h3>
           </div>
           <div className="space-y-1 text-sm">
-            <p className="text-gray-900">{branch.name}</p>
+            <p className="text-gray-900">{branch.branch_name}</p>
             <p className="text-gray-600">{branch.address}</p>
             {branch.phone && (
               <p className="text-gray-600">{branch.phone}</p>

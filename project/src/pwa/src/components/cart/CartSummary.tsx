@@ -32,7 +32,7 @@ const CartSummary: React.FC<CartSummaryProps> = ({
           <div className="flex items-start space-x-2">
             <MapPin className="w-4 h-4 text-gray-500 mt-0.5" />
             <div>
-              <p className="text-sm font-medium text-gray-900">{branch.name}</p>
+              <p className="text-sm font-medium text-gray-900">{branch.branch_name}</p>
               <p className="text-xs text-gray-600">{branch.address}</p>
             </div>
           </div>
@@ -54,11 +54,6 @@ const CartSummary: React.FC<CartSummaryProps> = ({
         <div className="flex justify-between text-sm">
           <span className="text-gray-600">Subtotal</span>
           <span className="text-gray-900">{formatPrice(cart.subtotal)}</span>
-        </div>
-        
-        <div className="flex justify-between text-sm">
-          <span className="text-gray-600">VAT (12%)</span>
-          <span className="text-gray-900">{formatPrice(cart.tax)}</span>
         </div>
         
         <div className="border-t border-gray-200 pt-2">

@@ -246,11 +246,7 @@ const OrderConfirmation: React.FC = () => {
               <div className="space-y-3 mb-6">
                 <div className="flex justify-between">
                   <span className="text-gray-600">Subtotal</span>
-                  <span className="font-medium">₱{(orderDetails.totalAmount * 0.893).toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">VAT (12%)</span>
-                  <span className="font-medium">₱{(orderDetails.totalAmount * 0.107).toFixed(2)}</span>
+                  <span className="font-medium">₱{orderDetails.totalAmount.toFixed(2)}</span>
                 </div>
                 <div className="border-t border-gray-200 pt-3">
                   <div className="flex justify-between">

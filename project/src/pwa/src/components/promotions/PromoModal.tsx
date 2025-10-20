@@ -1,13 +1,18 @@
-import React, { useEffect } from 'react'
-import { X, ArrowRight, Percent, Tag, Gift, Truck, Clock, CheckCircle } from 'lucide-react'
+import React, { useEffect, useState } from 'react'
+import { X, Clock, CheckCircle } from 'lucide-react'
 import { PromoModalProps } from '../../types'
+import PromoCarousel from './PromoCarousel'
 
 const PromoModal: React.FC<PromoModalProps> = ({ 
-  promotion, 
+  promotions, 
   isOpen, 
   onClose, 
-  onAction 
+  onAction,
+  currentIndex = 0,
+  onIndexChange
 }) => {
+  const [activeIndex, setActiveIndex] = useState(currentIndex)
+
   // Close modal on escape key
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
@@ -27,65 +32,29 @@ const PromoModal: React.FC<PromoModalProps> = ({
     }
   }, [isOpen, onClose])
 
-  if (!isOpen) return null
+  // Update active index when currentIndex prop changes
+  useEffect(() => {
+    setActiveIndex(currentIndex)
+  }, [currentIndex])
 
-  const getDiscountIcon = () => {
-    switch (promotion.discountType) {
-      case 'percentage':
-        return <Percent className="w-8 h-8" />
-      case 'fixed':
-        return <Tag className="w-8 h-8" />
-      case 'bogo':
-        return <Gift className="w-8 h-8" />
-      case 'free_shipping':
-        return <Truck className="w-8 h-8" />
-      default:
-        return <Tag className="w-8 h-8" />
+  const handleIndexChange = (index: number) => {
+    setActiveIndex(index)
+    if (onIndexChange) {
+      onIndexChange(index)
     }
   }
 
-  const getDiscountText = () => {
-    switch (promotion.discountType) {
-      case 'percentage':
-        return `${promotion.discountValue}% OFF`
-      case 'fixed':
-        return `₱${promotion.discountValue} OFF`
-      case 'bogo':
-        return 'BUY 1 GET 1'
-      case 'free_shipping':
-        return 'FREE SHIPPING'
-      default:
-        return 'SPECIAL OFFER'
+  const handleAction = (promotion: any) => {
+    if (onAction) {
+      onAction(promotion)
     }
   }
 
-  const getDiscountColor = () => {
-    switch (promotion.discountType) {
-      case 'percentage':
-        return 'from-red-500 to-red-600'
-      case 'fixed':
-        return 'from-blue-500 to-blue-600'
-      case 'bogo':
-        return 'from-purple-500 to-purple-600'
-      case 'free_shipping':
-        return 'from-green-500 to-green-600'
-      default:
-        return 'from-orange-500 to-orange-600'
-    }
-  }
+  if (!isOpen || promotions.length === 0) return null
 
-  const getValidUntilText = () => {
-    const validUntil = new Date(promotion.validUntil)
-    const now = new Date()
-    const daysLeft = Math.ceil((validUntil.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
-    
-    if (daysLeft <= 0) return 'Expired'
-    if (daysLeft === 1) return 'Expires today'
-    if (daysLeft <= 7) return `Expires in ${daysLeft} days`
-    return `Valid until ${validUntil.toLocaleDateString()}`
-  }
+  const currentPromotion = promotions[activeIndex]
 
-  const getConditions = () => {
+  const getConditions = (promotion: any) => {
     const conditions = []
     if (promotion.conditions?.minOrderAmount) {
       conditions.push(`Min order: ₱${promotion.conditions.minOrderAmount}`)
@@ -106,59 +75,48 @@ const PromoModal: React.FC<PromoModalProps> = ({
       
       {/* Modal */}
       <div className="flex min-h-full items-center justify-center p-4">
-        <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full mx-auto transform transition-all">
+        <div className="relative bg-white rounded-2xl shadow-2xl max-w-2xl w-full mx-auto transform transition-all">
           {/* Close button */}
           <button
             onClick={onClose}
-            className="absolute top-4 right-4 z-10 p-2 hover:bg-gray-100 rounded-full transition-colors"
+            className="absolute top-4 right-4 z-20 p-2 hover:bg-gray-100 rounded-full transition-colors bg-white/90"
           >
             <X className="w-5 h-5 text-gray-500" />
           </button>
 
-          {/* Header with gradient */}
-          <div className={`relative overflow-hidden rounded-t-2xl bg-gradient-to-r ${getDiscountColor()} text-white p-6`}>
-            {/* Background pattern */}
-            <div className="absolute inset-0 opacity-10">
-              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white to-transparent transform -skew-x-12"></div>
-            </div>
-            
-            <div className="relative text-center">
-              {/* Discount icon */}
-              <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                {getDiscountIcon()}
-              </div>
-              
-              {/* Discount text */}
-              <h2 className="text-3xl font-bold mb-2">
-                {getDiscountText()}
+          {/* Modal Header */}
+          <div className="p-6 pb-0">
+            <div className="text-center">
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                Special Offers
               </h2>
-              
-              {/* Title */}
-              <h3 className="text-xl font-semibold mb-2">
-                {promotion.title}
-              </h3>
-              
-              {/* Description */}
-              <p className="text-white/90 text-sm">
-                {promotion.description}
+              <p className="text-gray-600">
+                Don't miss out on these limited-time deals!
               </p>
             </div>
           </div>
 
-          {/* Content */}
+          {/* Carousel */}
           <div className="p-6">
-            {/* Validity period */}
-            <div className="flex items-center justify-center space-x-2 text-sm text-gray-600 mb-4">
-              <Clock className="w-4 h-4" />
-              <span>{getValidUntilText()}</span>
-            </div>
+            <PromoCarousel
+              promotions={promotions}
+              currentIndex={activeIndex}
+              onIndexChange={handleIndexChange}
+              onAction={handleAction}
+              autoplayInterval={4000}
+              showControls={true}
+              showDots={true}
+              showPlayPause={true}
+            />
+          </div>
 
-            {/* Conditions */}
-            {getConditions().length > 0 && (
-              <div className="mb-6">
-                <h4 className="font-medium text-gray-900 mb-2">Terms & Conditions:</h4>
-                <ul className="space-y-1">
-                  {getConditions().map((condition, index) => (
+          {/* Terms and Conditions */}
+          {currentPromotion && getConditions(currentPromotion).length > 0 && (
+            <div className="px-6 pb-6">
+              <div className="bg-gray-50 rounded-lg p-4">
+                <h4 className="font-medium text-gray-900 mb-3 text-center">Terms & Conditions</h4>
+                <ul className="space-y-2">
+                  {getConditions(currentPromotion).map((condition, index) => (
                     <li key={index} className="flex items-center space-x-2 text-sm text-gray-600">
                       <CheckCircle className="w-3 h-3 text-green-500 flex-shrink-0" />
                       <span>{condition}</span>
@@ -166,33 +124,22 @@ const PromoModal: React.FC<PromoModalProps> = ({
                   ))}
                 </ul>
               </div>
-            )}
+            </div>
+          )}
 
-            {/* Action buttons */}
-            <div className="space-y-3">
-              {onAction && (
-                <button
-                  onClick={onAction}
-                  className="w-full bg-agrivet-green text-white py-3 px-6 rounded-xl font-semibold hover:bg-agrivet-green/90 transition-colors flex items-center justify-center space-x-2"
-                >
-                  <span>Shop Now</span>
-                  <ArrowRight className="w-4 h-4" />
-                </button>
-              )}
-              
+          {/* Footer */}
+          <div className="px-6 pb-6">
+            <div className="text-center">
               <button
                 onClick={onClose}
-                className="w-full text-gray-600 py-2 px-6 rounded-xl font-medium hover:bg-gray-50 transition-colors"
+                className="text-gray-500 hover:text-gray-700 text-sm font-medium transition-colors"
               >
                 Maybe Later
               </button>
             </div>
-
-            {/* Additional info */}
-            <div className="mt-4 text-center">
-              <p className="text-xs text-gray-500">
-                This offer is valid for a limited time only. 
-                Terms and conditions apply.
+            <div className="text-center mt-2">
+              <p className="text-xs text-gray-400">
+                Offers are valid for a limited time only. Terms and conditions apply.
               </p>
             </div>
           </div>

@@ -1,248 +1,31 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Search, Filter, ShoppingCart, ArrowLeft, Grid, List, Star, Package, Clock, TrendingUp } from 'lucide-react'
+import { Search, Filter, ShoppingCart, ArrowLeft, Grid, List, Star, Package, Clock, TrendingUp, User } from 'lucide-react'
 import { useBranch } from '../contexts/BranchContext'
 import { useCart } from '../contexts/CartContext'
-import { ProductVariant, SearchFilters, Category, Promotion, NotificationData } from '../types'
+import { useAuth } from '../contexts/AuthContext'
+// import { useRealtime } from '../contexts/RealtimeContext'
+// import { realtimeService } from '../services/realtimeService'
+import { ProductWithUnits, SearchFilters, Category, Promotion } from '../types'
 import { promotionService } from '../services/promotionService'
+import { supabase } from '../services/supabase'
 import ProductGrid from '../components/catalog/ProductGrid'
 import SearchBar from '../components/catalog/SearchBar'
 import FilterSidebar from '../components/catalog/FilterSidebar'
 import PromoBanner from '../components/promotions/PromoBanner'
 import PromoModal from '../components/promotions/PromoModal'
-import PushNotificationSimulator from '../components/promotions/PushNotificationSimulator'
 import LoadingSpinner from '../components/common/LoadingSpinner'
 import ErrorMessage from '../components/common/ErrorMessage'
 
-// Sample product data for demonstration
-const sampleProducts: ProductVariant[] = [
-  {
-    id: '1',
-    name: 'Premium Chicken Feed 50kg',
-    sku: 'PCF-50KG',
-    price: 1250.00,
-    cost: 1000.00,
-    weight_kg: 50,
-    unit_of_measure: 'bag',
-    is_active: true,
-    created_at: '2024-01-01T00:00:00Z',
-    updated_at: '2024-01-01T00:00:00Z',
-    product_id: '1',
-    products: {
-      id: '1',
-      name: 'Premium Chicken Feed',
-      sku: 'PCF',
-      description: 'High-quality complete feed for broiler chickens',
-      category_id: '1',
-      supplier_id: '1',
-      is_active: true,
-      created_at: '2024-01-01T00:00:00Z',
-      updated_at: '2024-01-01T00:00:00Z',
-      categories: {
-        id: '1',
-        name: 'Poultry Feeds',
-        description: 'Complete feeds for poultry',
-        is_active: true,
-        created_at: '2024-01-01T00:00:00Z',
-        updated_at: '2024-01-01T00:00:00Z'
-      }
-    }
-  },
-  {
-    id: '2',
-    name: 'Layer Feed 25kg',
-    sku: 'LF-25KG',
-    price: 650.00,
-    cost: 520.00,
-    weight_kg: 25,
-    unit_of_measure: 'bag',
-    is_active: true,
-    created_at: '2024-01-01T00:00:00Z',
-    updated_at: '2024-01-01T00:00:00Z',
-    product_id: '2',
-    products: {
-      id: '2',
-      name: 'Layer Feed',
-      sku: 'LF',
-      description: 'Specialized feed for laying hens',
-      category_id: '1',
-      supplier_id: '1',
-      is_active: true,
-      created_at: '2024-01-01T00:00:00Z',
-      updated_at: '2024-01-01T00:00:00Z',
-      categories: {
-        id: '1',
-        name: 'Poultry Feeds',
-        description: 'Complete feeds for poultry',
-        is_active: true,
-        created_at: '2024-01-01T00:00:00Z',
-        updated_at: '2024-01-01T00:00:00Z'
-      }
-    }
-  },
-  {
-    id: '3',
-    name: 'Vitamin B Complex 100ml',
-    sku: 'VBC-100ML',
-    price: 180.00,
-    cost: 120.00,
-    weight_kg: 0.1,
-    unit_of_measure: 'bottle',
-    is_active: true,
-    created_at: '2024-01-01T00:00:00Z',
-    updated_at: '2024-01-01T00:00:00Z',
-    product_id: '3',
-    products: {
-      id: '3',
-      name: 'Vitamin B Complex',
-      sku: 'VBC',
-      description: 'Essential vitamins for livestock health',
-      category_id: '2',
-      supplier_id: '2',
-      is_active: true,
-      created_at: '2024-01-01T00:00:00Z',
-      updated_at: '2024-01-01T00:00:00Z',
-      categories: {
-        id: '2',
-        name: 'Veterinary Supplies',
-        description: 'Medicines and supplements for animals',
-        is_active: true,
-        created_at: '2024-01-01T00:00:00Z',
-        updated_at: '2024-01-01T00:00:00Z'
-      }
-    }
-  },
-  {
-    id: '4',
-    name: 'Antibiotic Injection 10ml',
-    sku: 'ABI-10ML',
-    price: 95.00,
-    cost: 65.00,
-    weight_kg: 0.01,
-    unit_of_measure: 'vial',
-    is_active: true,
-    created_at: '2024-01-01T00:00:00Z',
-    updated_at: '2024-01-01T00:00:00Z',
-    product_id: '4',
-    products: {
-      id: '4',
-      name: 'Antibiotic Injection',
-      sku: 'ABI',
-      description: 'Broad-spectrum antibiotic for livestock',
-      category_id: '2',
-      supplier_id: '2',
-      is_active: true,
-      created_at: '2024-01-01T00:00:00Z',
-      updated_at: '2024-01-01T00:00:00Z',
-      categories: {
-        id: '2',
-        name: 'Veterinary Supplies',
-        description: 'Medicines and supplements for animals',
-        is_active: true,
-        created_at: '2024-01-01T00:00:00Z',
-        updated_at: '2024-01-01T00:00:00Z'
-      }
-    }
-  },
-  {
-    id: '5',
-    name: 'Fertilizer NPK 15-15-15 50kg',
-    sku: 'NPK-50KG',
-    price: 850.00,
-    cost: 680.00,
-    weight_kg: 50,
-    unit_of_measure: 'bag',
-    is_active: true,
-    created_at: '2024-01-01T00:00:00Z',
-    updated_at: '2024-01-01T00:00:00Z',
-    product_id: '5',
-    products: {
-      id: '5',
-      name: 'NPK Fertilizer',
-      sku: 'NPK',
-      description: 'Balanced fertilizer for crops',
-      category_id: '3',
-      supplier_id: '3',
-      is_active: true,
-      created_at: '2024-01-01T00:00:00Z',
-      updated_at: '2024-01-01T00:00:00Z',
-      categories: {
-        id: '3',
-        name: 'Crop Inputs',
-        description: 'Fertilizers and crop protection',
-        is_active: true,
-        created_at: '2024-01-01T00:00:00Z',
-        updated_at: '2024-01-01T00:00:00Z'
-      }
-    }
-  },
-  {
-    id: '6',
-    name: 'Pesticide Spray 1L',
-    sku: 'PS-1L',
-    price: 320.00,
-    cost: 240.00,
-    weight_kg: 1,
-    unit_of_measure: 'bottle',
-    is_active: true,
-    created_at: '2024-01-01T00:00:00Z',
-    updated_at: '2024-01-01T00:00:00Z',
-    product_id: '6',
-    products: {
-      id: '6',
-      name: 'Pesticide Spray',
-      sku: 'PS',
-      description: 'Effective pest control for crops',
-      category_id: '3',
-      supplier_id: '3',
-      is_active: true,
-      created_at: '2024-01-01T00:00:00Z',
-      updated_at: '2024-01-01T00:00:00Z',
-      categories: {
-        id: '3',
-        name: 'Crop Inputs',
-        description: 'Fertilizers and crop protection',
-        is_active: true,
-        created_at: '2024-01-01T00:00:00Z',
-        updated_at: '2024-01-01T00:00:00Z'
-      }
-    }
-  }
-]
-
-const sampleCategories: Category[] = [
-  {
-    id: '1',
-    name: 'Poultry Feeds',
-    description: 'Complete feeds for poultry',
-    is_active: true,
-    created_at: '2024-01-01T00:00:00Z',
-    updated_at: '2024-01-01T00:00:00Z'
-  },
-  {
-    id: '2',
-    name: 'Veterinary Supplies',
-    description: 'Medicines and supplements for animals',
-    is_active: true,
-    created_at: '2024-01-01T00:00:00Z',
-    updated_at: '2024-01-01T00:00:00Z'
-  },
-  {
-    id: '3',
-    name: 'Crop Inputs',
-    description: 'Fertilizers and crop protection',
-    is_active: true,
-    created_at: '2024-01-01T00:00:00Z',
-    updated_at: '2024-01-01T00:00:00Z'
-  }
-]
 
 const ProductCatalog: React.FC = () => {
   const navigate = useNavigate()
   const { selectedBranch } = useBranch()
   const { getItemCount } = useCart()
+  const { isAuthenticated } = useAuth()
+  // const { isConnected: isRealtimeConnected } = useRealtime()
   
-  const [products, setProducts] = useState<ProductVariant[]>([])
+  const [products, setProducts] = useState<ProductWithUnits[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -262,7 +45,7 @@ const ProductCatalog: React.FC = () => {
   const [bannerPromotions, setBannerPromotions] = useState<Promotion[]>([])
   const [modalPromotions, setModalPromotions] = useState<Promotion[]>([])
   const [showModal, setShowModal] = useState(false)
-  const [currentModalPromotion, setCurrentModalPromotion] = useState<Promotion | null>(null)
+  const [currentModalIndex, setCurrentModalIndex] = useState(0)
   const [dismissedBanners, setDismissedBanners] = useState<Set<string>>(new Set())
 
   useEffect(() => {
@@ -285,12 +68,206 @@ const ProductCatalog: React.FC = () => {
   // Check for modal display
   useEffect(() => {
     if (modalPromotions.length > 0 && promotionService.shouldShowModal()) {
-      const firstModalPromotion = modalPromotions[0]
-      setCurrentModalPromotion(firstModalPromotion)
+      setCurrentModalIndex(0)
       setShowModal(true)
-      promotionService.markModalAsShown()
+      promotionService.markModalAsShown(modalPromotions[0].id)
     }
   }, [modalPromotions])
+
+  // Set up real-time subscriptions for products and inventory
+  // Temporarily disabled to debug 500 error
+  // useEffect(() => {
+  //   if (!selectedBranch) return
+
+  //   console.log('🔄 ProductCatalog: Setting up real-time subscriptions...')
+    
+  //   // Add a small delay to ensure the app is fully initialized
+  //   const setupSubscriptions = async () => {
+  //     try {
+  //       // Wait a bit for the app to stabilize
+  //       await new Promise(resolve => setTimeout(resolve, 1000))
+        
+  //       // Set up callbacks for real-time updates
+  //       realtimeService.setCallbacks({
+  //         onInventoryUpdate: (payload) => {
+  //           console.log('📦 ProductCatalog: Real-time inventory update received:', payload)
+  //           handleRealtimeInventoryUpdate(payload)
+  //         },
+  //         onProductUpdate: (payload) => {
+  //           console.log('🛍️ ProductCatalog: Real-time product update received:', payload)
+  //           handleRealtimeProductUpdate(payload)
+  //         },
+  //         onCategoryUpdate: (payload) => {
+  //           console.log('📂 ProductCatalog: Real-time category update received:', payload)
+  //           handleRealtimeCategoryUpdate(payload)
+  //         },
+  //         onPromotionUpdate: (payload) => {
+  //           console.log('🎉 ProductCatalog: Real-time promotion update received:', payload)
+  //           handleRealtimePromotionUpdate(payload)
+  //         }
+  //       })
+
+  //       // Subscribe to inventory changes for the selected branch
+  //       const inventorySubscription = realtimeService.subscribeToInventory(selectedBranch.id)
+  //       const productSubscription = realtimeService.subscribeToProducts()
+  //       const categorySubscription = realtimeService.subscribeToCategories()
+  //       const promotionSubscription = realtimeService.subscribeToPromotions()
+        
+  //       return () => {
+  //         console.log('🔌 ProductCatalog: Cleaning up real-time subscriptions...')
+  //         if (inventorySubscription) inventorySubscription.unsubscribe()
+  //         if (productSubscription) productSubscription.unsubscribe()
+  //         if (categorySubscription) categorySubscription.unsubscribe()
+  //         if (promotionSubscription) promotionSubscription.unsubscribe()
+  //       }
+  //     } catch (error) {
+  //       console.error('❌ ProductCatalog: Error setting up real-time subscriptions:', error)
+  //       return () => {} // Return empty cleanup function
+  //     }
+  //   }
+
+  //   let cleanup: (() => void) | undefined
+  //   setupSubscriptions().then(cleanupFn => {
+  //     cleanup = cleanupFn
+  //   })
+
+  //   return () => {
+  //     if (cleanup) {
+  //       cleanup()
+  //     }
+  //   }
+  // }, [selectedBranch])
+
+  // Handle real-time inventory updates - temporarily disabled
+  // const handleRealtimeInventoryUpdate = (payload: any) => {
+  //   try {
+  //     const { eventType, new: newData } = payload
+      
+  //     if (eventType === 'UPDATE' && newData) {
+  //       // Update product inventory in the products list
+  //       setProducts(prevProducts => {
+  //         return prevProducts.map(product => {
+  //           if (product.inventory && product.inventory.some(inv => inv.id === newData.id)) {
+  //             // Update the inventory for this product
+  //             const updatedInventory = product.inventory.map(inv => 
+  //               inv.id === newData.id ? { ...inv, ...newData } : inv
+  //             )
+  //             return { ...product, inventory: updatedInventory }
+  //           }
+  //           return product
+  //         })
+  //       })
+  //       console.log('✅ ProductCatalog: Updated inventory in real-time:', newData.id)
+  //     }
+  //   } catch (error) {
+  //     console.error('❌ ProductCatalog: Error handling real-time inventory update:', error)
+  //   }
+  // }
+
+  // Handle real-time product updates - temporarily disabled
+  // const handleRealtimeProductUpdate = (payload: any) => {
+  //   try {
+  //     const { eventType, new: newData, old: oldData } = payload
+      
+  //     if (eventType === 'UPDATE' && newData) {
+  //       // Update product in the products list
+  //       setProducts(prevProducts => {
+  //         return prevProducts.map(product => 
+  //           product.id === newData.id ? { ...product, ...newData } : product
+  //         )
+  //       })
+  //       console.log('✅ ProductCatalog: Updated product in real-time:', newData.name)
+  //     } else if (eventType === 'INSERT' && newData) {
+  //       // Add new product to the list (if it's active and matches current filters)
+  //       if (newData.is_active) {
+  //         // Note: We might want to reload products to ensure proper filtering
+  //         loadProducts()
+  //       }
+  //       console.log('✅ ProductCatalog: Added new product in real-time:', newData.name)
+  //     } else if (eventType === 'DELETE' && oldData) {
+  //       // Remove product from the list
+  //       setProducts(prevProducts => 
+  //         prevProducts.filter(product => product.id !== oldData.id)
+  //       )
+  //       console.log('✅ ProductCatalog: Removed product in real-time:', oldData.name)
+  //     }
+  //   } catch (error) {
+  //     console.error('❌ ProductCatalog: Error handling real-time product update:', error)
+  //   }
+  // }
+
+  // Handle real-time category updates - temporarily disabled
+  // const handleRealtimeCategoryUpdate = (payload: any) => {
+  //   try {
+  //     const { eventType, new: newData, old: oldData } = payload
+      
+  //     if (eventType === 'UPDATE' && newData) {
+  //       // Update category in the categories list
+  //       setCategories(prevCategories => {
+  //         return prevCategories.map(category => 
+  //           category.id === newData.id ? { ...category, ...newData } : category
+  //         )
+  //       })
+  //       console.log('✅ ProductCatalog: Updated category in real-time:', newData.name)
+  //     } else if (eventType === 'INSERT' && newData) {
+  //       // Add new category to the list
+  //       if (newData.is_active) {
+  //         setCategories(prevCategories => [...prevCategories, newData])
+  //       }
+  //       console.log('✅ ProductCatalog: Added new category in real-time:', newData.name)
+  //     } else if (eventType === 'DELETE' && oldData) {
+  //       // Remove category from the list
+  //       setCategories(prevCategories => 
+  //         prevCategories.filter(category => category.id !== oldData.id)
+  //       )
+  //       console.log('✅ ProductCatalog: Removed category in real-time:', oldData.name)
+  //     }
+  //   } catch (error) {
+  //     console.error('❌ ProductCatalog: Error handling real-time category update:', error)
+  //   }
+  // }
+
+  // Handle real-time promotion updates - temporarily disabled
+  // const handleRealtimePromotionUpdate = (payload: any) => {
+  //   try {
+  //     const { eventType, new: newData, old: oldData } = payload
+      
+  //     if (eventType === 'UPDATE' && newData) {
+  //       // Update promotion in the promotions list
+  //       setBannerPromotions(prevPromotions => {
+  //         return prevPromotions.map(promo => 
+  //           promo.id === newData.id ? { ...promo, ...newData } : promo
+  //         )
+  //       })
+  //       setModalPromotions(prevPromotions => {
+  //         return prevPromotions.map(promo => 
+  //           promo.id === newData.id ? { ...promo, ...newData } : promo
+  //         )
+  //       })
+  //       console.log('✅ ProductCatalog: Updated promotion in real-time:', newData.title)
+  //     } else if (eventType === 'INSERT' && newData) {
+  //       // Add new promotion to the appropriate list
+  //       if (newData.is_active) {
+  //         // Determine if it's a banner or modal promotion based on display settings
+  //         const displaySettings = newData.display_settings || {}
+  //         if (displaySettings.showAsBanner) {
+  //           setBannerPromotions(prev => [...prev, newData])
+  //         }
+  //         if (displaySettings.showAsModal) {
+  //           setModalPromotions(prev => [...prev, newData])
+  //         }
+  //       }
+  //       console.log('✅ ProductCatalog: Added new promotion in real-time:', newData.title)
+  //     } else if (eventType === 'DELETE' && oldData) {
+  //       // Remove promotion from both lists
+  //       setBannerPromotions(prev => prev.filter(promo => promo.id !== oldData.id))
+  //       setModalPromotions(prev => prev.filter(promo => promo.id !== oldData.id))
+  //       console.log('✅ ProductCatalog: Removed promotion in real-time:', oldData.title)
+  //     }
+  //   } catch (error) {
+  //     console.error('❌ ProductCatalog: Error handling real-time promotion update:', error)
+  //   }
+  // }
 
   const loadProducts = async () => {
     if (!selectedBranch) return
@@ -299,49 +276,121 @@ const ProductCatalog: React.FC = () => {
       setIsLoading(true)
       setError(null)
       
-      // Use sample data for demonstration
-      await new Promise(resolve => setTimeout(resolve, 800))
+      console.log('🔄 ProductCatalog: Loading products for branch:', selectedBranch.id)
       
-      let filteredProducts = [...sampleProducts]
-      
-      // Apply filters
+      // Use the new product_units schema
+      let query = supabase
+        .from('products')
+        .select(`
+          *,
+          categories (*),
+          suppliers (*),
+          product_units (*),
+          inventory!inner (
+            quantity_available,
+            quantity_on_hand,
+            quantity_reserved,
+            branch_id
+          )
+        `)
+        .eq('inventory.branch_id', selectedBranch.id)
+        .eq('is_active', true)
+        .gt('inventory.quantity_available', 0)
+
+      // Apply search filter
       if (filters.searchQuery) {
-        filteredProducts = filteredProducts.filter(product => 
-          product.name.toLowerCase().includes(filters.searchQuery!.toLowerCase()) ||
-          product.products?.name.toLowerCase().includes(filters.searchQuery!.toLowerCase()) ||
-          product.products?.description.toLowerCase().includes(filters.searchQuery!.toLowerCase())
-        )
+        query = query.or(`name.ilike.%${filters.searchQuery}%,description.ilike.%${filters.searchQuery}%,sku.ilike.%${filters.searchQuery}%`)
       }
-      
+
+      // Apply category filter
       if (filters.category) {
-        filteredProducts = filteredProducts.filter(product => 
-          product.products?.category_id === filters.category
-        )
+        query = query.eq('category_id', filters.category)
       }
-      
-      if (filters.priceMin) {
-        filteredProducts = filteredProducts.filter(product => product.price >= filters.priceMin!)
+
+      // Order by name
+      query = query.order('name', { ascending: true })
+
+      // Get total count for pagination
+      const { count } = await supabase
+        .from('products')
+        .select('*', { count: 'exact', head: true })
+        .eq('is_active', true)
+
+      // Apply pagination
+      const from = (currentPage - 1) * 20
+      const to = from + 19
+      query = query.range(from, to)
+
+      const { data: productsData, error: productsError } = await query
+
+      if (productsError) {
+        console.error('❌ ProductCatalog: Database error:', productsError)
+        throw new Error(`Failed to fetch products: ${productsError.message}`)
       }
-      
-      if (filters.priceMax) {
-        filteredProducts = filteredProducts.filter(product => product.price <= filters.priceMax!)
+
+      if (!productsData || productsData.length === 0) {
+        console.log('⚠️ ProductCatalog: No products found')
+        setProducts([])
+        setTotalPages(1)
+        return
       }
+
+      // Transform the data to ProductWithUnits format
+      const productsWithUnits = productsData.map(product => {
+        const sellableUnits = product.product_units?.filter((unit: any) => unit.is_sellable) || []
+        const defaultUnit = sellableUnits.find((unit: any) => unit.is_base_unit) || sellableUnits[0]
+        
+        if (!defaultUnit) {
+          console.warn(`No sellable units found for product ${product.id}`)
+          return null
+        }
+
+        // Apply price filters to the default unit
+        if (filters.priceMin !== undefined && defaultUnit.price_per_unit < filters.priceMin) {
+          return null
+        }
+        if (filters.priceMax !== undefined && defaultUnit.price_per_unit > filters.priceMax) {
+          return null
+        }
+
+        return {
+          id: defaultUnit.id,
+          product_id: product.id,
+          name: product.name,
+          description: product.description,
+          brand: product.brand,
+          barcode: product.barcode,
+          is_active: product.is_active,
+          created_at: product.created_at,
+          updated_at: product.updated_at,
+          unit_name: defaultUnit.unit_name,
+          unit_label: defaultUnit.unit_label,
+          conversion_factor: defaultUnit.conversion_factor,
+          is_base_unit: defaultUnit.is_base_unit,
+          is_sellable: defaultUnit.is_sellable,
+          price_per_unit: defaultUnit.price_per_unit,
+          min_sellable_quantity: defaultUnit.min_sellable_quantity,
+          sort_order: defaultUnit.sort_order,
+          sku: product.sku,
+          category_id: product.category_id,
+          supplier_id: product.supplier_id,
+          product: product,
+          category: product.categories,
+          supplier: product.suppliers,
+          inventory: product.inventory,
+          available_units: sellableUnits
+        }
+      }).filter(Boolean) as ProductWithUnits[]
+
+      console.log(`✅ ProductCatalog: Successfully loaded ${productsWithUnits.length} products`)
+      setProducts(productsWithUnits)
+      setTotalPages(Math.ceil((count || 0) / 20))
       
-      setProducts(filteredProducts)
-      setTotalPages(Math.ceil(filteredProducts.length / 20))
-      
-      // In real app, this would be:
-      // const response = await productService.getProducts(
-      //   selectedBranch.id,
-      //   filters,
-      //   currentPage,
-      //   20
-      // )
-      // setProducts(response.data)
-      // setTotalPages(response.pagination.totalPages)
     } catch (err) {
+      console.error('❌ ProductCatalog: Error loading products:', err)
       setError('Failed to load products. Please try again.')
-      console.error('Error loading products:', err)
+      setProducts([])
+      setTotalPages(0)
     } finally {
       setIsLoading(false)
     }
@@ -349,14 +398,34 @@ const ProductCatalog: React.FC = () => {
 
   const loadCategories = async () => {
     try {
-      // Use sample data for demonstration
-      setCategories(sampleCategories)
+      console.log('🔄 ProductCatalog: Loading categories...')
       
-      // In real app, this would be:
-      // const categoriesData = await productService.getCategories()
-      // setCategories(categoriesData)
+      const { data, error } = await supabase
+        .from('categories')
+        .select('*')
+        .eq('is_active', true)
+        .order('name', { ascending: true })
+
+      if (error) {
+        console.error('❌ ProductCatalog: Error loading categories:', error)
+        setError('Failed to load categories. Please try again.')
+        setCategories([])
+        return
+      }
+
+      if (!data || data.length === 0) {
+        console.log('⚠️ ProductCatalog: No categories found')
+        setCategories([])
+        return
+      }
+
+      console.log(`✅ ProductCatalog: Successfully loaded ${data.length} categories`)
+      setCategories(data)
+      
     } catch (err) {
-      console.error('Error loading categories:', err)
+      console.error('❌ ProductCatalog: Error loading categories:', err)
+      setError('Failed to load categories. Please try again.')
+      setCategories([])
     }
   }
 
@@ -410,7 +479,7 @@ const ProductCatalog: React.FC = () => {
 
   const handleModalClose = () => {
     setShowModal(false)
-    setCurrentModalPromotion(null)
+    setCurrentModalIndex(0)
   }
 
   const handleModalAction = (promotion: Promotion) => {
@@ -418,13 +487,11 @@ const ProductCatalog: React.FC = () => {
     handleModalClose()
   }
 
-  const handleSendNotification = async (notificationData: NotificationData) => {
-    try {
-      await promotionService.sendNotification(notificationData)
-    } catch (error) {
-      console.error('Failed to send notification:', error)
-    }
+  const handleModalIndexChange = (index: number) => {
+    setCurrentModalIndex(index)
   }
+
+  
 
   if (!selectedBranch) {
     return null
@@ -456,9 +523,26 @@ const ProductCatalog: React.FC = () => {
                 <ArrowLeft className="w-5 h-5" />
               </button>
               <div>
-                <h1 className="text-2xl font-bold text-gray-900">
-                  {selectedBranch?.name || 'Product Catalog'}
-                </h1>
+                <div className="flex items-center space-x-3">
+                  <h1 className="text-2xl font-bold text-gray-900">
+                    {selectedBranch?.name || 'Product Catalog'}
+                  </h1>
+                  {/* Real-time connection indicator - temporarily disabled */}
+                  {/* <div className="flex items-center space-x-2">
+                    <div className={`w-2 h-2 rounded-full ${
+                      isRealtimeConnected 
+                        ? 'bg-green-500 animate-pulse' 
+                        : 'bg-red-500'
+                    }`}></div>
+                    <span className={`text-xs font-medium ${
+                      isRealtimeConnected 
+                        ? 'text-green-600' 
+                        : 'text-red-600'
+                    }`}>
+                      {isRealtimeConnected ? 'Live' : 'Offline'}
+                    </span>
+                  </div> */}
+                </div>
                 <p className="text-gray-600">
                   Agricultural Supplies & Veterinary Products
                 </p>
@@ -473,6 +557,16 @@ const ProductCatalog: React.FC = () => {
               >
                 {viewMode === 'grid' ? <List className="w-5 h-5" /> : <Grid className="w-5 h-5" />}
               </button>
+              
+              {isAuthenticated && (
+                <button
+                  onClick={() => navigate('/settings')}
+                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                  title="Settings"
+                >
+                  <User className="w-5 h-5" />
+                </button>
+              )}
               
               <button
                 onClick={() => navigate('/cart')}
@@ -519,7 +613,7 @@ const ProductCatalog: React.FC = () => {
             </div>
             <div className="flex items-center space-x-1">
               <Clock className="w-4 h-4" />
-              <span>Updated Today</span>
+              <span>Real-time Inventory</span>
             </div>
           </div>
         </div>
@@ -664,19 +758,18 @@ const ProductCatalog: React.FC = () => {
       </div>
 
       {/* Promotional Modal */}
-      {currentModalPromotion && (
+      {modalPromotions.length > 0 && (
         <PromoModal
-          promotion={currentModalPromotion}
+          promotions={modalPromotions}
           isOpen={showModal}
           onClose={handleModalClose}
-          onAction={() => handleModalAction(currentModalPromotion)}
+          onAction={handleModalAction}
+          currentIndex={currentModalIndex}
+          onIndexChange={handleModalIndexChange}
         />
       )}
 
-      {/* Push Notification Simulator */}
-      <PushNotificationSimulator
-        onSendNotification={handleSendNotification}
-      />
+      
     </div>
   )
 }

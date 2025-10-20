@@ -3,10 +3,82 @@ import { supabase } from '../../lib/supabase';
 // Database service for POS operations
 export class POSDatabaseService {
   
-  // ===== PRODUCTS & VARIANTS =====
+  // ===== PRODUCTS =====
   
   /**
-   * Get all active product variants for POS display
+   * Get all active products for POS display
+   */
+  static async getProducts(filters?: {
+    categoryId?: string;
+    searchTerm?: string;
+    inStockOnly?: boolean;
+    quickSaleOnly?: boolean;
+    branchId?: string;
+  }) {
+    let query = supabase
+      .from('products')
+      .select(`
+        *,
+        categories:category_id (
+          id,
+          name
+        ),
+        inventory:inventory!product_id (
+          id,
+          branch_id,
+          product_id,
+          quantity_on_hand,
+          quantity_reserved,
+          quantity_available,
+          reorder_level,
+          max_stock_level,
+          last_counted,
+          updated_at,
+          base_unit
+        )
+      `)
+      .eq('is_active', true);
+
+    if (filters?.categoryId) {
+      query = query.eq('category_id', filters.categoryId);
+    }
+
+    if (filters?.searchTerm) {
+      const searchTerm = filters.searchTerm.toLowerCase();
+      query = query.or(`name.ilike.%${searchTerm}%,sku.ilike.%${searchTerm}%,barcode.ilike.%${searchTerm}%`);
+    }
+
+    // Note: quickSaleOnly filter not available in current schema
+    // if (filters?.quickSaleOnly) {
+    //   query = query.eq('is_quick_sale', true);
+    // }
+
+    const { data, error } = await query.order('name');
+
+    if (error) throw error;
+    
+    let products = data || [];
+    
+    // Filter by stock if needed
+    if (filters?.inStockOnly) {
+      products = products.filter(product => 
+        product.inventory && product.inventory.quantity_available > 0
+      );
+    }
+    
+    // Filter by branch if specified
+    if (filters?.branchId) {
+      products = products.filter(product => 
+        product.inventory && product.inventory.branch_id === filters.branchId
+      );
+    }
+    
+    return products;
+  }
+
+  /**
+   * Get all active product variants for POS display (backward compatibility)
+   * This now maps to getProducts since we're using the products table
    */
   static async getProductVariants(filters?: {
     categoryId?: string;
@@ -15,107 +87,33 @@ export class POSDatabaseService {
     quickSaleOnly?: boolean;
     branchId?: string;
   }) {
-    let query = supabase
-      .from('product_variants')
-      .select(`
-        *,
-        products:product_id (
-          id,
-          name,
-          description,
-          brand,
-          unit_of_measure,
-          barcode,
-          is_prescription_required,
-          categories:category_id (
-            id,
-            name
-          )
-        ),
-        inventory:inventory!product_variant_id (
-          id,
-          branch_id,
-          product_variant_id,
-          quantity_on_hand,
-          quantity_reserved,
-          quantity_available,
-          reorder_level,
-          max_stock_level,
-          last_counted,
-          updated_at
-        )
-      `)
-      .eq('is_active', true)
-      .eq('products.is_active', true);
-
-    if (filters?.categoryId) {
-      query = query.eq('products.category_id', filters.categoryId);
-    }
-
-    if (filters?.searchTerm) {
-      const searchTerm = filters.searchTerm.toLowerCase();
-      query = query.or(`name.ilike.%${searchTerm}%,sku.ilike.%${searchTerm}%,products.name.ilike.%${searchTerm}%`);
-    }
-
-    if (filters?.quickSaleOnly) {
-      query = query.eq('is_quick_sale', true);
-    }
-
-    const { data, error } = await query.order('name');
-
-    if (error) throw error;
-    
-    let variants = data || [];
-    
-    // Filter by stock if needed
-    if (filters?.inStockOnly) {
-      variants = variants.filter(variant => 
-        variant.inventory && variant.inventory.quantity_available > 0
-      );
-    }
-    
-    // Filter by branch if specified
-    if (filters?.branchId) {
-      variants = variants.filter(variant => 
-        variant.inventory && variant.inventory.branch_id === filters.branchId
-      );
-    }
-    
-    return variants;
+    return this.getProducts(filters);
   }
 
   /**
-   * Get product variant by ID
+   * Get product by ID
    */
-  static async getProductVariantById(id: string, branchId?: string) {
+  static async getProductById(id: string, branchId?: string) {
     let query = supabase
-      .from('product_variants')
+      .from('products')
       .select(`
         *,
-        products:product_id (
+        categories:category_id (
           id,
-          name,
-          description,
-          brand,
-          unit_of_measure,
-          barcode,
-          is_prescription_required,
-          categories:category_id (
-            id,
-            name
-          )
+          name
         ),
-        inventory:inventory!product_variant_id (
+        inventory:inventory!product_id (
           id,
           branch_id,
-          product_variant_id,
+          product_id,
           quantity_on_hand,
           quantity_reserved,
           quantity_available,
           reorder_level,
           max_stock_level,
           last_counted,
-          updated_at
+          updated_at,
+          base_unit
         )
       `)
       .eq('id', id)
@@ -132,37 +130,37 @@ export class POSDatabaseService {
   }
 
   /**
-   * Get product variant by barcode
+   * Get product variant by ID (backward compatibility)
+   * This now maps to getProductById since we're using the products table
    */
-  static async getProductVariantByBarcode(barcode: string, branchId?: string) {
+  static async getProductVariantById(id: string, branchId?: string) {
+    return this.getProductById(id, branchId);
+  }
+
+  /**
+   * Get product by barcode
+   */
+  static async getProductByBarcode(barcode: string, branchId?: string) {
     let query = supabase
-      .from('product_variants')
+      .from('products')
       .select(`
         *,
-        products:product_id (
+        categories:category_id (
           id,
-          name,
-          description,
-          brand,
-          unit_of_measure,
-          barcode,
-          is_prescription_required,
-          categories:category_id (
-            id,
-            name
-          )
+          name
         ),
-        inventory:inventory!product_variant_id (
+        inventory:inventory!product_id (
           id,
           branch_id,
-          product_variant_id,
+          product_id,
           quantity_on_hand,
           quantity_reserved,
           quantity_available,
           reorder_level,
           max_stock_level,
           last_counted,
-          updated_at
+          updated_at,
+          base_unit
         )
       `)
       .eq('barcode', barcode)
@@ -179,29 +177,37 @@ export class POSDatabaseService {
   }
 
   /**
-   * Update inventory quantity for a product variant
+   * Get product variant by barcode (backward compatibility)
+   * This now maps to getProductByBarcode since we're using the products table
    */
-  static async updateInventoryQuantity(variantId: string, branchId: string, newQuantity: number) {
+  static async getProductVariantByBarcode(barcode: string, branchId?: string) {
+    return this.getProductByBarcode(barcode, branchId);
+  }
+
+  /**
+   * Update inventory quantity for a product
+   */
+  static async updateInventoryQuantity(productId: string, branchId: string, newQuantity: number) {
     const { error } = await supabase
       .from('inventory')
       .update({ 
         quantity_on_hand: newQuantity,
         updated_at: new Date().toISOString()
       })
-      .eq('product_variant_id', variantId)
+      .eq('product_id', productId)
       .eq('branch_id', branchId);
 
     if (error) throw error;
   }
 
   /**
-   * Get inventory for a product variant at a specific branch
+   * Get inventory for a product at a specific branch
    */
-  static async getInventory(variantId: string, branchId: string) {
+  static async getInventory(productId: string, branchId: string) {
     const { data, error } = await supabase
       .from('inventory')
       .select('*')
-      .eq('product_variant_id', variantId)
+      .eq('product_id', productId)
       .eq('branch_id', branchId)
       .single();
 
@@ -210,13 +216,13 @@ export class POSDatabaseService {
   }
 
   /**
-   * Create inventory record for a product variant
+   * Create inventory record for a product
    */
-  static async createInventory(variantId: string, branchId: string, initialQuantity: number = 0) {
+  static async createInventory(productId: string, branchId: string, initialQuantity: number = 0) {
     const { data, error } = await supabase
       .from('inventory')
       .insert({
-        product_variant_id: variantId,
+        product_id: productId,
         branch_id: branchId,
         quantity_on_hand: initialQuantity,
         quantity_reserved: 0,
@@ -523,7 +529,7 @@ export class POSDatabaseService {
    */
   static async createStockMovement(movementData: {
     branch_id: string;
-    product_variant_id: string;
+    product_id: string;
     movement_type: string;
     quantity: number;
     reference_type: string;
@@ -545,9 +551,9 @@ export class POSDatabaseService {
   }
 
   /**
-   * Get stock movements for product variant
+   * Get stock movements for product
    */
-  static async getStockMovements(productVariantId: string, branchId?: string) {
+  static async getStockMovements(productId: string, branchId?: string) {
     let query = supabase
       .from('stock_movements')
       .select(`
@@ -555,7 +561,7 @@ export class POSDatabaseService {
         users:created_by(*),
         branches:branch_id(*)
       `)
-      .eq('product_variant_id', productVariantId)
+      .eq('product_id', productId)
       .order('created_at', { ascending: false });
 
     if (branchId) {

@@ -1,7 +1,8 @@
 import React from 'react'
-import { ShoppingCart, MapPin, Menu } from 'lucide-react'
+import { ShoppingCart, MapPin, Menu, User, Package } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useCart } from '../../contexts/CartContext'
+import { useAuth } from '../../contexts/AuthContext'
 import { Branch } from '../../types'
 
 interface HeaderProps {
@@ -11,6 +12,7 @@ interface HeaderProps {
 const Header: React.FC<HeaderProps> = ({ branch }) => {
   const navigate = useNavigate()
   const { getItemCount } = useCart()
+  const { isAuthenticated } = useAuth()
 
   return (
     <header className="bg-white shadow-sm border-b sticky top-0 z-50">
@@ -45,6 +47,13 @@ const Header: React.FC<HeaderProps> = ({ branch }) => {
               Products
             </button>
             <button
+              onClick={() => navigate('/orders')}
+              className="text-gray-700 hover:text-agrivet-green transition-colors"
+              title="My Orders"
+            >
+              <Package className="w-5 h-5" />
+            </button>
+            <button
               onClick={() => navigate('/cart')}
               className="relative text-gray-700 hover:text-agrivet-green transition-colors"
             >
@@ -55,10 +64,26 @@ const Header: React.FC<HeaderProps> = ({ branch }) => {
                 </span>
               )}
             </button>
+            {isAuthenticated && (
+              <button
+                onClick={() => navigate('/settings')}
+                className="text-gray-700 hover:text-agrivet-green transition-colors"
+                title="Settings"
+              >
+                <User className="w-5 h-5" />
+              </button>
+            )}
           </nav>
 
           {/* Mobile Menu */}
           <div className="md:hidden flex items-center space-x-2">
+            <button
+              onClick={() => navigate('/orders')}
+              className="p-2 text-gray-700 hover:text-agrivet-green transition-colors"
+              title="My Orders"
+            >
+              <Package className="w-5 h-5" />
+            </button>
             <button
               onClick={() => navigate('/cart')}
               className="relative p-2 text-gray-700 hover:text-agrivet-green transition-colors"
@@ -70,6 +95,16 @@ const Header: React.FC<HeaderProps> = ({ branch }) => {
                 </span>
               )}
             </button>
+            
+            {isAuthenticated && (
+              <button
+                onClick={() => navigate('/settings')}
+                className="p-2 text-gray-700 hover:text-agrivet-green transition-colors"
+                title="Settings"
+              >
+                <User className="w-5 h-5" />
+              </button>
+            )}
             
             <button className="p-2 text-gray-700 hover:text-agrivet-green transition-colors">
               <Menu className="w-5 h-5" />

@@ -90,24 +90,35 @@ const UserActivity: React.FC = () => {
       }
 
       try {
-        // Load sessions from Supabase (table: user_sessions)
+        // Load sessions from Supabase (table: pwa_sessions)
         const { data, error } = await supabase
-          .from('user_sessions')
-          .select('id, user_email, device, ip, location, started_at, last_active_at, is_current')
-          .order('last_active_at', { ascending: false })
+          .from('pwa_sessions')
+          .select(`
+            id, 
+            session_id,
+            customer_id,
+            is_guest,
+            device_info,
+            ip_address,
+            created_at,
+            last_activity,
+            expires_at,
+            customers!inner(email, first_name, last_name)
+          `)
+          .order('last_activity', { ascending: false })
           .limit(200);
         if (error) throw error;
         if (!data) throw new Error('No sessions');
         if (ignore) return;
         const mapped: SessionItem[] = (data as any[]).map(s => ({
           id: s.id,
-          email: s.user_email,
-          device: s.device || '',
-          ip: s.ip || '',
-          location: s.location || '',
-          startedAt: s.started_at,
-          lastActiveAt: s.last_active_at,
-          isCurrent: !!s.is_current
+          email: s.customers?.email || (s.is_guest ? 'Guest User' : 'Unknown'),
+          device: s.device_info?.device || s.device_info?.user_agent || '',
+          ip: s.ip_address || '',
+          location: s.device_info?.location || '',
+          startedAt: s.created_at,
+          lastActiveAt: s.last_activity,
+          isCurrent: s.expires_at > new Date().toISOString()
         }));
         setSessions(mapped);
       } catch (e) {
@@ -203,7 +214,7 @@ const UserActivity: React.FC = () => {
   // Sessions actions with Supabase fallback
   const revokeSession = async (id: string) => {
     try {
-      await supabase.from('user_sessions').delete().eq('id', id);
+      await supabase.from('pwa_sessions').delete().eq('id', id);
     } catch (e) {
       console.warn('Failed to revoke on server, removing locally:', e);
     } finally {
@@ -212,7 +223,19 @@ const UserActivity: React.FC = () => {
   };
   const signOutAll = async (email: string) => {
     try {
-      await supabase.from('user_sessions').delete().eq('user_email', email).neq('is_current', true);
+      // For pwa_sessions, we need to join with customers table to get email
+      const { data: sessionsToDelete } = await supabase
+        .from('pwa_sessions')
+        .select('id')
+        .eq('customers.email', email)
+        .neq('expires_at', new Date().toISOString());
+      
+      if (sessionsToDelete && sessionsToDelete.length > 0) {
+        await supabase
+          .from('pwa_sessions')
+          .delete()
+          .in('id', sessionsToDelete.map(s => s.id));
+      }
     } catch (e) {
       console.warn('Failed to sign out others on server, applying locally:', e);
     } finally {
