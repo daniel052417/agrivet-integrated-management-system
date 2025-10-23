@@ -387,6 +387,7 @@ export interface Database {
           notes: string | null;
           created_at: string;
           updated_at: string;
+          transaction_source: string;
         };
       };
       pos_transaction_items: {

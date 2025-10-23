@@ -1,38 +1,41 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Search, Filter, ShoppingCart, ArrowLeft, Grid, List, Star, Package, Clock, TrendingUp, User } from 'lucide-react'
+import { Search, Filter, ShoppingCart, ArrowLeft, Grid, List, Star, User } from 'lucide-react'
 import { useBranch } from '../contexts/BranchContext'
 import { useCart } from '../contexts/CartContext'
 import { useAuth } from '../contexts/AuthContext'
-// import { useRealtime } from '../contexts/RealtimeContext'
-// import { realtimeService } from '../services/realtimeService'
-import { ProductWithUnits, SearchFilters, Category, Promotion } from '../types'
+import { ProductWithUnits, SearchFilters, Category, Promotion, ProductUnit } from '../types'
 import { promotionService } from '../services/promotionService'
 import { supabase } from '../services/supabase'
 import ProductGrid from '../components/catalog/ProductGrid'
 import SearchBar from '../components/catalog/SearchBar'
 import FilterSidebar from '../components/catalog/FilterSidebar'
-import PromoBanner from '../components/promotions/PromoBanner'
 import PromoModal from '../components/promotions/PromoModal'
 import LoadingSpinner from '../components/common/LoadingSpinner'
 import ErrorMessage from '../components/common/ErrorMessage'
-
+import CategorySlider from '../components/catalog/CategorySlider'
+import ProductSelectionModal from '../components/catalog/ProductSelectionModal'
 
 const ProductCatalog: React.FC = () => {
   const navigate = useNavigate()
   const { selectedBranch } = useBranch()
-  const { getItemCount } = useCart()
+  const { getItemCount, addItem } = useCart()
   const { isAuthenticated } = useAuth()
-  // const { isConnected: isRealtimeConnected } = useRealtime()
   const isLoadingPromotionsRef = useRef(false)
+  
+  // Product and category state
   const [products, setProducts] = useState<ProductWithUnits[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  
+  // UI state
   const [showFilters, setShowFilters] = useState(false)
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
+  
+  // Filter state
   const [filters, setFilters] = useState<SearchFilters>({
     searchQuery: '',
     category: undefined,
@@ -41,12 +44,14 @@ const ProductCatalog: React.FC = () => {
     inStock: true
   })
 
+  // Product selection modal state
+  const [selectedProduct, setSelectedProduct] = useState<ProductWithUnits | null>(null)
+  const [isModalOpen, setIsModalOpen] = useState(false)
+
   // Promotional state
-  const [bannerPromotions, setBannerPromotions] = useState<Promotion[]>([])
   const [modalPromotions, setModalPromotions] = useState<Promotion[]>([])
-  const [showModal, setShowModal] = useState(false)
+  const [showPromoModal, setShowPromoModal] = useState(false)
   const [currentModalIndex, setCurrentModalIndex] = useState(0)
-  const [dismissedBanners, setDismissedBanners] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     if (!selectedBranch) {
@@ -55,21 +60,14 @@ const ProductCatalog: React.FC = () => {
     }
     loadProducts()
     loadCategories()
-    // Only load promotions once on mount
     loadPromotions()
-  }, [selectedBranch]) 
-  // Load promotional data
- 
-  // Check for modal display
+  }, [selectedBranch])
+
   useEffect(() => {
-    console.log('🔄 Modal promotions changed:', modalPromotions.length)
-    
-    // Don't do anything here - let loadPromotions handle showing the modal
-    // This prevents the race condition where the modal gets shown then immediately hidden
-  }, [modalPromotions])
-
-
- 
+    if (selectedBranch) {
+      loadProducts()
+    }
+  }, [filters, currentPage])
 
   const loadProducts = async () => {
     if (!selectedBranch) return
@@ -80,7 +78,6 @@ const ProductCatalog: React.FC = () => {
       
       console.log('🔄 ProductCatalog: Loading products for branch:', selectedBranch.id)
       
-      // Use the new product_units schema
       let query = supabase
         .from('products')
         .select(`
@@ -99,26 +96,21 @@ const ProductCatalog: React.FC = () => {
         .eq('is_active', true)
         .gt('inventory.quantity_available', 0)
 
-      // Apply search filter
       if (filters.searchQuery) {
         query = query.or(`name.ilike.%${filters.searchQuery}%,description.ilike.%${filters.searchQuery}%,sku.ilike.%${filters.searchQuery}%`)
       }
 
-      // Apply category filter
       if (filters.category) {
         query = query.eq('category_id', filters.category)
       }
 
-      // Order by name
       query = query.order('name', { ascending: true })
 
-      // Get total count for pagination
       const { count } = await supabase
         .from('products')
         .select('*', { count: 'exact', head: true })
         .eq('is_active', true)
 
-      // Apply pagination
       const from = (currentPage - 1) * 20
       const to = from + 19
       query = query.range(from, to)
@@ -137,7 +129,6 @@ const ProductCatalog: React.FC = () => {
         return
       }
 
-      // Transform the data to ProductWithUnits format
       const productsWithUnits = productsData.map(product => {
         const sellableUnits = product.product_units?.filter((unit: any) => unit.is_sellable) || []
         const defaultUnit = sellableUnits.find((unit: any) => unit.is_base_unit) || sellableUnits[0]
@@ -147,7 +138,6 @@ const ProductCatalog: React.FC = () => {
           return null
         }
 
-        // Apply price filters to the default unit
         if (filters.priceMin !== undefined && defaultUnit.price_per_unit < filters.priceMin) {
           return null
         }
@@ -210,112 +200,72 @@ const ProductCatalog: React.FC = () => {
 
       if (error) {
         console.error('❌ ProductCatalog: Error loading categories:', error)
-        setError('Failed to load categories. Please try again.')
         setCategories([])
         return
       }
 
-      if (!data || data.length === 0) {
-        console.log('⚠️ ProductCatalog: No categories found')
-        setCategories([])
-        return
-      }
-
-      console.log(`✅ ProductCatalog: Successfully loaded ${data.length} categories`)
-      setCategories(data)
+      console.log(`✅ ProductCatalog: Successfully loaded ${data?.length || 0} categories`)
+      setCategories(data || [])
       
     } catch (err) {
       console.error('❌ ProductCatalog: Error loading categories:', err)
-      setError('Failed to load categories. Please try again.')
       setCategories([])
     }
   }
 
   const loadPromotions = async () => {
-  // Prevent multiple simultaneous loads
-  if (isLoadingPromotionsRef.current) {
-    console.log('⏭️ Skipping promotion load - already in progress')
-    return
-  }
-
-  try {
-    isLoadingPromotionsRef.current = true
-    console.log('🎉 Loading promotions...')
-    
-    // Fetch modal promotions with carousel detection
-    const carouselData = await promotionService.getModalPromotionsForCarousel({
-      branchId: selectedBranch?.id
-    })
-
-    console.log('📋 Loaded promotions:', {
-      count: carouselData.promotions.length,
-      useCarousel: carouselData.useCarousel,
-      autoplayInterval: carouselData.autoplayInterval,
-      promotionIds: carouselData.promotions.map(p => p.id)
-    })
-    
-    setBannerPromotions([])
-    setModalPromotions(carouselData.promotions)
-    
-    // If we have modal promotions and should show modal, display it
-    if (carouselData.promotions.length > 0) {
-      console.log('✅ Found modal promotions, checking if should show...')
-      
-      // Pass the promotion IDs to check if there are NEW promotions to show
-      const promotionIds = carouselData.promotions.map(p => p.id)
-      const shouldShow = promotionService.shouldShowModal(promotionIds)
-      
-      console.log('🎯 Should show modal:', shouldShow)
-      
-      if (shouldShow) {
-        console.log('🎊 Displaying modal with carousel!')
-        
-        // Set modal to show FIRST, before marking as shown
-        setShowModal(true)
-        setCurrentModalIndex(0)
-        
-        // Small delay before marking as shown to prevent race condition
-        setTimeout(() => {
-          if (carouselData.useCarousel) {
-            // Mark all promotions in carousel as shown
-            promotionService.markCarouselAsShown(promotionIds)
-            
-            // Track carousel view
-            promotionService.trackCarouselView(
-              carouselData.promotions,
-              selectedBranch?.id
-            ).catch(err => console.error('Error tracking carousel view:', err))
-            
-            console.log('✅ Marked all carousel promotions as shown:', promotionIds)
-          } else {
-            // Single promotion - mark only first one as shown
-            promotionService.markModalAsShown(carouselData.promotions[0].id)
-            
-            // Track single view
-            promotionService.trackPromotionEvent({
-              promotionId: carouselData.promotions[0].id,
-              eventType: 'view',
-              sessionId: promotionService['getSessionId'](),
-              branchId: selectedBranch?.id,
-              eventData: { displayMode: 'modal' }
-            }).catch(err => console.error('Error tracking view:', err))
-            
-            console.log('✅ Marked single promotion as shown:', carouselData.promotions[0].id)
-          }
-        }, 100) // Small delay to ensure modal state is set first
-        
-      } else {
-        console.log('⏭️ Skipping modal - already shown in this session')
-      }
-    } else {
-      console.log('⚠️ No modal promotions found')
+    if (isLoadingPromotionsRef.current) {
+      console.log('⏭️ Skipping promotion load - already in progress')
+      return
     }
-  } catch (err) {
-    console.error('❌ Error loading promotions:', err)
-  } finally {
-    isLoadingPromotionsRef.current = false
+
+    try {
+      isLoadingPromotionsRef.current = true
+      console.log('🎉 Loading promotions...')
+      
+      const carouselData = await promotionService.getModalPromotionsForCarousel({
+        branchId: selectedBranch?.id
+      })
+
+      console.log('📋 Loaded promotions:', carouselData.promotions.length)
+      
+      setModalPromotions(carouselData.promotions)
+      
+      if (carouselData.promotions.length > 0) {
+        const promotionIds = carouselData.promotions.map(p => p.id)
+        const shouldShow = promotionService.shouldShowModal(promotionIds)
+        
+        if (shouldShow) {
+          setShowPromoModal(true)
+          setCurrentModalIndex(0)
+          
+          setTimeout(() => {
+            if (carouselData.useCarousel) {
+              promotionService.markCarouselAsShown(promotionIds)
+              promotionService.trackCarouselView(
+                carouselData.promotions,
+                selectedBranch?.id
+              ).catch(err => console.error('Error tracking carousel view:', err))
+            } else {
+              promotionService.markModalAsShown(carouselData.promotions[0].id)
+              promotionService.trackPromotionEvent({
+                promotionId: carouselData.promotions[0].id,
+                eventType: 'view',
+                sessionId: promotionService['getSessionId'](),
+                branchId: selectedBranch?.id,
+                eventData: { displayMode: 'modal' }
+              }).catch(err => console.error('Error tracking view:', err))
+            }
+          }, 100)
+        }
+      }
+    } catch (err) {
+      console.error('❌ Error loading promotions:', err)
+    } finally {
+      isLoadingPromotionsRef.current = false
+    }
   }
-}
+
   const handleSearch = (query: string) => {
     setFilters(prev => ({ ...prev, searchQuery: query }))
     setCurrentPage(1)
@@ -331,29 +281,28 @@ const ProductCatalog: React.FC = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
-  // Promotional handlers
-  const handleBannerDismiss = (promotionId: string) => {
-    setDismissedBanners(prev => new Set([...prev, promotionId]))
+  const handleProductClick = (product: ProductWithUnits) => {
+    setSelectedProduct(product)
+    setIsModalOpen(true)
   }
 
-  const handleBannerAction = (promotion: Promotion) => {
-    // Navigate to relevant products or apply filter
-    if (promotion.conditions?.applicableProducts) {
-      // Filter by applicable products
-      setFilters(prev => ({ 
-        ...prev, 
-        searchQuery: promotion.conditions?.applicableProducts?.join(' ') || '',
-        category: undefined 
-      }))
-    }
-    // Scroll to products
-    document.querySelector('.product-grid')?.scrollIntoView({ behavior: 'smooth' })
-  }
-
-  const handleModalClose = async () => {
-    console.log('❌ Closing modal')
+   const handleAddToCart = (product: ProductWithUnits, unit: ProductUnit, quantity: number) => {
+    // Calculate base unit quantity for inventory tracking
+    const baseUnitQuantity = quantity * unit.conversion_factor;
     
-    // Track dismissal for current promotion
+    addItem({
+      product: product,
+      product_unit: unit,
+      quantity: quantity,
+      unitPrice: unit.price_per_unit,
+      base_unit_quantity: baseUnitQuantity  // Added to fix TypeScript error
+    })
+    
+    setIsModalOpen(false)
+    setSelectedProduct(null)
+  }
+
+  const handlePromoModalClose = async () => {
     if (modalPromotions[currentModalIndex]) {
       await promotionService.trackPromotionDismissal(
         modalPromotions[currentModalIndex].id,
@@ -363,13 +312,11 @@ const ProductCatalog: React.FC = () => {
       ).catch(err => console.error('Error tracking dismissal:', err))
     }
     
-    setShowModal(false)
+    setShowPromoModal(false)
     setCurrentModalIndex(0)
   }
-  const handleModalAction = async (promotion: Promotion) => {
-    console.log('👆 Modal action clicked for:', promotion.title)
-    
-    // Track click event with carousel context
+
+  const handlePromoModalAction = async (promotion: Promotion) => {
     if (modalPromotions.length > 1) {
       await promotionService.trackCarouselAction(
         promotion,
@@ -391,14 +338,12 @@ const ProductCatalog: React.FC = () => {
       }).catch(err => console.error('Error tracking click:', err))
     }
     
-    handleBannerAction(promotion)
-    handleModalClose()
+    handlePromoModalClose()
   }
 
-  const handleModalIndexChange = async (index: number) => {
+  const handlePromoModalIndexChange = async (index: number) => {
     setCurrentModalIndex(index)
     
-    // Track view when user navigates to a different slide
     if (modalPromotions[index]) {
       await promotionService.trackPromotionEvent({
         promotionId: modalPromotions[index].id,
@@ -415,277 +360,304 @@ const ProductCatalog: React.FC = () => {
     }
   }
 
-  
-
   if (!selectedBranch) {
     return null
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 to-blue-50">
-      {/* Promotional banners disabled: using modal-only display */}
-
-      {/* Header */}
-      <div className="bg-white shadow-lg border-b sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 py-6">
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center space-x-4">
-              <button
-                onClick={() => navigate('/branch-selection')}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                <ArrowLeft className="w-5 h-5" />
-              </button>
-              <div>
-                <div className="flex items-center space-x-3">
-                  <h1 className="text-2xl font-bold text-gray-900">
-                    {selectedBranch?.name || 'Product Catalog'}
-                  </h1>
-                  {/* Real-time connection indicator - temporarily disabled */}
-                  {/* <div className="flex items-center space-x-2">
-                    <div className={`w-2 h-2 rounded-full ${
-                      isRealtimeConnected 
-                        ? 'bg-green-500 animate-pulse' 
-                        : 'bg-red-500'
-                    }`}></div>
-                    <span className={`text-xs font-medium ${
-                      isRealtimeConnected 
-                        ? 'text-green-600' 
-                        : 'text-red-600'
-                    }`}>
-                      {isRealtimeConnected ? 'Live' : 'Offline'}
-                    </span>
-                  </div> */}
-                </div>
-                <p className="text-gray-600">
-                  Agricultural Supplies & Veterinary Products
-                </p>
-              </div>
-            </div>
-            
-            <div className="flex items-center space-x-3">
-              <button
-                onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                title={viewMode === 'grid' ? 'Switch to List View' : 'Switch to Grid View'}
-              >
-                {viewMode === 'grid' ? <List className="w-5 h-5" /> : <Grid className="w-5 h-5" />}
-              </button>
-              
-              {isAuthenticated && (
-                <button
-                  onClick={() => navigate('/settings')}
-                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                  title="Settings"
-                >
-                  <User className="w-5 h-5" />
-                </button>
-              )}
-              
-              <button
-                onClick={() => navigate('/cart')}
-                className="relative p-3 bg-agrivet-green text-white rounded-lg hover:bg-agrivet-green/90 transition-colors"
-                title="View Cart"
-              >
-                <ShoppingCart className="w-5 h-5" />
-                {getItemCount() > 0 && (
-                  <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full h-6 w-6 flex items-center justify-center font-bold">
-                    {getItemCount()}
-                  </span>
-                )}
-              </button>
-            </div>
-          </div>
-
-          {/* Search and Filters */}
-          <div className="flex items-center space-x-4">
-            <div className="flex-1">
-              <SearchBar
-                onSearch={handleSearch}
-                placeholder="Search for feeds, medicines, fertilizers..."
-                value={filters.searchQuery || ''}
-              />
-            </div>
+  <div className="min-h-screen bg-gradient-to-br from-green-50 to-blue-50">
+    {/* Compact Mobile-Optimized Header */}
+    <div className="bg-white shadow-md border-b sticky top-0 z-40">
+      <div className="max-w-7xl mx-auto px-3 sm:px-4 py-3 sm:py-4">
+        {/* Top Row - Back button, Title, and Actions */}
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center space-x-2 sm:space-x-3 flex-1 min-w-0">
             <button
-              onClick={() => setShowFilters(!showFilters)}
-              className="btn-outline flex items-center space-x-2 px-4 py-3"
+              onClick={() => navigate('/branch-selection')}
+              className="p-1.5 sm:p-2 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
             >
-              <Filter className="w-4 h-4" />
-              <span>Filters</span>
+              <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
+            <div className="min-w-0 flex-1">
+              <h1 className="text-base sm:text-xl font-bold text-gray-900 truncate">
+                {selectedBranch?.name || 'Product Catalog'}
+              </h1>
+              <p className="text-xs sm:text-sm text-gray-600 truncate hidden sm:block">
+                Agricultural Supplies & Veterinary Products
+              </p>
+            </div>
           </div>
+          
+          <div className="flex items-center space-x-1.5 sm:space-x-2 flex-shrink-0">
+            <button
+              onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}
+              className="p-1.5 sm:p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              title={viewMode === 'grid' ? 'Switch to List View' : 'Switch to Grid View'}
+            >
+              {viewMode === 'grid' ? <List className="w-4 h-4 sm:w-5 sm:h-5" /> : <Grid className="w-4 h-4 sm:w-5 sm:h-5" />}
+            </button>
+            
+            {isAuthenticated && (
+              <button
+                onClick={() => navigate('/settings')}
+                className="p-1.5 sm:p-2 hover:bg-gray-100 rounded-lg transition-colors hidden sm:block"
+                title="Settings"
+              >
+                <User className="w-4 h-4 sm:w-5 sm:h-5" />
+              </button>
+            )}
+            
+            {/* <button
+              onClick={() => navigate('/cart')}
+              className="relative p-2 sm:p-2.5 bg-agrivet-green text-white rounded-lg hover:bg-agrivet-green/90 transition-colors"
+              title="View Cart"
+            >
+              <ShoppingCart className="w-4 h-4 sm:w-5 sm:h-5" />
+              {getItemCount() > 0 && (
+                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] sm:text-xs rounded-full h-4 w-4 sm:h-5 sm:w-5 flex items-center justify-center font-bold">
+                  {getItemCount()}
+                </span>
+              )}
+            </button> */}
+          </div>
+        </div>
 
-          {/* Quick Stats */}
-          <div className="mt-4 flex items-center space-x-6 text-sm text-gray-600">
-            <div className="flex items-center space-x-1">
-              <Package className="w-4 h-4" />
-              <span>{products.length} Products</span>
-            </div>
-            <div className="flex items-center space-x-1">
-              <TrendingUp className="w-4 h-4" />
-              <span>In Stock</span>
-            </div>
-            <div className="flex items-center space-x-1">
-              <Clock className="w-4 h-4" />
-              <span>Real-time Inventory</span>
-            </div>
+        {/* Search and Filters Row */}
+        <div className="flex items-center space-x-2 mb-3">
+          <div className="flex-1">
+            <SearchBar
+              onSearch={handleSearch}
+              placeholder="Search products..."
+              value={filters.searchQuery || ''}
+            />
+          </div>
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            className="px-3 py-2 sm:px-4 sm:py-2.5 border-2 border-gray-300 rounded-lg hover:bg-gray-50 transition-colors flex items-center space-x-1.5 flex-shrink-0"
+          >
+            <Filter className="w-4 h-4" />
+            <span className="text-sm font-medium hidden sm:inline">Filters</span>
+          </button>
+        </div>
+
+        {/* Compact Horizontal Category Slider */}
+        <div className="overflow-x-auto scrollbar-hide -mx-3 sm:-mx-4 px-3 sm:px-4">
+          <div className="flex space-x-2 min-w-max pb-1">
+            {/* All Categories */}
+            <button
+              onClick={() => handleFilterChange({ category: undefined })}
+              className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all ${
+                !filters.category
+                  ? 'bg-agrivet-green text-white shadow-md'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              All
+            </button>
+            
+            {/* Category Pills */}
+            {categories.map((category) => (
+              <button
+                key={category.id}
+                onClick={() => handleFilterChange({ category: category.id })}
+                className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${
+                  filters.category === category.id
+                    ? 'bg-agrivet-green text-white shadow-md'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                {category.name}
+              </button>
+            ))}
           </div>
         </div>
       </div>
+    </div>
 
-      <div className="max-w-7xl mx-auto px-4 py-6">
-        <div className="flex gap-6">
-          {/* Filters Sidebar */}
-          <FilterSidebar
-            isOpen={showFilters}
-            onClose={() => setShowFilters(false)}
-            categories={categories}
-            filters={filters}
-            onFilterChange={handleFilterChange}
-          />
+    {/* Main Content */}
+    <div className="max-w-7xl mx-auto px-3 sm:px-4 py-4 sm:py-6">
+      <div className="flex gap-4 sm:gap-6">
+        {/* Filters Sidebar */}
+        <FilterSidebar
+          isOpen={showFilters}
+          onClose={() => setShowFilters(false)}
+          categories={categories}
+          filters={filters}
+          onFilterChange={handleFilterChange}
+        />
 
-          {/* Main Content */}
-          <div className="flex-1">
-            {isLoading ? (
-              <div className="bg-white rounded-2xl shadow-lg p-12">
-                <LoadingSpinner message="Loading products..." />
+        {/* Main Content Area */}
+        <div className="flex-1 min-w-0">
+          {isLoading ? (
+            <div className="bg-white rounded-2xl shadow-lg p-8 sm:p-12">
+              <LoadingSpinner message="Loading products..." />
+            </div>
+          ) : error ? (
+            <div className="bg-white rounded-2xl shadow-lg p-6 sm:p-8">
+              <ErrorMessage message={error} />
+            </div>
+          ) : products.length === 0 ? (
+            <div className="bg-white rounded-2xl shadow-lg p-8 sm:p-12 text-center">
+              <div className="w-20 h-20 sm:w-24 sm:h-24 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                <Search className="w-10 h-10 sm:w-12 sm:h-12 text-gray-400" />
               </div>
-            ) : error ? (
-              <div className="bg-white rounded-2xl shadow-lg p-8">
-                <ErrorMessage message={error} />
+              <h3 className="text-xl sm:text-2xl font-bold text-gray-900 mb-4">
+                No Products Found
+              </h3>
+              <p className="text-sm sm:text-base text-gray-600 mb-6 sm:mb-8 max-w-md mx-auto">
+                We couldn't find any products matching your search criteria. 
+                Try adjusting your search terms or filters.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center">
+                <button
+                  onClick={() => {
+                    setFilters({
+                      searchQuery: '',
+                      category: undefined,
+                      priceMin: undefined,
+                      priceMax: undefined,
+                      inStock: true
+                    })
+                    setCurrentPage(1)
+                  }}
+                  className="btn-primary"
+                >
+                  Clear All Filters
+                </button>
+                <button
+                  onClick={() => navigate('/branch-selection')}
+                  className="btn-outline"
+                >
+                  Change Branch
+                </button>
               </div>
-            ) : products.length === 0 ? (
-              <div className="bg-white rounded-2xl shadow-lg p-12 text-center">
-                <div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                  <Search className="w-12 h-12 text-gray-400" />
+            </div>
+          ) : (
+            <>
+              {/* Products Header - Compact on mobile */}
+              <div className="mb-4 sm:mb-6 flex items-center justify-between">
+                <div>
+                  <h2 className="text-base sm:text-lg font-semibold text-gray-900">
+                    {products.length} Products Found
+                  </h2>
+                  <p className="text-xs sm:text-sm text-gray-600">
+                    Showing results for {selectedBranch?.name}
+                  </p>
                 </div>
-                <h3 className="text-2xl font-bold text-gray-900 mb-4">
-                  No Products Found
-                </h3>
-                <p className="text-gray-600 mb-8 max-w-md mx-auto">
-                  We couldn't find any products matching your search criteria. 
-                  Try adjusting your search terms or filters.
-                </p>
-                <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                  <button
-                    onClick={() => {
-                      setFilters({})
-                      setCurrentPage(1)
-                    }}
-                    className="btn-primary"
-                  >
-                    Clear All Filters
-                  </button>
-                  <button
-                    onClick={() => navigate('/branch-selection')}
-                    className="btn-outline"
-                  >
-                    Change Branch
-                  </button>
+                <div className="flex items-center space-x-2 text-xs sm:text-sm text-gray-500">
+                  <Star className="w-3 h-3 sm:w-4 sm:h-4" />
+                  <span className="hidden sm:inline">All products in stock</span>
+                  <span className="sm:hidden">In stock</span>
                 </div>
               </div>
-            ) : (
-              <>
-                {/* Products Header */}
-                <div className="mb-6 flex items-center justify-between">
-                  <div>
-                    <h2 className="text-lg font-semibold text-gray-900">
-                      {products.length} Products Found
-                    </h2>
-                    <p className="text-sm text-gray-600">
-                      Showing results for {selectedBranch?.name}
-                    </p>
-                  </div>
-                  <div className="flex items-center space-x-2 text-sm text-gray-500">
-                    <Star className="w-4 h-4" />
-                    <span>All products in stock</span>
-                  </div>
-                </div>
 
-                <ProductGrid
-                  products={products}
-                  viewMode={viewMode}
-                />
-                
-                {/* Pagination */}
-                {totalPages > 1 && (
-                  <div className="mt-12 flex justify-center">
-                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-                      <div className="flex items-center space-x-2">
-                        <button
-                          onClick={() => handlePageChange(currentPage - 1)}
-                          disabled={currentPage === 1}
-                          className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2"
-                        >
-                          Previous
-                        </button>
-                        
-                        <div className="flex items-center space-x-1">
-                          {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
-                            const page = i + 1
-                            return (
-                              <button
-                                key={page}
-                                onClick={() => handlePageChange(page)}
-                                className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                                  page === currentPage
-                                    ? 'bg-agrivet-green text-white shadow-lg'
-                                    : 'text-gray-700 hover:bg-gray-100'
-                                }`}
-                              >
-                                {page}
-                              </button>
-                            )
-                          })}
-                          {totalPages > 5 && (
-                            <>
-                              <span className="text-gray-400">...</span>
-                              <button
-                                onClick={() => handlePageChange(totalPages)}
-                                className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                                  totalPages === currentPage
-                                    ? 'bg-agrivet-green text-white shadow-lg'
-                                    : 'text-gray-700 hover:bg-gray-100'
-                                }`}
-                              >
-                                {totalPages}
-                              </button>
-                            </>
-                          )}
-                        </div>
-                        
-                        <button
-                          onClick={() => handlePageChange(currentPage + 1)}
-                          disabled={currentPage === totalPages}
-                          className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2"
-                        >
-                          Next
-                        </button>
+              {/* Product Grid */}
+              <ProductGrid
+                products={products}
+                viewMode={viewMode}
+                onProductClick={handleProductClick}
+              />
+              
+              {/* Pagination - Compact on mobile */}
+              {totalPages > 1 && (
+                <div className="mt-8 sm:mt-12 flex justify-center">
+                  <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-3 sm:p-4">
+                    <div className="flex items-center space-x-1 sm:space-x-2">
+                      <button
+                        onClick={() => handlePageChange(currentPage - 1)}
+                        disabled={currentPage === 1}
+                        className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed px-3 py-1.5 sm:px-4 sm:py-2 text-sm"
+                      >
+                        <span className="hidden sm:inline">Previous</span>
+                        <span className="sm:hidden">Prev</span>
+                      </button>
+                      
+                      <div className="flex items-center space-x-1">
+                        {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                          const page = i + 1
+                          return (
+                            <button
+                              key={page}
+                              onClick={() => handlePageChange(page)}
+                              className={`px-2 py-1.5 sm:px-3 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
+                                page === currentPage
+                                  ? 'bg-agrivet-green text-white shadow-lg'
+                                  : 'text-gray-700 hover:bg-gray-100'
+                              }`}
+                            >
+                              {page}
+                            </button>
+                          )
+                        })}
+                        {totalPages > 5 && (
+                          <>
+                            <span className="text-gray-400 px-1">...</span>
+                            <button
+                              onClick={() => handlePageChange(totalPages)}
+                              className={`px-2 py-1.5 sm:px-3 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
+                                totalPages === currentPage
+                                  ? 'bg-agrivet-green text-white shadow-lg'
+                                  : 'text-gray-700 hover:bg-gray-100'
+                              }`}
+                            >
+                              {totalPages}
+                            </button>
+                          </>
+                        )}
                       </div>
+                      
+                      <button
+                        onClick={() => handlePageChange(currentPage + 1)}
+                        disabled={currentPage === totalPages}
+                        className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed px-3 py-1.5 sm:px-4 sm:py-2 text-sm"
+                      >
+                        Next
+                      </button>
                     </div>
                   </div>
-                )}
-              </>
-            )}
-          </div>
+                </div>
+              )}
+            </>
+          )}
         </div>
       </div>
-
-      {/* Promotional Modal */}
-      {modalPromotions.length > 0 && (
-        <PromoModal
-          promotions={modalPromotions}
-          isOpen={showModal}
-          onClose={handleModalClose}
-          onAction={handleModalAction}
-          currentIndex={currentModalIndex}
-          onIndexChange={handleModalIndexChange}
-        />
-      )}
-
-      
     </div>
-  )
+
+    {/* Product Selection Modal */}
+    <ProductSelectionModal
+      product={selectedProduct}
+      isOpen={isModalOpen}
+      onClose={() => {
+        setIsModalOpen(false)
+        setSelectedProduct(null)
+      }}
+      onAddToCart={handleAddToCart}
+    />
+
+    {/* Promotional Modal */}
+    {modalPromotions.length > 0 && (
+      <PromoModal
+        promotions={modalPromotions}
+        isOpen={showPromoModal}
+        onClose={handlePromoModalClose}
+        onAction={handlePromoModalAction}
+        currentIndex={currentModalIndex}
+        onIndexChange={handlePromoModalIndexChange}
+      />
+    )}
+
+    {/* Custom Scrollbar Hiding Styles */}
+    <style>{`
+      .scrollbar-hide {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+      }
+      .scrollbar-hide::-webkit-scrollbar {
+        display: none;
+      }
+    `}</style>
+  </div>
+)
 }
 
 export default ProductCatalog

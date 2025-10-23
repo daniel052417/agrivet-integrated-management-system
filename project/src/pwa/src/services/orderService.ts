@@ -15,6 +15,7 @@ interface CreateOrderRequest {
   customerId?: string
   branchId: string
   paymentMethod: string
+  paymentReference?: string // ADD THIS LINE - for GCash reference number
   notes?: string
   customerInfo?: {
     firstName: string
@@ -59,31 +60,32 @@ class OrderService {
    * Does NOT deduct inventory or process payment
    */
   async createOrder(request: CreateOrderRequest): Promise<CreateOrderResponse> {
-    try {
-      console.log('🔧 OrderService: Starting createOrder...')
-      console.log('🔧 OrderService: Supabase client:', !!supabase)
-      
-      if (!supabase) {
-        console.error('❌ OrderService: Supabase client not initialized')
-        throw new Error('Supabase client not initialized')
-      }
+  try {
+    console.log('🔧 OrderService: Starting createOrder...')
+    console.log('🔧 OrderService: Supabase client:', !!supabase)
+    
+    if (!supabase) {
+      console.error('❌ OrderService: Supabase client not initialized')
+      throw new Error('Supabase client not initialized')
+    }
 
-      const { 
-        cart, 
-        customerId, 
-        branchId, 
-        paymentMethod, 
-        notes, 
-        customerInfo,
-        orderType = 'pickup',
-        deliveryMethod,
-        deliveryAddress,
-        deliveryContactNumber,
-        deliveryLandmark,
-        deliveryStatus,
-        deliveryLatitude,
-        deliveryLongitude
-      } = request
+    const { 
+      cart, 
+      customerId, 
+      branchId, 
+      paymentMethod,
+      paymentReference, // ADD THIS LINE - destructure the reference
+      notes, 
+      customerInfo,
+      orderType = 'pickup',
+      deliveryMethod,
+      deliveryAddress,
+      deliveryContactNumber,
+      deliveryLandmark,
+      deliveryStatus,
+      deliveryLatitude,
+      deliveryLongitude
+    } = request
 
       // Generate order number
       const orderNumber = this.generateOrderNumber()
@@ -127,39 +129,39 @@ class OrderService {
 
       // Prepare order data
       const orderData = {
-        order_number: orderNumber,
-        customer_id: finalCustomerId || null,
-        branch_id: branchId,
-        order_type: orderType,
-        status: 'pending_confirmation',
-        payment_status: 'pending',
-        subtotal: cart.subtotal,
-        tax_amount: cart.tax,
-        discount_amount: 0,
-        total_amount: cart.total,
-        payment_method: paymentMethod,
-        payment_reference: null,
-        payment_notes: notes || null,
-        estimated_ready_time: orderType === 'pickup' ? new Date(Date.now() + 30 * 60 * 1000).toISOString() : null,
-        is_guest_order: !finalCustomerId,
-        customer_name: customerInfo ? `${customerInfo.firstName} ${customerInfo.lastName}` : null,
-        customer_email: customerInfo?.email || null,
-        customer_phone: customerInfo?.phone || null,
-        special_instructions: notes || null,
-        notes: notes || null,
-        // Delivery fields
-        delivery_method: deliveryMethod || null,
-        delivery_address: deliveryAddress || null,
-        delivery_contact_number: deliveryContactNumber || null,
-        delivery_landmark: deliveryLandmark || null,
-        delivery_status: deliveryStatus || null,
-        confirmed_at: null,
-        completed_at: null,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        delivery_latitude: deliveryLatitude || null,
-        delivery_longitude: deliveryLongitude || null,
-      }
+      order_number: orderNumber,
+      customer_id: finalCustomerId || null,
+      branch_id: branchId,
+      order_type: orderType,
+      status: 'pending_confirmation',
+      payment_status: paymentMethod === 'gcash' ? 'pending_verification' : 'pending', // Different status for GCash
+      subtotal: cart.subtotal,
+      tax_amount: cart.tax,
+      discount_amount: 0,
+      total_amount: cart.total,
+      payment_method: paymentMethod,
+      payment_reference: paymentReference || null, // ADD THIS LINE - store the GCash reference
+      payment_notes: notes || null,
+      estimated_ready_time: orderType === 'pickup' ? new Date(Date.now() + 30 * 60 * 1000).toISOString() : null,
+      is_guest_order: !finalCustomerId,
+      customer_name: customerInfo ? `${customerInfo.firstName} ${customerInfo.lastName}` : null,
+      customer_email: customerInfo?.email || null,
+      customer_phone: customerInfo?.phone || null,
+      special_instructions: notes || null,
+      notes: notes || null,
+      // Delivery fields
+      delivery_method: deliveryMethod || null,
+      delivery_address: deliveryAddress || null,
+      delivery_contact_number: deliveryContactNumber || null,
+      delivery_landmark: deliveryLandmark || null,
+      delivery_status: deliveryStatus || null,
+      confirmed_at: null,
+      completed_at: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      delivery_latitude: deliveryLatitude || null,
+      delivery_longitude: deliveryLongitude || null,
+    }
 
       // Direct insert into orders table
       console.log('🔧 OrderService: Inserting order data:', JSON.stringify(orderData, null, 2))

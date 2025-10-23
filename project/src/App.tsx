@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import LoginPage from './Login/components/LoginPage';
 import AccountActivation from './components/auth/AccountActivation';
+import OpeningCashModal from './components/modals/OpeningCashModal';
 import { customAuth, CustomUser } from './lib/customAuth';
 import { getDashboardForRole } from './lib/rolePages';
+import { posSessionService } from './lib/posSessionService';
 
 function App() {
   const [user, setUser] = useState<CustomUser | null>(null);
@@ -13,6 +15,10 @@ function App() {
     password: '',
     showPassword: false
   });
+
+  // State for Opening Cash Modal
+  const [showOpeningCashModal, setShowOpeningCashModal] = useState(false);
+  const [needsOpeningCash, setNeedsOpeningCash] = useState(false);
 
   // Check if we're on the activation page
   const isActivationPage = () => {
@@ -70,10 +76,86 @@ function App() {
         credentials.username,
         credentials.password
       );
+      
+      // Check if user is a cashier and needs to set opening cash
+      const isCashier = userData.role_name === 'cashier' || userData.role === 'cashier';
+      
+      if (isCashier) {
+        // Check if there's an existing POS session
+        const hasPosSession = (userData as any).current_pos_session;
+        
+        if (hasPosSession) {
+          // If POS session exists, check if it needs opening cash
+          const session = (userData as any).current_pos_session;
+          
+          // If starting_cash is 0 or null, show modal
+          if (!session.starting_cash || session.starting_cash === 0) {
+            setNeedsOpeningCash(true);
+            setShowOpeningCashModal(true);
+          }
+        } else {
+          // No POS session exists, show modal to create one
+          setNeedsOpeningCash(true);
+          setShowOpeningCashModal(true);
+        }
+      }
+      
       setUser(userData);
     } catch (err: any) {
       console.error('Login error:', err);
       setError(err.message || 'Login failed');
+    }
+  };
+
+  const handleOpeningCashSubmit = async (amount: number) => {
+    try {
+      if (!user) return;
+
+      console.log('💰 Submitting opening cash:', amount);
+
+      // Check if there's an existing POS session
+      const existingSession = (user as any).current_pos_session;
+
+      if (existingSession) {
+        // Update existing session with opening cash
+        await posSessionService.updateSession(existingSession.id, {
+          starting_cash: amount
+        });
+        
+        console.log('✅ Updated existing POS session with opening cash');
+      } else {
+        // Create new POS session
+        if (!user.branch_id) {
+          throw new Error('User does not have a branch assigned');
+        }
+
+        const terminalId = await posSessionService.getAvailableTerminalForBranch(
+          user.branch_id,
+          user.id
+        );
+
+        const newSession = await posSessionService.createSession({
+          cashier_id: user.id,
+          branch_id: user.branch_id,
+          terminal_id: terminalId || undefined,
+          starting_cash: amount,
+          notes: `Session started by ${user.first_name} ${user.last_name} with opening cash ₱${amount.toFixed(2)}`
+        });
+
+        // Update user object with new session
+        (user as any).current_pos_session = newSession;
+        
+        console.log('✅ Created new POS session with opening cash');
+      }
+
+      // Close modal and mark as complete
+      setShowOpeningCashModal(false);
+      setNeedsOpeningCash(false);
+      setError('');
+
+    } catch (err: any) {
+      console.error('❌ Error setting opening cash:', err);
+      throw new Error(err.message || 'Failed to set opening cash');
     }
   };
 
@@ -82,6 +164,8 @@ function App() {
       await customAuth.signOut();
       setUser(null);
       setError('');
+      setShowOpeningCashModal(false);
+      setNeedsOpeningCash(false);
     } catch (err: any) {
       console.error('Logout error:', err);
       setError(err.message || 'Logout failed');
@@ -189,6 +273,22 @@ function App() {
   return (
     <div className="min-h-screen bg-gray-100">
       {renderDashboard()}
+      
+      {/* Opening Cash Modal for Cashiers */}
+      {user && showOpeningCashModal && (
+        <OpeningCashModal
+          isOpen={showOpeningCashModal}
+          cashierName={`${user.first_name} ${user.last_name}`}
+          onSubmit={handleOpeningCashSubmit}
+          onClose={() => {
+            // Only allow closing if not required
+            if (!needsOpeningCash) {
+              setShowOpeningCashModal(false);
+            }
+          }}
+          isClosable={!needsOpeningCash}
+        />
+      )}
       
       {/* Error Display */}
       {error && (

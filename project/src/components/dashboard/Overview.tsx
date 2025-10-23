@@ -12,9 +12,9 @@ import {
 import MetricCard from '../shared/charts/MetricCard';
 import SalesChart from './SalesChart';
 import InventorySummary from './InventorySummary';
-import SalesByBranch from './SalesByBranch';
+// import SalesByBranch from './SalesByBranch';
 import SalesByProduct from './SalesByProduct';
-import TopPerformers from './TopPerformers';
+// import TopPerformers from './TopPerformers';
 import RecentActivity from './RecentActivity';
 import LowStockAlert from './LowStockAlert';
 import SystemStatus from './SystemStatus';
@@ -122,15 +122,16 @@ const Overview: React.FC = () => {
 
       {/* Sales Analysis Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-        <SalesByBranch />
+        {/* <SalesByBranch /> */}
         <SalesByProduct />
+        <RecentActivity />
       </div>
 
       {/* Top Performers & Recent Activity */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-        <TopPerformers />
+      {/* <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        <TopPerformers /> 
         <RecentActivity />
-      </div>
+      </div> */}
 
       {/* Low Stock Alerts & Audit Logs */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

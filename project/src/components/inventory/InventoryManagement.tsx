@@ -60,53 +60,52 @@ const InventoryManagement: React.FC = () => {
 
   // Image upload functions
   const uploadImage = async (file: File): Promise<string> => {
-    try {
-      setIsUploadingImage(true);
+  try {
+    setIsUploadingImage(true);
+    
+    // Create a unique filename
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
+    const filePath = fileName; // ✅ FIXED: No prefix needed
+
+    console.log('Attempting to upload image to bucket: product-images');
+    console.log('File path:', filePath);
+
+    // Upload to storage
+    const { data, error } = await supabase.storage
+      .from('product-images')
+      .upload(filePath, file, {
+        cacheControl: '3600',
+        upsert: false
+      });
+
+    if (error) {
+      console.error('Storage upload error:', error);
       
-      // Create a unique filename
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
-      const filePath = `product-images/${fileName}`;
-
-      console.log('Attempting to upload image to bucket: product-images');
-      console.log('File path:', filePath);
-
-      // Try to upload directly - if bucket doesn't exist, we'll get a clear error
-      const { data, error } = await supabase.storage
-        .from('product-images')
-        .upload(filePath, file, {
-          cacheControl: '3600',
-          upsert: false
-        });
-
-      if (error) {
-        console.error('Storage upload error:', error);
-        
-        // Check if it's a bucket not found error
-        if (error.message.includes('Bucket not found') || error.message.includes('not found')) {
-          throw new Error('Storage bucket "product-images" not found. Please create it in your Supabase dashboard and make sure it\'s set to public.');
-        }
-        
-        throw new Error(`Failed to upload image: ${error.message}`);
+      // Check if it's a bucket not found error
+      if (error.message.includes('Bucket not found') || error.message.includes('not found')) {
+        throw new Error('Storage bucket "product-images" not found. Please create it in your Supabase dashboard and make sure it\'s set to public.');
       }
-
-      console.log('Upload successful:', data);
-
-      // Get public URL
-      const { data: { publicUrl } } = supabase.storage
-        .from('product-images')
-        .getPublicUrl(filePath);
-
-      console.log('Public URL generated:', publicUrl);
-      console.log('Image URL will be saved to database:', publicUrl);
-      return publicUrl;
-    } catch (error) {
-      console.error('Error uploading image:', error);
-      throw error; // Re-throw the original error to preserve the message
-    } finally {
-      setIsUploadingImage(false);
+      
+      throw new Error(`Failed to upload image: ${error.message}`);
     }
-  };
+
+    console.log('Upload successful:', data);
+
+    // Get public URL
+    const { data: { publicUrl } } = supabase.storage
+      .from('product-images')
+      .getPublicUrl(filePath);
+
+    console.log('Public URL generated:', publicUrl);
+    return publicUrl;
+  } catch (error) {
+    console.error('Error uploading image:', error);
+    throw error;
+  } finally {
+    setIsUploadingImage(false);
+  }
+};
 
   const handleImageSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -144,13 +143,13 @@ const InventoryManagement: React.FC = () => {
   };
 
   const fetchProducts = async () => {
-    console.log('🚀 Starting to fetch products from inventory_management_view...');
+    console.log('🚀 Starting to fetch products from inventory_management...');
     setIsLoadingProducts(true);
     
     try {
       // Build query with filters
       let query = supabase
-        .from('inventory_management_view')
+        .from('inventory_management')
         .select('*')
         .order('product_name');
 
@@ -283,6 +282,7 @@ const InventoryManagement: React.FC = () => {
           description: formData.description.trim(),
           category_id: formData.category_id,
           supplier_id: formData.supplier_id,
+          image_url: imageUrl || null,
           is_active: true
         };
 
@@ -343,6 +343,7 @@ const InventoryManagement: React.FC = () => {
           sku: formData.sku.trim().toUpperCase(),
           description: formData.description.trim(),
           category_id: formData.category_id,
+          image_url: imageUrl || null,
           supplier_id: formData.supplier_id
         };
 
@@ -519,31 +520,30 @@ const InventoryManagement: React.FC = () => {
   };
 
   const openEditModal = (product: InventoryManagementRow) => {
-    setFormData({
-      name: product.product_name || '',
-      category_id: product.category_id || '',
-      sku: product.sku || '',
-      price_per_unit: String(product.price_per_unit ?? ''),
-      stock_quantity: String(product.quantity_available ?? ''),
-      reorder_level: String(product.reorder_level ?? ''),
-      supplier_id: '', // Not available in view, will need to fetch separately
-      branch_id: product.branch_id || '',
-      description: '', // Not available in view, will need to fetch separately
-      unit_name: product.unit_name || '',
-      unit_label: product.unit_label || '',
-      conversion_factor: String(product.conversion_factor ?? '1'),
-      min_sellable_quantity: '1', // Not available in view, will use default
-      image_url: product.image_url || '',
-      barcode: product.barcode || '',
-      brand: product.brand || ''
-    });
-    setImageFile(null);
-    setImagePreview(product.image_url || null);
-    setEditingProductId(product.product_id);
-    setModalMode('edit');
-    setIsModalOpen(true);
-  };
-
+  setFormData({
+    name: product.product_name || '',
+    category_id: product.category_id || '',
+    sku: product.sku || '',
+    price_per_unit: String(product.price_per_unit ?? ''),
+    stock_quantity: String(product.quantity_available ?? ''),
+    reorder_level: String(product.reorder_level ?? ''),
+    supplier_id: product.supplier_id || '', // ✅ Now populated from view
+    branch_id: product.branch_id || '',
+    description: product.description || '', // ✅ Now populated from view
+    unit_name: product.unit_name || '',
+    unit_label: product.unit_label || '',
+    conversion_factor: String(product.conversion_factor ?? '1'),
+    min_sellable_quantity: String(product.min_sellable_quantity ?? '1'), // ✅ Now populated from view
+    image_url: product.image_url || '',
+    barcode: product.barcode || '',
+    brand: product.brand || ''
+  });
+  setImageFile(null);
+  setImagePreview(product.image_url || null);
+  setEditingProductId(product.product_id);
+  setModalMode('edit');
+  setIsModalOpen(true);
+};
   return (
     <div className="p-6 space-y-6">
       {/* Success/Error Messages */}
