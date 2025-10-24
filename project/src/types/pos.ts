@@ -554,8 +554,10 @@ export interface OnlineOrder {
   branch_id: string;
   order_type: 'pickup' | 'delivery' | 'reservation';
   status: 'pending_confirmation' | 'confirmed' | 'ready_for_pickup' | 'for_payment' | 'for_dispatch' | 'completed' | 'cancelled';
-  payment_status: 'pending' | 'paid' | 'failed' | 'refunded';
-  payment_method: 'cash' | 'digital' | 'card';
+  payment_status: 'pending' | 'paid' | 'failed' | 'refunded' | 'pending_verification' | 'verified'; 
+  payment_method: 'cash' | 'digital' | 'card' | 'gcash';
+  payment_reference?: string;      // <-- ADD THIS
+  payment_proof_url?: string;      // <-- ADD THIS
   subtotal: number;
   tax_amount: number;
   delivery_fee?: number;

@@ -16,7 +16,8 @@ import {
   RefreshCw,
   Check,
   X,
-  AlertTriangle
+  AlertTriangle,
+  CreditCard
 } from 'lucide-react';
 import { OnlineOrder, OnlineOrderFilters } from '../../types/pos';
 import Modal from '../components/shared/Modal';
@@ -988,6 +989,112 @@ const OnlineOrdersScreen: React.FC<OnlineOrdersScreenProps> = (props) => {
                 </div>
               </div>
             </div>
+
+            {/* GCash Payment Details */}
+            {selectedOrder.payment_method === 'gcash' && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <h3 className="font-semibold text-blue-900 mb-3 flex items-center">
+                  <CreditCard className="w-4 h-4 mr-2" />
+                  GCash Payment Details
+                </h3>
+                <div className="space-y-4">
+                  {/* Reference Number */}
+                  <div>
+                    <p className="text-sm text-blue-700 font-medium mb-1">Reference Number</p>
+                    <div className="bg-white border border-blue-300 rounded-lg p-3">
+                      <p className="font-mono text-lg text-blue-900 font-semibold tracking-wide">
+                        {selectedOrder.payment_reference || 'No reference number provided'}
+                      </p>
+                      {selectedOrder.payment_reference && (
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(selectedOrder.payment_reference!);
+                            alert('Reference number copied to clipboard!');
+                          }}
+                          className="mt-2 text-xs text-blue-600 hover:text-blue-800 underline"
+                        >
+                          📋 Copy to clipboard
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Payment Proof Image */}
+                  {selectedOrder.payment_proof_url ? (
+                    <div>
+                      <p className="text-sm text-blue-700 font-medium mb-2">Payment Proof Screenshot</p>
+                      <div className="bg-white border border-blue-300 rounded-lg p-3">
+                        <div className="relative group">
+                          <img
+                            src={selectedOrder.payment_proof_url}
+                            alt="Payment Proof"
+                            className="w-full max-w-md mx-auto rounded-lg shadow-md cursor-pointer hover:shadow-xl transition-shadow"
+                            onClick={() => window.open(selectedOrder.payment_proof_url, '_blank')}
+                          />
+                          <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-all rounded-lg flex items-center justify-center">
+                            <span className="opacity-0 group-hover:opacity-100 transition-opacity text-white bg-blue-600 px-3 py-1 rounded-full text-sm">
+                              Click to view full size
+                            </span>
+                          </div>
+                        </div>
+                        <div className="mt-2 flex justify-center space-x-3">
+                          <a
+                            href={selectedOrder.payment_proof_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-blue-600 hover:text-blue-800 underline flex items-center space-x-1"
+                          >
+                            <span>🔗</span>
+                            <span>Open in new tab</span>
+                          </a>
+                          <a
+                            href={selectedOrder.payment_proof_url}
+                            download={`payment-proof-${selectedOrder.order_number}.jpg`}
+                            className="text-xs text-blue-600 hover:text-blue-800 underline flex items-center space-x-1"
+                          >
+                            <span>⬇️</span>
+                            <span>Download</span>
+                          </a>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="bg-yellow-50 border border-yellow-300 rounded-lg p-3">
+                      <p className="text-sm text-yellow-800 flex items-center">
+                        <AlertCircle className="w-4 h-4 mr-2" />
+                        No payment proof screenshot uploaded
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Payment Verification Status */}
+                  <div className="bg-white border border-blue-300 rounded-lg p-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-blue-700 font-medium">Verification Status</p>
+                        <p className="text-xs text-blue-600 mt-1">
+                          {selectedOrder.payment_status === 'pending_verification' && 'Awaiting staff verification'}
+                          {selectedOrder.payment_status === 'verified' && 'Payment verified and confirmed'}
+                          {selectedOrder.payment_status === 'failed' && 'Payment verification failed'}
+                          {selectedOrder.payment_status === 'pending' && 'Payment pending'}
+                        </p>
+                      </div>
+                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                        selectedOrder.payment_status === 'verified' ? 'bg-green-100 text-green-800' :
+                        selectedOrder.payment_status === 'pending_verification' ? 'bg-yellow-100 text-yellow-800' :
+                        selectedOrder.payment_status === 'failed' ? 'bg-red-100 text-red-800' :
+                        'bg-gray-100 text-gray-800'
+                      }`}>
+                        {selectedOrder.payment_status === 'pending_verification' ? 'Pending Verification' :
+                         selectedOrder.payment_status === 'verified' ? 'Verified' :
+                         selectedOrder.payment_status === 'failed' ? 'Failed' :
+                         selectedOrder.payment_status}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Items */}
             <div>

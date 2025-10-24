@@ -13,8 +13,24 @@ import FilterSidebar from '../components/catalog/FilterSidebar'
 import PromoModal from '../components/promotions/PromoModal'
 import LoadingSpinner from '../components/common/LoadingSpinner'
 import ErrorMessage from '../components/common/ErrorMessage'
-import CategorySlider from '../components/catalog/CategorySlider'
 import ProductSelectionModal from '../components/catalog/ProductSelectionModal'
+
+// ✅ Debounce hook
+const useDebounce = <T,>(value: T, delay: number): T => {
+  const [debouncedValue, setDebouncedValue] = useState<T>(value)
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value)
+    }, delay)
+
+    return () => {
+      clearTimeout(handler)
+    }
+  }, [value, delay])
+
+  return debouncedValue
+}
 
 const ProductCatalog: React.FC = () => {
   const navigate = useNavigate()
@@ -44,6 +60,9 @@ const ProductCatalog: React.FC = () => {
     inStock: true
   })
 
+  // ✅ Debounce search query
+  const debouncedSearchQuery = useDebounce(filters.searchQuery, 500)
+
   // Product selection modal state
   const [selectedProduct, setSelectedProduct] = useState<ProductWithUnits | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -58,16 +77,16 @@ const ProductCatalog: React.FC = () => {
       navigate('/branch-selection')
       return
     }
-    loadProducts()
     loadCategories()
     loadPromotions()
   }, [selectedBranch])
 
+  // ✅ Separate effect for products with debounced search
   useEffect(() => {
     if (selectedBranch) {
       loadProducts()
     }
-  }, [filters, currentPage])
+  }, [selectedBranch, debouncedSearchQuery, filters.category, filters.priceMin, filters.priceMax, filters.inStock, currentPage])
 
   const loadProducts = async () => {
     if (!selectedBranch) return
@@ -96,8 +115,9 @@ const ProductCatalog: React.FC = () => {
         .eq('is_active', true)
         .gt('inventory.quantity_available', 0)
 
-      if (filters.searchQuery) {
-        query = query.or(`name.ilike.%${filters.searchQuery}%,description.ilike.%${filters.searchQuery}%,sku.ilike.%${filters.searchQuery}%`)
+      // ✅ Use debounced search query
+      if (debouncedSearchQuery) {
+        query = query.or(`name.ilike.%${debouncedSearchQuery}%,description.ilike.%${debouncedSearchQuery}%,sku.ilike.%${debouncedSearchQuery}%`)
       }
 
       if (filters.category) {
@@ -106,7 +126,8 @@ const ProductCatalog: React.FC = () => {
 
       query = query.order('name', { ascending: true })
 
-      const { count } = await supabase
+      // ✅ Get count in parallel
+      const countPromise = supabase
         .from('products')
         .select('*', { count: 'exact', head: true })
         .eq('is_active', true)
@@ -115,7 +136,14 @@ const ProductCatalog: React.FC = () => {
       const to = from + 19
       query = query.range(from, to)
 
-      const { data: productsData, error: productsError } = await query
+      // ✅ Execute both queries in parallel
+      const [productsResult, countResult] = await Promise.all([
+        query,
+        countPromise
+      ])
+
+      const { data: productsData, error: productsError } = productsResult
+      const { count } = countResult
 
       if (productsError) {
         console.error('❌ ProductCatalog: Database error:', productsError)
@@ -129,50 +157,52 @@ const ProductCatalog: React.FC = () => {
         return
       }
 
-      const productsWithUnits = productsData.map(product => {
-        const sellableUnits = product.product_units?.filter((unit: any) => unit.is_sellable) || []
-        const defaultUnit = sellableUnits.find((unit: any) => unit.is_base_unit) || sellableUnits[0]
-        
-        if (!defaultUnit) {
-          console.warn(`No sellable units found for product ${product.id}`)
-          return null
-        }
+      const productsWithUnits = productsData
+        .map(product => {
+          const sellableUnits = product.product_units?.filter((unit: any) => unit.is_sellable) || []
+          const defaultUnit = sellableUnits.find((unit: any) => unit.is_base_unit) || sellableUnits[0]
+          
+          if (!defaultUnit) {
+            console.warn(`No sellable units found for product ${product.id}`)
+            return null
+          }
 
-        if (filters.priceMin !== undefined && defaultUnit.price_per_unit < filters.priceMin) {
-          return null
-        }
-        if (filters.priceMax !== undefined && defaultUnit.price_per_unit > filters.priceMax) {
-          return null
-        }
+          if (filters.priceMin !== undefined && defaultUnit.price_per_unit < filters.priceMin) {
+            return null
+          }
+          if (filters.priceMax !== undefined && defaultUnit.price_per_unit > filters.priceMax) {
+            return null
+          }
 
-        return {
-          id: defaultUnit.id,
-          product_id: product.id,
-          name: product.name,
-          description: product.description,
-          brand: product.brand,
-          barcode: product.barcode,
-          is_active: product.is_active,
-          created_at: product.created_at,
-          updated_at: product.updated_at,
-          unit_name: defaultUnit.unit_name,
-          unit_label: defaultUnit.unit_label,
-          conversion_factor: defaultUnit.conversion_factor,
-          is_base_unit: defaultUnit.is_base_unit,
-          is_sellable: defaultUnit.is_sellable,
-          price_per_unit: defaultUnit.price_per_unit,
-          min_sellable_quantity: defaultUnit.min_sellable_quantity,
-          sort_order: defaultUnit.sort_order,
-          sku: product.sku,
-          category_id: product.category_id,
-          supplier_id: product.supplier_id,
-          product: product,
-          category: product.categories,
-          supplier: product.suppliers,
-          inventory: product.inventory,
-          available_units: sellableUnits
-        }
-      }).filter(Boolean) as ProductWithUnits[]
+          return {
+            id: defaultUnit.id,
+            product_id: product.id,
+            name: product.name,
+            description: product.description,
+            brand: product.brand,
+            barcode: product.barcode,
+            is_active: product.is_active,
+            created_at: product.created_at,
+            updated_at: product.updated_at,
+            unit_name: defaultUnit.unit_name,
+            unit_label: defaultUnit.unit_label,
+            conversion_factor: defaultUnit.conversion_factor,
+            is_base_unit: defaultUnit.is_base_unit,
+            is_sellable: defaultUnit.is_sellable,
+            price_per_unit: defaultUnit.price_per_unit,
+            min_sellable_quantity: defaultUnit.min_sellable_quantity,
+            sort_order: defaultUnit.sort_order,
+            sku: product.sku,
+            category_id: product.category_id,
+            supplier_id: product.supplier_id,
+            product: product,
+            category: product.categories,
+            supplier: product.suppliers,
+            inventory: product.inventory,
+            available_units: sellableUnits
+          }
+        })
+        .filter(Boolean) as ProductWithUnits[]
 
       console.log(`✅ ProductCatalog: Successfully loaded ${productsWithUnits.length} products`)
       setProducts(productsWithUnits)
@@ -188,7 +218,20 @@ const ProductCatalog: React.FC = () => {
     }
   }
 
+  // ✅ Cache categories in sessionStorage
   const loadCategories = async () => {
+    const cachedCategories = sessionStorage.getItem('categories')
+    if (cachedCategories) {
+      try {
+        const parsed = JSON.parse(cachedCategories)
+        console.log('✅ Using cached categories')
+        setCategories(parsed)
+        return
+      } catch (e) {
+        console.warn('Failed to parse cached categories')
+      }
+    }
+
     try {
       console.log('🔄 ProductCatalog: Loading categories...')
       
@@ -206,6 +249,10 @@ const ProductCatalog: React.FC = () => {
 
       console.log(`✅ ProductCatalog: Successfully loaded ${data?.length || 0} categories`)
       setCategories(data || [])
+      
+      if (data) {
+        sessionStorage.setItem('categories', JSON.stringify(data))
+      }
       
     } catch (err) {
       console.error('❌ ProductCatalog: Error loading categories:', err)
@@ -286,16 +333,15 @@ const ProductCatalog: React.FC = () => {
     setIsModalOpen(true)
   }
 
-   const handleAddToCart = (product: ProductWithUnits, unit: ProductUnit, quantity: number) => {
-    // Calculate base unit quantity for inventory tracking
-    const baseUnitQuantity = quantity * unit.conversion_factor;
+  const handleAddToCart = (product: ProductWithUnits, unit: ProductUnit, quantity: number) => {
+    const baseUnitQuantity = quantity * unit.conversion_factor
     
     addItem({
       product: product,
       product_unit: unit,
       quantity: quantity,
       unitPrice: unit.price_per_unit,
-      base_unit_quantity: baseUnitQuantity  // Added to fix TypeScript error
+      base_unit_quantity: baseUnitQuantity
     })
     
     setIsModalOpen(false)
@@ -365,299 +411,272 @@ const ProductCatalog: React.FC = () => {
   }
 
   return (
-  <div className="min-h-screen bg-gradient-to-br from-green-50 to-blue-50">
-    {/* Compact Mobile-Optimized Header */}
-    <div className="bg-white shadow-md border-b sticky top-0 z-40">
-      <div className="max-w-7xl mx-auto px-3 sm:px-4 py-3 sm:py-4">
-        {/* Top Row - Back button, Title, and Actions */}
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center space-x-2 sm:space-x-3 flex-1 min-w-0">
-            <button
-              onClick={() => navigate('/branch-selection')}
-              className="p-1.5 sm:p-2 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
-            >
-              <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5" />
-            </button>
-            <div className="min-w-0 flex-1">
-              <h1 className="text-base sm:text-xl font-bold text-gray-900 truncate">
-                {selectedBranch?.name || 'Product Catalog'}
-              </h1>
-              <p className="text-xs sm:text-sm text-gray-600 truncate hidden sm:block">
-                Agricultural Supplies & Veterinary Products
-              </p>
+    <div className="min-h-screen bg-gradient-to-br from-green-50 to-blue-50">
+      {/* Header */}
+      <div className="bg-white shadow-md border-b sticky top-0 z-40">
+        <div className="max-w-7xl mx-auto px-3 sm:px-4 py-3 sm:py-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center space-x-2 sm:space-x-3 flex-1 min-w-0">
+              <button
+                onClick={() => navigate('/branch-selection')}
+                className="p-1.5 sm:p-2 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
+              >
+                <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5" />
+              </button>
+              <div className="min-w-0 flex-1">
+                <h1 className="text-base sm:text-xl font-bold text-gray-900 truncate">
+                  {selectedBranch?.name || 'Product Catalog'}
+                </h1>
+                <p className="text-xs sm:text-sm text-gray-600 truncate hidden sm:block">
+                  Agricultural Supplies & Veterinary Products
+                </p>
+              </div>
+            </div>
+            
+            <div className="flex items-center space-x-1.5 sm:space-x-2 flex-shrink-0">
+              <button
+                onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}
+                className="p-1.5 sm:p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                {viewMode === 'grid' ? <List className="w-4 h-4 sm:w-5 sm:h-5" /> : <Grid className="w-4 h-4 sm:w-5 sm:h-5" />}
+              </button>
+              
+              {isAuthenticated && (
+                <button
+                  onClick={() => navigate('/settings')}
+                  className="p-1.5 sm:p-2 hover:bg-gray-100 rounded-lg transition-colors hidden sm:block"
+                >
+                  <User className="w-4 h-4 sm:w-5 sm:h-5" />
+                </button>
+              )}
             </div>
           </div>
-          
-          <div className="flex items-center space-x-1.5 sm:space-x-2 flex-shrink-0">
-            <button
-              onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}
-              className="p-1.5 sm:p-2 hover:bg-gray-100 rounded-lg transition-colors"
-              title={viewMode === 'grid' ? 'Switch to List View' : 'Switch to Grid View'}
-            >
-              {viewMode === 'grid' ? <List className="w-4 h-4 sm:w-5 sm:h-5" /> : <Grid className="w-4 h-4 sm:w-5 sm:h-5" />}
-            </button>
-            
-            {isAuthenticated && (
-              <button
-                onClick={() => navigate('/settings')}
-                className="p-1.5 sm:p-2 hover:bg-gray-100 rounded-lg transition-colors hidden sm:block"
-                title="Settings"
-              >
-                <User className="w-4 h-4 sm:w-5 sm:h-5" />
-              </button>
-            )}
-            
-            {/* <button
-              onClick={() => navigate('/cart')}
-              className="relative p-2 sm:p-2.5 bg-agrivet-green text-white rounded-lg hover:bg-agrivet-green/90 transition-colors"
-              title="View Cart"
-            >
-              <ShoppingCart className="w-4 h-4 sm:w-5 sm:h-5" />
-              {getItemCount() > 0 && (
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] sm:text-xs rounded-full h-4 w-4 sm:h-5 sm:w-5 flex items-center justify-center font-bold">
-                  {getItemCount()}
-                </span>
-              )}
-            </button> */}
-          </div>
-        </div>
 
-        {/* Search and Filters Row */}
-        <div className="flex items-center space-x-2 mb-3">
-          <div className="flex-1">
-            <SearchBar
-              onSearch={handleSearch}
-              placeholder="Search products..."
-              value={filters.searchQuery || ''}
-            />
-          </div>
-          <button
-            onClick={() => setShowFilters(!showFilters)}
-            className="px-3 py-2 sm:px-4 sm:py-2.5 border-2 border-gray-300 rounded-lg hover:bg-gray-50 transition-colors flex items-center space-x-1.5 flex-shrink-0"
-          >
-            <Filter className="w-4 h-4" />
-            <span className="text-sm font-medium hidden sm:inline">Filters</span>
-          </button>
-        </div>
-
-        {/* Compact Horizontal Category Slider */}
-        <div className="overflow-x-auto scrollbar-hide -mx-3 sm:-mx-4 px-3 sm:px-4">
-          <div className="flex space-x-2 min-w-max pb-1">
-            {/* All Categories */}
+          <div className="flex items-center space-x-2 mb-3">
+            <div className="flex-1">
+              <SearchBar
+                onSearch={handleSearch}
+                placeholder="Search products..."
+                value={filters.searchQuery || ''}
+              />
+            </div>
             <button
-              onClick={() => handleFilterChange({ category: undefined })}
-              className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all ${
-                !filters.category
-                  ? 'bg-agrivet-green text-white shadow-md'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
+              onClick={() => setShowFilters(!showFilters)}
+              className="px-3 py-2 sm:px-4 sm:py-2.5 border-2 border-gray-300 rounded-lg hover:bg-gray-50 transition-colors flex items-center space-x-1.5 flex-shrink-0"
             >
-              All
+              <Filter className="w-4 h-4" />
+              <span className="text-sm font-medium hidden sm:inline">Filters</span>
             </button>
-            
-            {/* Category Pills */}
-            {categories.map((category) => (
+          </div>
+
+          <div className="overflow-x-auto scrollbar-hide -mx-3 sm:-mx-4 px-3 sm:px-4">
+            <div className="flex space-x-2 min-w-max pb-1">
               <button
-                key={category.id}
-                onClick={() => handleFilterChange({ category: category.id })}
-                className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${
-                  filters.category === category.id
+                onClick={() => handleFilterChange({ category: undefined })}
+                className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all ${
+                  !filters.category
                     ? 'bg-agrivet-green text-white shadow-md'
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                 }`}
               >
-                {category.name}
+                All
               </button>
-            ))}
+              
+              {categories.map((category) => (
+                <button
+                  key={category.id}
+                  onClick={() => handleFilterChange({ category: category.id })}
+                  className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${
+                    filters.category === category.id
+                      ? 'bg-agrivet-green text-white shadow-md'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  {category.name}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </div>
-    </div>
 
-    {/* Main Content */}
-    <div className="max-w-7xl mx-auto px-3 sm:px-4 py-4 sm:py-6">
-      <div className="flex gap-4 sm:gap-6">
-        {/* Filters Sidebar */}
-        <FilterSidebar
-          isOpen={showFilters}
-          onClose={() => setShowFilters(false)}
-          categories={categories}
-          filters={filters}
-          onFilterChange={handleFilterChange}
-        />
+      {/* Main Content */}
+      <div className="max-w-7xl mx-auto px-3 sm:px-4 py-4 sm:py-6">
+        <div className="flex gap-4 sm:gap-6">
+          <FilterSidebar
+            isOpen={showFilters}
+            onClose={() => setShowFilters(false)}
+            categories={categories}
+            filters={filters}
+            onFilterChange={handleFilterChange}
+          />
 
-        {/* Main Content Area */}
-        <div className="flex-1 min-w-0">
-          {isLoading ? (
-            <div className="bg-white rounded-2xl shadow-lg p-8 sm:p-12">
-              <LoadingSpinner message="Loading products..." />
-            </div>
-          ) : error ? (
-            <div className="bg-white rounded-2xl shadow-lg p-6 sm:p-8">
-              <ErrorMessage message={error} />
-            </div>
-          ) : products.length === 0 ? (
-            <div className="bg-white rounded-2xl shadow-lg p-8 sm:p-12 text-center">
-              <div className="w-20 h-20 sm:w-24 sm:h-24 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                <Search className="w-10 h-10 sm:w-12 sm:h-12 text-gray-400" />
+          <div className="flex-1 min-w-0">
+            {isLoading ? (
+              <div className="bg-white rounded-2xl shadow-lg p-8 sm:p-12">
+                <LoadingSpinner message="Loading products..." />
               </div>
-              <h3 className="text-xl sm:text-2xl font-bold text-gray-900 mb-4">
-                No Products Found
-              </h3>
-              <p className="text-sm sm:text-base text-gray-600 mb-6 sm:mb-8 max-w-md mx-auto">
-                We couldn't find any products matching your search criteria. 
-                Try adjusting your search terms or filters.
-              </p>
-              <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center">
-                <button
-                  onClick={() => {
-                    setFilters({
-                      searchQuery: '',
-                      category: undefined,
-                      priceMin: undefined,
-                      priceMax: undefined,
-                      inStock: true
-                    })
-                    setCurrentPage(1)
-                  }}
-                  className="btn-primary"
-                >
-                  Clear All Filters
-                </button>
-                <button
-                  onClick={() => navigate('/branch-selection')}
-                  className="btn-outline"
-                >
-                  Change Branch
-                </button>
+            ) : error ? (
+              <div className="bg-white rounded-2xl shadow-lg p-6 sm:p-8">
+                {/* ✅ FIXED: ErrorMessage expects no arguments or check your component definition */}
+                <ErrorMessage message={error} />
               </div>
-            </div>
-          ) : (
-            <>
-              {/* Products Header - Compact on mobile */}
-              <div className="mb-4 sm:mb-6 flex items-center justify-between">
-                <div>
-                  <h2 className="text-base sm:text-lg font-semibold text-gray-900">
-                    {products.length} Products Found
-                  </h2>
-                  <p className="text-xs sm:text-sm text-gray-600">
-                    Showing results for {selectedBranch?.name}
-                  </p>
+            ) : products.length === 0 ? (
+              <div className="bg-white rounded-2xl shadow-lg p-8 sm:p-12 text-center">
+                <div className="w-20 h-20 sm:w-24 sm:h-24 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                  <Search className="w-10 h-10 sm:w-12 sm:h-12 text-gray-400" />
                 </div>
-                <div className="flex items-center space-x-2 text-xs sm:text-sm text-gray-500">
-                  <Star className="w-3 h-3 sm:w-4 sm:h-4" />
-                  <span className="hidden sm:inline">All products in stock</span>
-                  <span className="sm:hidden">In stock</span>
+                <h3 className="text-xl sm:text-2xl font-bold text-gray-900 mb-4">
+                  No Products Found
+                </h3>
+                <p className="text-sm sm:text-base text-gray-600 mb-6 sm:mb-8 max-w-md mx-auto">
+                  We couldn't find any products matching your search criteria. 
+                  Try adjusting your search terms or filters.
+                </p>
+                <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center">
+                  <button
+                    onClick={() => {
+                      setFilters({
+                        searchQuery: '',
+                        category: undefined,
+                        priceMin: undefined,
+                        priceMax: undefined,
+                        inStock: true
+                      })
+                      setCurrentPage(1)
+                    }}
+                    className="btn-primary"
+                  >
+                    Clear All Filters
+                  </button>
+                  <button
+                    onClick={() => navigate('/branch-selection')}
+                    className="btn-outline"
+                  >
+                    Change Branch
+                  </button>
                 </div>
               </div>
-
-              {/* Product Grid */}
-              <ProductGrid
-                products={products}
-                viewMode={viewMode}
-                onProductClick={handleProductClick}
-              />
-              
-              {/* Pagination - Compact on mobile */}
-              {totalPages > 1 && (
-                <div className="mt-8 sm:mt-12 flex justify-center">
-                  <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-3 sm:p-4">
-                    <div className="flex items-center space-x-1 sm:space-x-2">
-                      <button
-                        onClick={() => handlePageChange(currentPage - 1)}
-                        disabled={currentPage === 1}
-                        className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed px-3 py-1.5 sm:px-4 sm:py-2 text-sm"
-                      >
-                        <span className="hidden sm:inline">Previous</span>
-                        <span className="sm:hidden">Prev</span>
-                      </button>
-                      
-                      <div className="flex items-center space-x-1">
-                        {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
-                          const page = i + 1
-                          return (
-                            <button
-                              key={page}
-                              onClick={() => handlePageChange(page)}
-                              className={`px-2 py-1.5 sm:px-3 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
-                                page === currentPage
-                                  ? 'bg-agrivet-green text-white shadow-lg'
-                                  : 'text-gray-700 hover:bg-gray-100'
-                              }`}
-                            >
-                              {page}
-                            </button>
-                          )
-                        })}
-                        {totalPages > 5 && (
-                          <>
-                            <span className="text-gray-400 px-1">...</span>
-                            <button
-                              onClick={() => handlePageChange(totalPages)}
-                              className={`px-2 py-1.5 sm:px-3 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
-                                totalPages === currentPage
-                                  ? 'bg-agrivet-green text-white shadow-lg'
-                                  : 'text-gray-700 hover:bg-gray-100'
-                              }`}
-                            >
-                              {totalPages}
-                            </button>
-                          </>
-                        )}
-                      </div>
-                      
-                      <button
-                        onClick={() => handlePageChange(currentPage + 1)}
-                        disabled={currentPage === totalPages}
-                        className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed px-3 py-1.5 sm:px-4 sm:py-2 text-sm"
-                      >
-                        Next
-                      </button>
-                    </div>
+            ) : (
+              <>
+                <div className="mb-4 sm:mb-6 flex items-center justify-between">
+                  <div>
+                    <h2 className="text-base sm:text-lg font-semibold text-gray-900">
+                      {products.length} Products Found
+                    </h2>
+                    <p className="text-xs sm:text-sm text-gray-600">
+                      Showing results for {selectedBranch?.name}
+                    </p>
+                  </div>
+                  <div className="flex items-center space-x-2 text-xs sm:text-sm text-gray-500">
+                    <Star className="w-3 h-3 sm:w-4 sm:h-4" />
+                    <span className="hidden sm:inline">All products in stock</span>
+                    <span className="sm:hidden">In stock</span>
                   </div>
                 </div>
-              )}
-            </>
-          )}
+
+                <ProductGrid
+                  products={products}
+                  viewMode={viewMode}
+                  onProductClick={handleProductClick}
+                />
+                
+                {totalPages > 1 && (
+                  <div className="mt-8 sm:mt-12 flex justify-center">
+                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-3 sm:p-4">
+                      <div className="flex items-center space-x-1 sm:space-x-2">
+                        <button
+                          onClick={() => handlePageChange(currentPage - 1)}
+                          disabled={currentPage === 1}
+                          className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed px-3 py-1.5 sm:px-4 sm:py-2 text-sm"
+                        >
+                          <span className="hidden sm:inline">Previous</span>
+                          <span className="sm:hidden">Prev</span>
+                        </button>
+                        
+                        <div className="flex items-center space-x-1">
+                          {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                            const page = i + 1
+                            return (
+                              <button
+                                key={page}
+                                onClick={() => handlePageChange(page)}
+                                className={`px-2 py-1.5 sm:px-3 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
+                                  page === currentPage
+                                    ? 'bg-agrivet-green text-white shadow-lg'
+                                    : 'text-gray-700 hover:bg-gray-100'
+                                }`}
+                              >
+                                {page}
+                              </button>
+                            )
+                          })}
+                          {totalPages > 5 && (
+                            <>
+                              <span className="text-gray-400 px-1">...</span>
+                              <button
+                                onClick={() => handlePageChange(totalPages)}
+                                className={`px-2 py-1.5 sm:px-3 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
+                                  totalPages === currentPage
+                                    ? 'bg-agrivet-green text-white shadow-lg'
+                                    : 'text-gray-700 hover:bg-gray-100'
+                                }`}
+                              >
+                                {totalPages}
+                              </button>
+                            </>
+                          )}
+                        </div>
+                        
+                        <button
+                          onClick={() => handlePageChange(currentPage + 1)}
+                          disabled={currentPage === totalPages}
+                          className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed px-3 py-1.5 sm:px-4 sm:py-2 text-sm"
+                        >
+                          Next
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
         </div>
       </div>
-    </div>
 
-    {/* Product Selection Modal */}
-    <ProductSelectionModal
-      product={selectedProduct}
-      isOpen={isModalOpen}
-      onClose={() => {
-        setIsModalOpen(false)
-        setSelectedProduct(null)
-      }}
-      onAddToCart={handleAddToCart}
-    />
-
-    {/* Promotional Modal */}
-    {modalPromotions.length > 0 && (
-      <PromoModal
-        promotions={modalPromotions}
-        isOpen={showPromoModal}
-        onClose={handlePromoModalClose}
-        onAction={handlePromoModalAction}
-        currentIndex={currentModalIndex}
-        onIndexChange={handlePromoModalIndexChange}
+      <ProductSelectionModal
+        product={selectedProduct}
+        isOpen={isModalOpen}
+        onClose={() => {
+          setIsModalOpen(false)
+          setSelectedProduct(null)
+        }}
+        onAddToCart={handleAddToCart}
       />
-    )}
 
-    {/* Custom Scrollbar Hiding Styles */}
-    <style>{`
-      .scrollbar-hide {
-        -ms-overflow-style: none;
-        scrollbar-width: none;
-      }
-      .scrollbar-hide::-webkit-scrollbar {
-        display: none;
-      }
-    `}</style>
-  </div>
-)
+      {modalPromotions.length > 0 && (
+        <PromoModal
+          promotions={modalPromotions}
+          isOpen={showPromoModal}
+          onClose={handlePromoModalClose}
+          onAction={handlePromoModalAction}
+          currentIndex={currentModalIndex}
+          onIndexChange={handlePromoModalIndexChange}
+        />
+      )}
+
+      <style>{`
+        .scrollbar-hide {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+        }
+        .scrollbar-hide::-webkit-scrollbar {
+          display: none;
+        }
+      `}</style>
+    </div>
+  )
 }
 
 export default ProductCatalog

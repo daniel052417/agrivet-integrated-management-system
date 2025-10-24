@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { CreditCard, User, MapPin, Phone, Mail, AlertCircle, CheckCircle, Clock, Truck, Package, Home, Navigation, Search, Save, Loader2 } from 'lucide-react'
+import { CreditCard, User, MapPin, Phone, Mail, AlertCircle, CheckCircle, Clock, Truck, Package, Home, Navigation, Search, Save, Loader2, X } from 'lucide-react'
 import { useCart } from '../../contexts/CartContext'
 import { useBranch } from '../../contexts/BranchContext'
 import { useAuth } from '../../contexts/AuthContext'
@@ -516,6 +516,7 @@ const handleGCashReferenceChange = (value: string) => {
       branchId: selectedBranch.id,
       paymentMethod: 'gcash', // Changed from 'cash' to 'gcash'
       paymentReference: gcashReference.trim(), // Add reference
+      paymentProof: paymentProof || undefined,
       notes: paymentInfo.notes?.trim() || undefined,
       customerInfo: {
         firstName: customerInfo.firstName.trim(),

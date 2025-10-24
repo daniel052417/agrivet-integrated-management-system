@@ -89,6 +89,8 @@ export class OnlineOrdersService {
           status: this.mapOrderStatus(order.status),
           payment_status: order.payment_status,
           payment_method: order.payment_method,
+           payment_reference: order.payment_reference,        // ✅ ADD THIS LINE
+          payment_proof_url: order.payment_proof_url,        // ✅ ADD THIS LINE
           subtotal: parseFloat(order.subtotal),
           tax_amount: parseFloat(order.tax_amount),
           delivery_fee: order.delivery_fee ? parseFloat(order.delivery_fee) : (order.order_type === 'delivery' ? 50 : undefined),

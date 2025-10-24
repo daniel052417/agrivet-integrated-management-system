@@ -15,7 +15,8 @@ interface CreateOrderRequest {
   customerId?: string
   branchId: string
   paymentMethod: string
-  paymentReference?: string // ADD THIS LINE - for GCash reference number
+  paymentReference?: string // GCash reference number
+  paymentProof?: File // Payment proof screenshot
   notes?: string
   customerInfo?: {
     firstName: string
@@ -60,32 +61,33 @@ class OrderService {
    * Does NOT deduct inventory or process payment
    */
   async createOrder(request: CreateOrderRequest): Promise<CreateOrderResponse> {
-  try {
-    console.log('🔧 OrderService: Starting createOrder...')
-    console.log('🔧 OrderService: Supabase client:', !!supabase)
-    
-    if (!supabase) {
-      console.error('❌ OrderService: Supabase client not initialized')
-      throw new Error('Supabase client not initialized')
-    }
+    try {
+      console.log('🔧 OrderService: Starting createOrder...')
+      console.log('🔧 OrderService: Supabase client:', !!supabase)
+      
+      if (!supabase) {
+        console.error('❌ OrderService: Supabase client not initialized')
+        throw new Error('Supabase client not initialized')
+      }
 
-    const { 
-      cart, 
-      customerId, 
-      branchId, 
-      paymentMethod,
-      paymentReference, // ADD THIS LINE - destructure the reference
-      notes, 
-      customerInfo,
-      orderType = 'pickup',
-      deliveryMethod,
-      deliveryAddress,
-      deliveryContactNumber,
-      deliveryLandmark,
-      deliveryStatus,
-      deliveryLatitude,
-      deliveryLongitude
-    } = request
+      const { 
+        cart, 
+        customerId, 
+        branchId, 
+        paymentMethod,
+        paymentReference,
+        paymentProof,
+        notes, 
+        customerInfo,
+        orderType = 'pickup',
+        deliveryMethod,
+        deliveryAddress,
+        deliveryContactNumber,
+        deliveryLandmark,
+        deliveryStatus,
+        deliveryLatitude,
+        deliveryLongitude
+      } = request
 
       // Generate order number
       const orderNumber = this.generateOrderNumber()
@@ -129,39 +131,39 @@ class OrderService {
 
       // Prepare order data
       const orderData = {
-      order_number: orderNumber,
-      customer_id: finalCustomerId || null,
-      branch_id: branchId,
-      order_type: orderType,
-      status: 'pending_confirmation',
-      payment_status: paymentMethod === 'gcash' ? 'pending_verification' : 'pending', // Different status for GCash
-      subtotal: cart.subtotal,
-      tax_amount: cart.tax,
-      discount_amount: 0,
-      total_amount: cart.total,
-      payment_method: paymentMethod,
-      payment_reference: paymentReference || null, // ADD THIS LINE - store the GCash reference
-      payment_notes: notes || null,
-      estimated_ready_time: orderType === 'pickup' ? new Date(Date.now() + 30 * 60 * 1000).toISOString() : null,
-      is_guest_order: !finalCustomerId,
-      customer_name: customerInfo ? `${customerInfo.firstName} ${customerInfo.lastName}` : null,
-      customer_email: customerInfo?.email || null,
-      customer_phone: customerInfo?.phone || null,
-      special_instructions: notes || null,
-      notes: notes || null,
-      // Delivery fields
-      delivery_method: deliveryMethod || null,
-      delivery_address: deliveryAddress || null,
-      delivery_contact_number: deliveryContactNumber || null,
-      delivery_landmark: deliveryLandmark || null,
-      delivery_status: deliveryStatus || null,
-      confirmed_at: null,
-      completed_at: null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      delivery_latitude: deliveryLatitude || null,
-      delivery_longitude: deliveryLongitude || null,
-    }
+        order_number: orderNumber,
+        customer_id: finalCustomerId || null,
+        branch_id: branchId,
+        order_type: orderType,
+        status: 'pending_confirmation',
+        payment_status: paymentMethod === 'gcash' ? 'pending_verification' : 'pending',
+        subtotal: cart.subtotal,
+        tax_amount: cart.tax,
+        discount_amount: 0,
+        total_amount: cart.total,
+        payment_method: paymentMethod,
+        payment_reference: paymentReference || null,
+        payment_notes: notes || null,
+        estimated_ready_time: orderType === 'pickup' ? new Date(Date.now() + 30 * 60 * 1000).toISOString() : null,
+        is_guest_order: !finalCustomerId,
+        customer_name: customerInfo ? `${customerInfo.firstName} ${customerInfo.lastName}` : null,
+        customer_email: customerInfo?.email || null,
+        customer_phone: customerInfo?.phone || null,
+        special_instructions: notes || null,
+        notes: notes || null,
+        // Delivery fields
+        delivery_method: deliveryMethod || null,
+        delivery_address: deliveryAddress || null,
+        delivery_contact_number: deliveryContactNumber || null,
+        delivery_landmark: deliveryLandmark || null,
+        delivery_status: deliveryStatus || null,
+        confirmed_at: null,
+        completed_at: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        delivery_latitude: deliveryLatitude || null,
+        delivery_longitude: deliveryLongitude || null,
+      }
 
       // Direct insert into orders table
       console.log('🔧 OrderService: Inserting order data:', JSON.stringify(orderData, null, 2))
@@ -208,6 +210,53 @@ class OrderService {
         throw new Error(`Failed to create order items: ${itemsError.message}`)
       }
 
+      // Upload payment proof if provided (for GCash payments)
+      if (paymentProof && paymentMethod === 'gcash') {
+  try {
+    console.log('📸 Uploading payment proof...')
+    const fileExt = paymentProof.name.split('.').pop()
+    const fileName = `${order.id}_${Date.now()}.${fileExt}`
+    
+    // ✅ STEP 1: Upload to storage bucket
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from('payment-proofs')
+      .upload(fileName, paymentProof, {
+        contentType: paymentProof.type,
+        cacheControl: '3600',
+        upsert: false
+      })
+
+    if (uploadError) {
+      console.error('⚠️ Failed to upload payment proof:', uploadError)
+    } else {
+      console.log('✅ Payment proof uploaded:', uploadData.path)
+      
+      // ✅ STEP 2: Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('payment-proofs')
+        .getPublicUrl(fileName)
+      
+      // ✅ STEP 3: Update orders table with the URL
+      const { error: updateError } = await supabase
+        .from('orders')
+        .update({ 
+          payment_proof_url: publicUrl,  // ✅ Saved to payment_proof_url column
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', order.id)
+
+      if (updateError) {
+        console.error('⚠️ Failed to update order with payment proof URL:', updateError)
+      } else {
+        console.log('✅ Order updated with payment proof URL')
+        order.payment_proof_url = publicUrl
+      }
+    }
+  } catch (error) {
+    console.error('⚠️ Error handling payment proof:', error)
+  }
+}
+
       // Create soft inventory reservations (optional - for display purposes only)
       try {
         await this.createSoftReservations(order.id, branchId, cart.items)
@@ -219,6 +268,10 @@ class OrderService {
       // Send order notification (not confirmation yet)
       if (customerInfo?.email) {
         try {
+          const emailMessage = paymentMethod === 'gcash' 
+            ? 'Your order has been received and is awaiting payment verification from our staff. We will confirm your order once the payment is verified.'
+            : 'Your order has been received and is awaiting confirmation from our staff.'
+
           await this.emailService.sendOrderConfirmation(
             order.id,
             customerInfo.email,
@@ -229,7 +282,9 @@ class OrderService {
               customerName: `${customerInfo.firstName} ${customerInfo.lastName}`,
               orderDate: new Date().toLocaleDateString(),
               branchName: 'Tiongson Agrivet',
-              message: 'Your order has been received and is awaiting confirmation from our staff.'
+              message: emailMessage,
+              paymentMethod: paymentMethod,
+              paymentReference: paymentReference || undefined
             }
           )
         } catch (error) {
@@ -320,6 +375,26 @@ class OrderService {
         if (!paymentResult.success) {
           throw new Error(`Payment processing failed: ${paymentResult.error}`)
         }
+      } else if (order.payment_method === 'gcash') {
+        console.log('💳 Verifying GCash payment...')
+        
+        if (!order.payment_reference) {
+          throw new Error('GCash reference number is required')
+        }
+
+        // Record the GCash payment as verified
+        const paymentResult = await this.paymentService.processGCashPayment(
+          order.id,
+          order.total_amount,
+          order.payment_reference,
+          staffUserId
+        )
+
+        if (!paymentResult.success) {
+          throw new Error(`GCash payment verification failed: ${paymentResult.error}`)
+        }
+
+        console.log('✅ GCash payment verified')
       }
 
       // 3. Update order status to confirmed
@@ -327,7 +402,7 @@ class OrderService {
         .from('orders')
         .update({
           status: 'confirmed',
-          payment_status: 'paid',
+          payment_status: 'verified',
           confirmed_at: new Date().toISOString(),
           confirmed_by: staffUserId,
           updated_at: new Date().toISOString()
@@ -344,7 +419,9 @@ class OrderService {
       await this.trackingService.createTracking({
         orderId: order.id,
         status: 'confirmed',
-        updateNotes: 'Order confirmed by staff. Payment processed.'
+        updateNotes: order.payment_method === 'gcash' 
+          ? 'Order confirmed by staff. GCash payment verified.'
+          : 'Order confirmed by staff. Payment processed.'
       })
 
       // 6. Send confirmation email
@@ -359,7 +436,9 @@ class OrderService {
             customerName: order.customer_name || 'Customer',
             orderDate: new Date(order.created_at).toLocaleDateString(),
             branchName: 'Tiongson Agrivet',
-            estimatedReadyTime: order.estimated_ready_time
+            estimatedReadyTime: order.estimated_ready_time,
+            paymentMethod: order.payment_method,
+            paymentReference: order.payment_reference || undefined
           }
         )
       }
@@ -396,6 +475,9 @@ class OrderService {
         .update({
           status: 'cancelled',
           payment_status: 'cancelled',
+          cancellation_reason: reason,
+          cancelled_at: new Date().toISOString(),
+          cancelled_by: staffUserId,
           special_instructions: `${order.special_instructions || ''}\n\nREJECTED: ${reason}`,
           updated_at: new Date().toISOString()
         })
@@ -430,6 +512,78 @@ class OrderService {
 
     } catch (error) {
       console.error('Error rejecting order:', error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }
+    }
+  }
+
+  /**
+   * Reject GCash payment (staff action)
+   */
+  async rejectGCashPayment(
+    orderId: string, 
+    staffUserId: string, 
+    rejectionReason: string
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      if (!supabase) {
+        throw new Error('Supabase client not initialized')
+      }
+
+      const orderResult = await this.getOrder(orderId)
+      if (!orderResult.success || !orderResult.order) {
+        throw new Error('Order not found')
+      }
+
+      const order = orderResult.order
+
+      // Update order status
+      await supabase
+        .from('orders')
+        .update({
+          status: 'cancelled',
+          payment_status: 'failed',
+          cancellation_reason: `GCash payment rejected: ${rejectionReason}`,
+          cancelled_at: new Date().toISOString(),
+          cancelled_by: staffUserId,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', orderId)
+
+      // Release inventory reservations
+      await supabase
+        .from('inventory_reservations')
+        .update({ status: 'released' })
+        .eq('order_id', orderId)
+
+      // Create tracking
+      await this.trackingService.createTracking({
+        orderId: order.id,
+        status: 'cancelled',
+        updateNotes: `GCash payment rejected by staff. Reason: ${rejectionReason}`
+      })
+
+      // Send email notification
+      if (order.customer_email) {
+      await this.emailService.sendOrderCancellation(
+        order.id,
+        order.customer_email,
+        order.customer_name || 'Customer',
+        {
+          orderNumber: order.order_number,
+          orderTotal: order.total_amount,
+          customerName: order.customer_name || 'Customer',
+          reason: `Payment Verification Failed: ${rejectionReason}. Reference Number: ${order.payment_reference || 'N/A'}`
+        }
+      )
+    }
+
+      return { success: true }
+
+    } catch (error) {
+      console.error('Error rejecting GCash payment:', error)
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error'
