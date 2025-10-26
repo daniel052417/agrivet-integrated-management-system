@@ -1,6 +1,8 @@
 import { OnlineOrder, OnlineOrderFilters } from '../../types/pos';
 import { supabase } from '../../lib/supabase';
 import { customAuth } from '../../lib/customAuth';
+import { POSTransactionService, CreateTransactionData } from '../../lib/posTransactionService';
+import { POSDatabaseService } from '../services/databaseService';
 
 export class OnlineOrdersService {
   static async getOrders(filters?: OnlineOrderFilters, branchId?: string): Promise<OnlineOrder[]> {
@@ -999,7 +1001,98 @@ export class OnlineOrdersService {
         throw new Error('User not authenticated');
       }
 
-      // Update order status
+      // Fetch order details including items
+      const { data: orderData, error: fetchError } = await supabase
+        .from('orders')
+        .select(`
+          *,
+          order_items (
+            id,
+            product_id,
+            product_name,
+            product_sku,
+            quantity,
+            unit_price,
+            line_total,
+            unit_name,
+            unit_label,
+            notes
+          )
+        `)
+        .eq('id', orderId)
+        .single();
+
+      if (fetchError) throw fetchError;
+      if (!orderData) throw new Error('Order not found');
+
+      console.log('📦 Processing order completion:', orderData.order_number);
+
+      // 1. Get or create POS session using POSDatabaseService
+      console.log('Getting or creating POS session for cashier:', currentUser.id, 'branch:', orderData.branch_id);
+      const posSession = await POSDatabaseService.getOrCreatePOSSession(currentUser.id, orderData.branch_id);
+      const posSessionId = posSession.id;
+      
+      console.log('✅ Using POS session:', posSessionId);
+
+      // 2. Prepare transaction data using the same format as CashierScreen
+      const transactionData: CreateTransactionData = {
+        pos_session_id: posSessionId,
+        customer_id: orderData.customer_id || undefined,
+        cashier_id: currentUser.id,
+        branch_id: orderData.branch_id,
+        items: orderData.order_items.map((item: any) => ({
+          product_id: item.product_id,
+          product_name: item.product_name,
+          product_sku: item.product_sku,
+          quantity: parseFloat(item.quantity),
+          unit_of_measure: item.unit_label || item.unit_name || 'unit',
+          unit_price: parseFloat(item.unit_price),
+          line_total: parseFloat(item.line_total),
+          notes: item.notes
+        })),
+        subtotal: parseFloat(orderData.subtotal),
+        discount_percentage: parseFloat(orderData.discount_percentage) || 0,
+        tax_amount: parseFloat(orderData.tax_amount) || 0,
+        total_amount: parseFloat(orderData.total_amount),
+        notes: `Online order #${orderData.order_number} - ${orderData.order_type} - ${orderData.payment_method || 'N/A'}`,
+        payment_method: orderData.payment_method || 'online',
+        reference_number: orderData.payment_reference || `ORDER-${orderData.order_number}`,
+        transaction_source: orderData.order_source || 'online',
+        order_id: orderId
+      };
+
+      console.log('Creating POS transaction:', transactionData);
+
+      // 3. Create the transaction using POSTransactionService
+      const result = await POSTransactionService.createTransaction(transactionData);
+      
+      console.log('✅ Transaction created successfully:', result.transaction.transaction_number
+);
+
+      // 4. Update inventory using POSTransactionService
+      await POSTransactionService.updateInventoryAfterTransaction(
+        orderData.branch_id,
+        orderData.order_items.map((item: any) => ({
+          product_id: item.product_id,
+          quantity: parseFloat(item.quantity)
+        }))
+      );
+
+      console.log('✅ Inventory updated successfully');
+
+      // 5. Update POS session totals
+      await POSTransactionService.updatePOSSessionAfterTransaction(
+        posSessionId,
+        {
+          total_amount: parseFloat(orderData.total_amount),
+          discount_amount: parseFloat(orderData.discount_amount) || 0,
+          tax_amount: parseFloat(orderData.tax_amount) || 0
+        }
+      );
+
+      console.log('✅ POS session updated successfully');
+
+      // 6. Update order status to completed
       const { error: updateError } = await supabase
         .from('orders')
         .update({
@@ -1011,7 +1104,9 @@ export class OnlineOrdersService {
 
       if (updateError) throw updateError;
 
-      // Fulfill inventory reservations by updating reservation status to 'fulfilled'
+      console.log('✅ Order status updated to completed');
+
+      // 7. Fulfill inventory reservations
       const { error: fulfillError } = await supabase
         .from('inventory_reservations')
         .update({
@@ -1024,49 +1119,16 @@ export class OnlineOrdersService {
       if (fulfillError) {
         console.error('Error fulfilling inventory reservations:', fulfillError);
       } else {
-        // Create fulfillment transaction records
-        const { data: reservations, error: fetchError } = await supabase
-          .from('inventory_reservations')
-          .select('product_id, branch_id, quantity_reserved')
-          .eq('order_id', orderId)
-          .eq('status', 'fulfilled');
-
-        if (fetchError) {
-          console.error('Error fetching fulfilled reservations:', fetchError);
-        } else {
-          // Create sale transaction records
-          for (const reservation of reservations || []) {
-            const { error: transactionError } = await supabase
-              .from('inventory_transactions')
-              .insert({
-                product_id: reservation.product_id,
-                branch_id: reservation.branch_id,
-                order_id: orderId,
-                transaction_type: 'sale',
-                quantity_change: -reservation.quantity_reserved,
-                quantity_before: reservation.quantity_reserved,
-                quantity_after: 0,
-                reference_number: `SALE-${orderId.slice(-8)}`,
-                notes: `Sale fulfillment for order ${orderId}`,
-                created_by_name: 'System'
-              });
-
-            if (transactionError) {
-              console.error('Error creating sale transaction:', transactionError);
-            }
-          }
-        }
-
         console.log(`✅ Fulfilled all inventory reservations for order ${orderId}`);
       }
 
-      // Log status change
+      // 8. Log status change
       await this.logOrderStatusChange(
         orderId,
         'completed',
         'ready_for_pickup',
         currentUser.id,
-        'Order completed'
+        'Order completed and POS transaction created'
       );
 
       return {
@@ -1074,25 +1136,12 @@ export class OnlineOrdersService {
         message: 'Order completed successfully!'
       };
     } catch (error) {
-      console.error('Error completing order:', error);
+      console.error('❌ Error completing order:', error);
       return {
         success: false,
-        message: 'Failed to complete order'
+        message: `Failed to complete order: ${error instanceof Error ? error.message : 'Unknown error'}`
       };
     }
   }
 
 }
-
-
-
-
-
-
-
-
-
-
-
-
-

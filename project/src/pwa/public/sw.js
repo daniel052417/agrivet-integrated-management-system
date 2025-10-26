@@ -128,13 +128,18 @@ self.addEventListener('fetch', (event) => {
  */
 async function networkFirstStrategy(request, cacheName) {
   try {
-    // Try network first
-    const networkResponse = await fetch(request)
+    // Skip caching for non-GET requests
+    if (request.method !== 'GET') {
+      return fetch(request.clone());
+    }
     
-    // Only cache successful responses
+    // Try network first - clone the request in case we need to use it again
+    const networkResponse = await fetch(request.clone())
+    
+    // Cache successful responses
     if (networkResponse && networkResponse.status === 200) {
       const cache = await caches.open(cacheName)
-      cache.put(request, networkResponse.clone())
+      cache.put(request.clone(), networkResponse.clone())
     }
     
     return networkResponse

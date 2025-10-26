@@ -24,6 +24,8 @@ import Modal from '../components/shared/Modal';
 import { OnlineOrdersService } from '../services/onlineOrdersService';
 import { customAuth } from '../../lib/customAuth';
 import { OrderCancellationDialog } from '../components/OrderCancellationDialog';
+import { useOrderCounts } from '../hooks/useOrderCounts';
+import { OrderFilterDropdown } from '../components/orders/OrderFilterDropdown';
 // Order status constants (matching the actual database values)
 // const ORDER_STATUSES = {
 //   PENDING: 'pending_confirmation',
@@ -75,6 +77,59 @@ const OnlineOrdersScreen: React.FC<OnlineOrdersScreenProps> = (props) => {
   const [mapCoordinates, setMapCoordinates] = useState<{lat: number, lng: number} | null>(null);
   const [mapAddress, setMapAddress] = useState<string>('');
   
+  const getOrderCounts = () => {
+    // For status counts: filter by order_type only (if selected)
+    let ordersForStatusCount = orders;
+    if (filters.order_type) {
+      ordersForStatusCount = orders.filter(order => order.order_type === filters.order_type);
+    }
+    
+    // For type counts: filter by status only (if selected)
+    let ordersForTypeCount = orders;
+    if (filters.status) {
+      ordersForTypeCount = orders.filter(order => order.status === filters.status);
+    }
+
+    // Initialize counters
+    const statusCounts = {
+      pending_confirmation: 0,
+      confirmed: 0,
+      ready_for_pickup: 0,
+      for_payment: 0,
+      completed: 0,
+      cancelled: 0,
+    };
+
+    const typeCounts = {
+      pickup: 0,
+      delivery: 0,
+      reservation: 0,
+    };
+
+    // Count statuses from orders filtered by type
+    ordersForStatusCount.forEach(order => {
+      if (order.status in statusCounts) {
+        statusCounts[order.status as keyof typeof statusCounts]++;
+      }
+    });
+
+    // Count types from orders filtered by status
+    ordersForTypeCount.forEach(order => {
+      if (order.order_type in typeCounts) {
+        typeCounts[order.order_type as keyof typeof typeCounts]++;
+      }
+    });
+
+    return {
+      status: statusCounts,
+      orderType: typeCounts,
+      statusTotal: ordersForStatusCount.length,
+      typeTotal: ordersForTypeCount.length,
+    };
+  };
+
+  const orderCounts = getOrderCounts();
+
 
   const getCurrentBranchId = () => {
     // Use prop branchId if provided, otherwise get from current user
@@ -666,28 +721,53 @@ const OnlineOrdersScreen: React.FC<OnlineOrdersScreenProps> = (props) => {
             />
           </div>
           <div className="flex gap-3">
+            {/* Status Dropdown - shows counts filtered by current order_type */}
             <select
               value={filters.status || ''}
               onChange={(e) => setFilters({...filters, status: e.target.value || undefined})}
-              className="px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+              className="px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 font-medium"
             >
-              <option value="">All Status</option>
-              <option value="pending_confirmation">Pending</option>
-              <option value="confirmed">Confirmed</option>
-              <option value="ready_for_pickup">Ready</option>
-              <option value="for_payment">For Payment</option>
-              <option value="completed">Completed</option>
-              <option value="cancelled">Cancelled</option>
+              <option value="">
+                All Status ({orderCounts.statusTotal})
+              </option>
+              <option value="pending_confirmation">
+                Pending {orderCounts.status.pending_confirmation > 0 && `(${orderCounts.status.pending_confirmation})`}
+              </option>
+              <option value="confirmed">
+                Confirmed {orderCounts.status.confirmed > 0 && `(${orderCounts.status.confirmed})`}
+              </option>
+              <option value="ready_for_pickup">
+                Ready {orderCounts.status.ready_for_pickup > 0 && `(${orderCounts.status.ready_for_pickup})`}
+              </option>
+              <option value="for_payment">
+                For Payment {orderCounts.status.for_payment > 0 && `(${orderCounts.status.for_payment})`}
+              </option>
+              <option value="completed">
+                Completed {orderCounts.status.completed > 0 && `(${orderCounts.status.completed})`}
+              </option>
+              <option value="cancelled">
+                Cancelled {orderCounts.status.cancelled > 0 && `(${orderCounts.status.cancelled})`}
+              </option>
             </select>
+            
+            {/* Order Type Dropdown - shows counts filtered by current status */}
             <select
               value={filters.order_type || ''}
               onChange={(e) => setFilters({...filters, order_type: e.target.value || undefined})}
-              className="px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+              className="px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 font-medium"
             >
-              <option value="">All Types</option>
-              <option value="pickup">Pickup</option>
-              <option value="delivery">Delivery</option>
-              <option value="reservation">Reservation</option>
+              <option value="">
+                All Types ({orderCounts.typeTotal})
+              </option>
+              <option value="pickup">
+                Pickup {orderCounts.orderType.pickup > 0 && `(${orderCounts.orderType.pickup})`}
+              </option>
+              <option value="delivery">
+                Delivery {orderCounts.orderType.delivery > 0 && `(${orderCounts.orderType.delivery})`}
+              </option>
+              <option value="reservation">
+                Reservation {orderCounts.orderType.reservation > 0 && `(${orderCounts.orderType.reservation})`}
+              </option>
             </select>
           </div>
         </div>

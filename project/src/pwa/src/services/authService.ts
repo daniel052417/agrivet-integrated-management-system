@@ -44,7 +44,7 @@ class AuthService {
     try {
       console.log('🔐 Attempting to register user:', data.email)
       
-      // Use Supabase Auth to create user with customer role
+      // Use Supabase Auth to create user (creates in auth.users automatically)
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: data.email,
         password: data.password,
@@ -75,30 +75,54 @@ class AuthService {
         }
       }
 
-      console.log('✅ User created in auth.users, trigger should create public.customers record')
+      console.log('✅ User created in auth.users:', authData.user.id)
 
-      // Wait a moment for the trigger to create the public.customers record
-      await new Promise(resolve => setTimeout(resolve, 2000))
+      // Wait a moment for any database triggers
+      await new Promise(resolve => setTimeout(resolve, 1000))
 
-      // Get the customer from public.customers (created by trigger)
+      // Create customer record manually (linked to auth.users via user_id)
+      const timestamp = Date.now().toString().slice(-8)
+      const customerNumber = `CUST-${timestamp}`
+      const customerCode = `C${timestamp}`
+
       const { data: customer, error: customerError } = await supabase
         .from('customers')
+        .insert({
+          user_id: authData.user.id, // Links to auth.users
+          customer_number: customerNumber,
+          customer_code: customerCode,
+          first_name: data.first_name,
+          last_name: data.last_name,
+          email: data.email,
+          phone: data.phone,
+          customer_type: 'individual',
+          is_active: true,
+          is_guest: false,
+          registration_date: new Date().toISOString(),
+          total_spent: 0.00,
+          total_lifetime_spent: 0.00,
+          loyalty_points: 0,
+          loyalty_tier: 'bronze',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
         .select('*')
-        .eq('user_id', authData.user.id)
         .single()
 
       if (customerError || !customer) {
-        console.error('❌ Error getting customer from public.customers:', customerError)
+        console.error('❌ Error creating customer:', customerError)
         return {
           user: null,
           session: null,
-          error: 'User created but failed to retrieve customer data'
+          error: 'User created but failed to create customer record'
         }
       }
 
-      // Convert customer to AuthUser format
+      console.log('✅ Customer record created:', customer.id)
+
+      // Convert to AuthUser format
       const publicUser: AuthUser = {
-        id: customer.user_id,
+        id: authData.user.id,
         email: customer.email,
         first_name: customer.first_name,
         last_name: customer.last_name,
@@ -107,16 +131,17 @@ class AuthService {
         is_active: customer.is_active,
         email_verified: authData.user.email_confirmed_at !== null,
         created_at: customer.created_at,
-        updated_at: customer.updated_at
+        updated_at: customer.updated_at,
+        preferred_branch_id: customer.preferred_branch_id
       }
 
-      // Session will be handled by Supabase Auth and pwa_sessions
       return {
         user: publicUser,
-        session: null, // Session managed by Supabase Auth
+        session: authData.session,
         error: null
       }
     } catch (error) {
+      console.error('❌ Registration error:', error)
       return {
         user: null,
         session: null,
@@ -133,7 +158,7 @@ class AuthService {
         passwordLength: credentials.password.length
       })
       
-      // Use Supabase Auth to sign in
+      // Use Supabase Auth to sign in (checks auth.users)
       console.log('🔐 AuthService: Calling Supabase auth.signInWithPassword...')
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email: credentials.email,
@@ -166,9 +191,9 @@ class AuthService {
         }
       }
 
-      // Get customer from public.customers
+      // Get customer from public.customers using auth.users ID
       console.log('🔐 AuthService: Fetching customer data from customers table...', {
-        userId: authData.user.id
+        authUserId: authData.user.id
       })
       const { data: customer, error: customerError } = await supabase
         .from('customers')
@@ -184,18 +209,18 @@ class AuthService {
       })
 
       if (customerError || !customer) {
-        console.error('❌ AuthService: Error getting customer from public.customers:', customerError)
+        console.error('❌ AuthService: Customer not found:', customerError)
         return {
           user: null,
           session: null,
-          error: 'Customer not found in public.customers'
+          error: 'Customer record not found. Please contact support.'
         }
       }
 
       // Convert customer to AuthUser format
       console.log('🔐 AuthService: Converting customer to AuthUser format...')
       const publicUser: AuthUser = {
-        id: customer.user_id,
+        id: authData.user.id, // auth.users ID
         email: customer.email,
         first_name: customer.first_name,
         last_name: customer.last_name,
@@ -204,27 +229,30 @@ class AuthService {
         is_active: customer.is_active,
         email_verified: authData.user.email_confirmed_at !== null,
         created_at: customer.created_at,
-        updated_at: customer.updated_at
+        updated_at: customer.updated_at,
+        preferred_branch_id: customer.preferred_branch_id
       }
 
       console.log('✅ AuthService: Login successful, returning user:', {
-        userId: publicUser.id,
+        authUserId: publicUser.id,
         email: publicUser.email,
         firstName: publicUser.first_name,
         isActive: publicUser.is_active,
         emailVerified: publicUser.email_verified
       })
 
-      // Update last login (if you have this field in customers table)
-      // await supabase
-      //   .from('customers')
-      //   .update({ last_login: new Date().toISOString() })
-      //   .eq('user_id', publicUser.id)
+      // Update last purchase date as proxy for last login
+      await supabase
+        .from('customers')
+        .update({ 
+          last_purchase_date: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .eq('user_id', authData.user.id)
 
-      // Session will be handled by Supabase Auth and pwa_sessions
       return {
         user: publicUser,
-        session: null, // Session managed by Supabase Auth
+        session: authData.session,
         error: null
       }
     } catch (error) {
@@ -241,14 +269,19 @@ class AuthService {
   async socialLogin(provider: 'google' | 'facebook'): Promise<AuthResponse> {
     try {
       console.log('🔐 Attempting social login with:', provider)
+      console.log('🔐 Current origin:', window.location.origin)
+      console.log('🔐 Redirect will be to:', `${window.location.origin}/auth/callback`)
       
-      // Use Supabase Auth for social login
-      const { error: authError } = await supabase.auth.signInWithOAuth({
+      // Use Supabase Auth for social login (creates in auth.users automatically)
+      const { data, error: authError } = await supabase.auth.signInWithOAuth({
         provider: provider,
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`
+          redirectTo: `http://localhost:3001/auth/callback`,
+          skipBrowserRedirect: false
         }
       })
+
+      console.log('🔐 signInWithOAuth response:', { data, error: authError })
 
       if (authError) {
         console.error('❌ Supabase Auth error:', authError)
@@ -266,9 +299,10 @@ class AuthService {
       return {
         user: null,
         session: null,
-        error: null // No error, but user needs to complete OAuth flow
+        error: null
       }
     } catch (error) {
+      console.error('❌ Social login exception:', error)
       return {
         user: null,
         session: null,
@@ -277,50 +311,228 @@ class AuthService {
     }
   }
 
-  // Handle OAuth callback
-  async handleOAuthCallback(): Promise<AuthResponse> {
+  // ✅ Handle OAuth callback - Only uses auth.users + customers tables
+  async handleOAuthCallback(provider?: string): Promise<AuthResponse> {
     try {
-      const { data: authData, error: authError } = await supabase.auth.getSession()
+      console.log('🔐 OAuth Callback: Starting handler...', { provider })
 
-      if (authError || !authData.session?.user) {
+      // Step 1: Check if we have a code to exchange (PKCE flow)
+      const url = new URL(window.location.href)
+      const code = url.searchParams.get('code')
+      
+      console.log('🔍 OAuth Callback: Checking URL params...', {
+        hasCode: !!code,
+        fullURL: window.location.href
+      })
+
+      // Step 2: Exchange code for session if present
+      if (code) {
+        console.log('🔄 OAuth Callback: Exchanging code for session...')
+        const { data, error } = await supabase.auth.exchangeCodeForSession(code)
+        
+        if (error) {
+          console.error('❌ OAuth Callback: Code exchange failed:', error)
+          return { 
+            user: null, 
+            session: null, 
+            error: `OAuth code exchange failed: ${error.message}` 
+          }
+        }
+        
+        console.log('✅ OAuth Callback: Code exchange successful')
+      }
+
+      // Step 3: Get the current session from auth.users
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+      
+      if (sessionError || !session?.user) {
+        console.error('❌ OAuth Callback: No session found:', sessionError)
         return {
           user: null,
           session: null,
-          error: 'OAuth callback failed'
+          error: 'OAuth callback failed - no session found after exchange',
         }
       }
 
-      // Get user from public.users (created by trigger)
-      const { data: publicUser, error: userError } = await supabase
-        .from('users')
+      const authUser = session.user
+      console.log('✅ OAuth Callback: Session found from auth.users:', {
+        authUserId: authUser.id,
+        email: authUser.email,
+        provider: authUser.app_metadata?.provider
+      })
+
+      // Step 4: Extract user data from OAuth metadata
+      const email = authUser.email || ''
+      if (!email) {
+        console.error('❌ OAuth Callback: No email in user data')
+        return {
+          user: null,
+          session: null,
+          error: 'No email found in OAuth account',
+        }
+      }
+
+      const metadata = authUser.user_metadata || {}
+      const fullName = metadata.full_name || metadata.name || ''
+      const firstName = metadata.given_name || metadata.first_name || fullName.split(' ')[0] || email.split('@')[0] || 'User'
+      const lastName = metadata.family_name || metadata.last_name || fullName.split(' ').slice(1).join(' ') || ''
+      const phone = metadata.phone || metadata.phone_number || null
+
+      console.log('👤 OAuth Callback: Extracted user data:', {
+        email,
+        firstName,
+        lastName,
+        phone,
+        authUserId: authUser.id
+      })
+
+      // Step 5: Check if customer exists (linked to auth.users via user_id)
+      const { data: existingCustomer, error: customerCheckError } = await supabase
+        .from('customers')
         .select('*')
-        .eq('id', authData.session.user.id)
-        .single()
+        .eq('user_id', authUser.id)
+        .maybeSingle()
 
-      if (userError || !publicUser) {
-        console.error('❌ Error getting user from public.users:', userError)
-        return {
-          user: null,
-          session: null,
-          error: 'User not found in public.users'
+      if (customerCheckError && customerCheckError.code !== 'PGRST116') {
+        console.error('❌ OAuth Callback: Error checking customer:', customerCheckError)
+        throw customerCheckError
+      }
+
+      let customer: any
+
+      if (existingCustomer) {
+        console.log('✅ OAuth Callback: Existing customer found:', existingCustomer.id)
+        
+        // Update customer last activity
+        await supabase
+          .from('customers')
+          .update({
+            last_purchase_date: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', existingCustomer.id)
+        
+        customer = existingCustomer
+      } else {
+        // Step 6: Create new customer record (auth.users already exists from OAuth)
+        console.log('📝 OAuth Callback: Creating new customer record...')
+        console.log('📝 OAuth Callback: auth.users ID:', authUser.id)
+        console.log('📝 OAuth Callback: Will create customer with data:', {
+          firstName,
+          lastName,
+          email,
+          phone,
+          authUserId: authUser.id
+        })
+        
+        // Generate unique customer identifiers
+        const timestamp = Date.now().toString().slice(-8)
+        const customerNumber = `CUST-${timestamp}`
+        const customerCode = `C${timestamp}`
+        
+        console.log('📝 OAuth Callback: Generated IDs:', {
+          customerNumber,
+          customerCode,
+          timestamp
+        })
+
+        console.log('📝 OAuth Callback: Attempting INSERT into customers table...')
+        
+        const { data: newCustomer, error: createCustomerError } = await supabase
+          .from('customers')
+          .insert({
+            user_id: authUser.id, // Links to auth.users
+            customer_number: customerNumber,
+            customer_code: customerCode,
+            first_name: firstName,
+            last_name: lastName,
+            email: email,
+            phone: phone,
+            customer_type: 'individual',
+            is_active: true,
+            is_guest: false,
+            registration_date: new Date().toISOString(),
+            total_spent: 0.00,
+            total_lifetime_spent: 0.00,
+            loyalty_points: 0,
+            loyalty_tier: 'bronze',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+          .select('*')
+          .single()
+
+        console.log('📝 OAuth Callback: INSERT completed')
+        console.log('📝 OAuth Callback: New customer data:', newCustomer)
+        console.log('📝 OAuth Callback: Insert error:', createCustomerError)
+
+        if (createCustomerError) {
+          console.error('❌ OAuth Callback: Error creating customer:', createCustomerError)
+          console.error('❌ OAuth Callback: Error details:', {
+            code: createCustomerError.code,
+            message: createCustomerError.message,
+            details: createCustomerError.details,
+            hint: createCustomerError.hint
+          })
+          console.error('❌ OAuth Callback: Full error object:', JSON.stringify(createCustomerError, null, 2))
+          
+          // Check if it's an RLS policy error
+          if (createCustomerError.code === '42501' || createCustomerError.message?.includes('policy')) {
+            console.error('❌ OAuth Callback: This is an RLS POLICY error!')
+            console.error('❌ OAuth Callback: You need to check your Row Level Security policies on the customers table')
+          }
+          
+          // Check if it's a foreign key error
+          if (createCustomerError.code === '23503') {
+            console.error('❌ OAuth Callback: This is a FOREIGN KEY error!')
+            console.error('❌ OAuth Callback: The user_id column might not be properly set up')
+          }
+          
+          throw createCustomerError
         }
+
+        customer = newCustomer
+        console.log('✅ OAuth Callback: Customer created successfully!')
+        console.log('✅ OAuth Callback: Customer ID:', customer.id)
+        console.log('✅ OAuth Callback: Customer email:', customer.email)
       }
 
-      // Session will be handled by Supabase Auth and pwa_sessions
-      return {
-        user: publicUser,
-        session: null, // Session managed by Supabase Auth
-        error: null
+      if (!customer) {
+        throw new Error('Customer record not found or created.')
       }
+
+      // Step 7: Return AuthUser format
+      const publicUser: AuthUser = {
+        id: authUser.id, // This is the auth.users ID
+        email: email,
+        first_name: firstName,
+        last_name: lastName,
+        phone: phone,
+        user_type: 'customer',
+        is_active: true,
+        email_verified: true,
+        created_at: customer.created_at,
+        updated_at: customer.updated_at,
+        preferred_branch_id: customer.preferred_branch_id
+      }
+
+      console.log('✅ OAuth Callback: Success! User ready:', {
+        authUserId: publicUser.id,
+        email: publicUser.email,
+        customerEmail: customer.email
+      })
+      
+      return { user: publicUser, session, error: null }
+      
     } catch (error) {
+      console.error('❌ OAuth Callback: Fatal error:', error)
       return {
         user: null,
         session: null,
-        error: error instanceof Error ? error.message : 'OAuth callback failed'
+        error: error instanceof Error ? error.message : 'OAuth callback failed',
       }
     }
   }
-
 
   // Logout
   async logout(): Promise<{ success: boolean; error?: string }> {

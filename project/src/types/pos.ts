@@ -78,6 +78,9 @@ export interface ProductVariant extends Product {
   requires_batch_tracking?: boolean;
   is_quick_sale?: boolean;
   batch_number?: string;
+  stock_quantity?: number;
+  minimum_stock?: number;
+  min_sellable_quantity?: number;
   // For backward compatibility with existing POS code
   products?: {
     id: string;
@@ -108,6 +111,7 @@ export interface ProductVariant extends Product {
     unit_label: string;
     price: number;
     is_base_unit: boolean;
+    min_sellable_quantity: number;
   } | null;
 }
 
@@ -137,6 +141,7 @@ export interface CartItem {
   expiryDate?: string;
   batchNumber?: string;
   isBaseUnit?: boolean; // Flag to distinguish base units from sub-units
+  minimum_stock: number;
   selectedUnit?: {
     id: string;
     unit_name: string;
@@ -144,6 +149,8 @@ export interface CartItem {
     price: number;
     is_base_unit: boolean;
     conversion_factor: number;
+    min_sellable_quantity: number;
+    minimum_stock: number;
   };
 }
 
@@ -382,6 +389,9 @@ export interface ShoppingCartProps {
   tax: number;
   total: number;
   onProceedToPayment: () => void;
+  className?: string; 
+  minimum_stock: number;
+  
 }
 
 export interface PaymentProcessingProps {

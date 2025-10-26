@@ -142,6 +142,7 @@ export interface ProductFormData {
   image_url: string;
   barcode?: string;
   brand?: string;
+  enable_multi_unit: boolean; 
 }
 
 export interface UnitFormData {

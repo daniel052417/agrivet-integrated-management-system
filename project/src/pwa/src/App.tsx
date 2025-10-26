@@ -7,6 +7,7 @@ import { AuthProvider } from './contexts/AuthContext'
 import { RealtimeProvider } from './contexts/RealtimeContext'
 import SmartRouter from './components/routing/SmartRouter'
 import ErrorBoundary from './components/common/ErrorBoundary'
+import AuthCallback from './pages/AuthCallback'  // ✅ Keep this one (eager import)
 
 // ✅ LAZY LOAD ALL PAGES - Only load when needed
 // Core Pages
@@ -19,7 +20,7 @@ const OrderConfirmation = lazy(() => import('./pages/OrderConfirmation'))
 const Orders = lazy(() => import('./pages/Orders'))
 const UserSettings = lazy(() => import('./pages/UserSettings'))
 const NotFound = lazy(() => import('./pages/NotFound'))
-const AuthCallback = lazy(() => import('./pages/AuthCallback'))
+// ❌ REMOVED: const AuthCallback = lazy(() => import('./pages/AuthCallback'))  // This was a duplicate!
 
 // Demo Components - Lazy load (users rarely visit these)
 const PromoDemo = lazy(() => import('./components/promotions/PromoDemo'))

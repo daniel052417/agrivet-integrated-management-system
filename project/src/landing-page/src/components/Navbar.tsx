@@ -26,7 +26,8 @@ const Navbar = () => {
 
   const navLinks = [
     { name: 'Home', path: '/' },
-    { name: 'Products', action: () => scrollToSection('products') },
+    // { name: 'Products', action: () => scrollToSection('products') },
+    { name: 'Products', path: '/products' },
     { name: 'Branches', action: () => scrollToSection('branches') },
     { name: 'Promotions', action: () => scrollToSection('promotions') },
     { name: 'About Us', path: '/about' },

@@ -16,9 +16,9 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    persistSession: true, // Enable session persistence for RLS
     autoRefreshToken: true,
-    detectSessionInUrl: false
+    persistSession: true,
+    detectSessionInUrl: true
   }
 })
 
@@ -156,6 +156,9 @@ console.log('🔧 Supabase Client Created:')
 console.log('🔧 Client instance:', !!supabase)
 
 // Database types - Updated to match the provided schema
+// NOTE: This app uses auth.users (Supabase's built-in auth table) for authentication
+// and public.customers for storing customer details. The customers.user_id field
+// references auth.users.id to link them together.
 export interface Database {
   public: {
     Tables: {
@@ -278,6 +281,8 @@ export interface Database {
       customers: {
         Row: {
           id: string; // UUID
+          user_id: string | null; // UUID - Links to auth.users
+          customer_number: string;
           customer_code: string;
           first_name: string;
           last_name: string;
@@ -285,18 +290,78 @@ export interface Database {
           phone: string | null;
           address: string | null;
           city: string | null;
+          province: string | null;
           customer_type: string;
           date_of_birth: string | null;
           registration_date: string;
           is_active: boolean;
+          is_guest: boolean;
+          guest_session_id: string | null;
           total_spent: number;
           last_purchase_date: string | null;
           loyalty_points: number | null;
           loyalty_tier: string | null;
           total_lifetime_spent: number | null;
+          preferred_branch_id: string | null; // UUID
           assigned_staff_id: string | null; // UUID
           created_at: string;
           updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id?: string | null;
+          customer_number: string;
+          customer_code: string;
+          first_name: string;
+          last_name: string;
+          email?: string | null;
+          phone?: string | null;
+          address?: string | null;
+          city?: string | null;
+          province?: string | null;
+          customer_type?: string;
+          date_of_birth?: string | null;
+          registration_date?: string;
+          is_active?: boolean;
+          is_guest?: boolean;
+          guest_session_id?: string | null;
+          total_spent?: number;
+          last_purchase_date?: string | null;
+          loyalty_points?: number | null;
+          loyalty_tier?: string | null;
+          total_lifetime_spent?: number | null;
+          preferred_branch_id?: string | null;
+          assigned_staff_id?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string | null;
+          customer_number?: string;
+          customer_code?: string;
+          first_name?: string;
+          last_name?: string;
+          email?: string | null;
+          phone?: string | null;
+          address?: string | null;
+          city?: string | null;
+          province?: string | null;
+          customer_type?: string;
+          date_of_birth?: string | null;
+          registration_date?: string;
+          is_active?: boolean;
+          is_guest?: boolean;
+          guest_session_id?: string | null;
+          total_spent?: number;
+          last_purchase_date?: string | null;
+          loyalty_points?: number | null;
+          loyalty_tier?: string | null;
+          total_lifetime_spent?: number | null;
+          preferred_branch_id?: string | null;
+          assigned_staff_id?: string | null;
+          created_at?: string;
+          updated_at?: string;
         };
       };
       inventory: {

@@ -26,6 +26,8 @@ import ReportsAnalytics from '../reports/ReportsAnalytics';
 import SettingsPage from '../settings/SettingsPage';
 import LowStockAlerts from '../inventory/LowStockAlerts';
 import Categories from '../inventory/Categories';
+import Supplier from '../inventory/Supplier';
+import Brands from '../inventory/Brands';
 // import ActiveUsers from '../users/ActiveUsers';
 import UserAccounts from '../users/UserAccounts';
 import UserActivity from '../users/UserActivity';
@@ -72,6 +74,10 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, onLogou
         return <InventoryManagement />;
       case 'low-stock':
         return <LowStockAlerts />;
+      case 'suppliers':
+        return <Supplier />;
+      case 'brands':
+        return <Brands />;
       
       // Staff & User Management Section
       case 'staff-user-management':

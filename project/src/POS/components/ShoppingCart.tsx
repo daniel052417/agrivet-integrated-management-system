@@ -12,9 +12,10 @@ interface ShoppingCartProps {
   tax: number;
   total: number;
   onProceedToPayment: () => void;
+
 }
 
-const ShoppingCart: React.FC<ShoppingCartProps> = ({
+const ShoppingCarts: React.FC<ShoppingCartProps> = ({
   cart,
   selectedCustomer,
   onUpdateItem,
@@ -175,65 +176,49 @@ const ShoppingCart: React.FC<ShoppingCartProps> = ({
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Quantity/Weight Controls */}
+                {/* Quantity/Weight Controls */}
                 <div>
-                  {item.product.pos_pricing_type === 'weight_based' ? (
-                    <div>
-                      <label className="block text-sm font-semibold text-gray-700 mb-2">
-                        Weight ({item.product.unit_of_measure})
-                      </label>
-                      <div className="quantity-control">
-                        <button
-                          onClick={() => handleWeightChange(item.id, (item.weight || 0) - 0.1)}
-                          className="quantity-btn"
-                        >
-                          <Minus className="w-4 h-4" />
-                        </button>
-                        <input
-                          type="number"
-                          step="0.1"
-                          min="0.1"
-                          value={item.weight || 0}
-                          onChange={(e) => handleWeightChange(item.id, parseFloat(e.target.value) || 0)}
-                          className="w-20 px-3 py-2 border border-gray-300 rounded-lg text-center font-semibold focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-                        />
-                        <button
-                          onClick={() => handleWeightChange(item.id, (item.weight || 0) + 0.1)}
-                          className="quantity-btn"
-                        >
-                          <Plus className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div>
-                      <label className="block text-sm font-semibold text-gray-700 mb-2">
-                        Quantity
-                      </label>
-                      <div className="quantity-control">
-                        <button
-                          onClick={() => handleQuantityChange(item.id, item.quantity - 1)}
-                          className="quantity-btn"
-                        >
-                          <Minus className="w-4 h-4" />
-                        </button>
-                        <input
-                          type="number"
-                          min="1"
-                          max={item.product.stock_quantity}
-                          value={item.quantity}
-                          onChange={(e) => handleQuantityChange(item.id, parseInt(e.target.value) || 1)}
-                          className="w-16 px-3 py-2 border border-gray-300 rounded-lg text-center font-semibold focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-                        />
-                        <button
-                          onClick={() => handleQuantityChange(item.id, item.quantity + 1)}
-                          className="quantity-btn"
-                        >
-                          <Plus className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  )}
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Quantity ({item.selectedUnit?.unit_name || item.product.unit_of_measure})
+                  </label>
+
+                  <div className="quantity-control">
+                    <button
+                      onClick={() => {
+                        const step = item.selectedUnit?.is_base_unit ? 1 : (item.selectedUnit?.min_sellable_quantity || 0.1);
+                        handleQuantityChange(item.id, Math.max(0, item.quantity - step));
+                      }}
+                      className="quantity-btn"
+                    >
+                      <Minus className="w-4 h-4" />
+                    </button>
+
+                    <input
+                      type="number"
+                      step={item.selectedUnit?.is_base_unit ? 1 : (item.selectedUnit?.min_sellable_quantity || 0.1)}
+                      min={item.selectedUnit?.is_base_unit ? 1 : (item.selectedUnit?.min_sellable_quantity || 0.1)}
+                      max={item.product.stock_quantity}
+                      value={item.quantity}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value) || 0;
+                        if (item.selectedUnit?.is_base_unit && !Number.isInteger(val)) return; // Prevent decimals
+                        handleQuantityChange(item.id, val);
+                      }}
+                      className="w-20 px-3 py-2 border border-gray-300 rounded-lg text-center font-semibold focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                    />
+
+                    <button
+                      onClick={() => {
+                        const step = item.selectedUnit?.is_base_unit ? 1 : (item.selectedUnit?.min_sellable_quantity || 0.1);
+                        handleQuantityChange(item.id, item.quantity + step);
+                      }}
+                      className="quantity-btn"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
+
 
                 {/* Discount */}
                 <div>

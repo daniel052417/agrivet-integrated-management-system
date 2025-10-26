@@ -5,7 +5,7 @@ import {
   Megaphone, Calendar, DollarSign,
   Archive, Warehouse, ChevronDown,
   Menu, X, LogOut, UserCheck,
-  Clock, Tag, Target, Star, Gift
+  Clock, Tag, Target, Star, Gift, Building
 } from 'lucide-react';
 import logo from '../../../assets/logo.png';
 import { CustomUser } from '../../../lib/customAuth';
@@ -99,6 +99,8 @@ const SimplifiedSidebar: React.FC<SimplifiedSidebarProps> = ({ user, activeSecti
       children: [
         { id: 'all-products', label: 'All Products', icon: Archive, category: 'Inventory' },
         { id: 'categories', label: 'Categories', icon: Package, category: 'Inventory' },
+        { id: 'brands', label: 'Brands', icon: Tag, category: 'Inventory' },
+        { id: 'suppliers', label: 'Suppliers', icon: Building, category: 'Inventory' },
         { id: 'low-stock', label: 'Low Stock Alerts', icon: AlertTriangle, category: 'Inventory' },
       ]
     },
