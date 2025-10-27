@@ -18,6 +18,12 @@ interface Branch {
   name: string;
 }
 
+interface Brand {
+  id: string;
+  name: string;
+  image_url?: string;
+}
+
 // Using the imported interface from types/inventory.ts
 
 const InventoryManagement: React.FC = () => {
@@ -29,6 +35,7 @@ const InventoryManagement: React.FC = () => {
   const [categories, setCategories] = useState<Category[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
+  const [brands, setBrands] = useState<Brand[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [products, setProducts] = useState<InventoryManagementRow[]>([]);
@@ -51,62 +58,85 @@ const InventoryManagement: React.FC = () => {
     min_sellable_quantity: '1',
     image_url: '',
     barcode: '',
-    brand: ''
+    brand: '',
+    enable_multi_unit: false
   });
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Product units state for multi-unit management
+  interface ProductUnit {
+    id: string;
+    unit_name: string;
+    unit_label: string;
+    conversion_factor: string;
+    price_per_unit: string;
+    min_sellable_quantity: string;
+    is_base_unit: boolean;
+  }
+
+  const [productUnits, setProductUnits] = useState<ProductUnit[]>([
+    {
+      id: '1',
+      unit_name: '',
+      unit_label: '',
+      conversion_factor: '1',
+      price_per_unit: '',
+      min_sellable_quantity: '1',
+      is_base_unit: true
+    }
+  ]);
+
   // Image upload functions
   const uploadImage = async (file: File): Promise<string> => {
-    try {
-      setIsUploadingImage(true);
+  try {
+    setIsUploadingImage(true);
+    
+    // Create a unique filename
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
+    const filePath = fileName; // ✅ FIXED: No prefix needed
+
+    console.log('Attempting to upload image to bucket: product-images');
+    console.log('File path:', filePath);
+
+    // Upload to storage
+    const { data, error } = await supabase.storage
+      .from('product-images')
+      .upload(filePath, file, {
+        cacheControl: '3600',
+        upsert: false
+      });
+
+    if (error) {
+      console.error('Storage upload error:', error);
       
-      // Create a unique filename
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
-      const filePath = `product-images/${fileName}`;
-
-      console.log('Attempting to upload image to bucket: product-images');
-      console.log('File path:', filePath);
-
-      // Try to upload directly - if bucket doesn't exist, we'll get a clear error
-      const { data, error } = await supabase.storage
-        .from('product-images')
-        .upload(filePath, file, {
-          cacheControl: '3600',
-          upsert: false
-        });
-
-      if (error) {
-        console.error('Storage upload error:', error);
-        
-        // Check if it's a bucket not found error
-        if (error.message.includes('Bucket not found') || error.message.includes('not found')) {
-          throw new Error('Storage bucket "product-images" not found. Please create it in your Supabase dashboard and make sure it\'s set to public.');
-        }
-        
-        throw new Error(`Failed to upload image: ${error.message}`);
+      // Check if it's a bucket not found error
+      if (error.message.includes('Bucket not found') || error.message.includes('not found')) {
+        throw new Error('Storage bucket "product-images" not found. Please create it in your Supabase dashboard and make sure it\'s set to public.');
       }
-
-      console.log('Upload successful:', data);
-
-      // Get public URL
-      const { data: { publicUrl } } = supabase.storage
-        .from('product-images')
-        .getPublicUrl(filePath);
-
-      console.log('Public URL generated:', publicUrl);
-      console.log('Image URL will be saved to database:', publicUrl);
-      return publicUrl;
-    } catch (error) {
-      console.error('Error uploading image:', error);
-      throw error; // Re-throw the original error to preserve the message
-    } finally {
-      setIsUploadingImage(false);
+      
+      throw new Error(`Failed to upload image: ${error.message}`);
     }
-  };
+
+    console.log('Upload successful:', data);
+
+    // Get public URL
+    const { data: { publicUrl } } = supabase.storage
+      .from('product-images')
+      .getPublicUrl(filePath);
+
+    console.log('Public URL generated:', publicUrl);
+    return publicUrl;
+  } catch (error) {
+    console.error('Error uploading image:', error);
+    throw error;
+  } finally {
+    setIsUploadingImage(false);
+  }
+};
 
   const handleImageSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -144,13 +174,13 @@ const InventoryManagement: React.FC = () => {
   };
 
   const fetchProducts = async () => {
-    console.log('🚀 Starting to fetch products from inventory_management_view...');
+    console.log('🚀 Starting to fetch products from inventory_management...');
     setIsLoadingProducts(true);
     
     try {
       // Build query with filters
       let query = supabase
-        .from('inventory_management_view')
+        .from('inventory_management')
         .select('*')
         .order('product_name');
 
@@ -229,6 +259,16 @@ const InventoryManagement: React.FC = () => {
         console.log('🏢 Branches loaded:', branchesData?.length || 0, 'branches');
         setBranches(branchesData || []);
 
+        // Fetch brands
+        const { data: brandsData, error: brandsError } = await supabase
+          .from('brands')
+          .select('id, name, image_url')
+          .order('name');
+
+        if (brandsError) throw brandsError;
+        console.log('🏷️ Brands loaded:', brandsData?.length || 0, 'brands');
+        setBrands(brandsData || []);
+
         await fetchProducts();
       } catch (error) {
         console.error('Error fetching data:', error);
@@ -257,9 +297,36 @@ const InventoryManagement: React.FC = () => {
     setSuccess(null);
 
     try {
-      // Validate required fields
-      if (!formData.name || !formData.sku || !formData.category_id || !formData.supplier_id || !formData.branch_id || !formData.price_per_unit || !formData.stock_quantity) {
+      // Validate required fields based on mode
+      if (!formData.name || !formData.sku || !formData.category_id || !formData.supplier_id || !formData.branch_id || !formData.stock_quantity) {
         throw new Error('Please fill in all required fields');
+      }
+
+      // Additional validation for single-unit mode
+      if (!formData.enable_multi_unit) {
+        if (!formData.price_per_unit || !formData.unit_name) {
+          throw new Error('Please fill in Price per Unit and Unit Name');
+        }
+      }
+
+      // Additional validation for multi-unit mode
+      if (formData.enable_multi_unit) {
+        if (productUnits.length === 0) {
+          throw new Error('Please add at least one unit');
+        }
+        
+        // Check if exactly one base unit exists
+        const baseUnits = productUnits.filter(u => u.is_base_unit);
+        if (baseUnits.length !== 1) {
+          throw new Error('Please select exactly one base unit');
+        }
+
+        // Check all units have required fields
+        for (const unit of productUnits) {
+          if (!unit.unit_name || !unit.unit_label || !unit.price_per_unit) {
+            throw new Error('Please fill in all unit fields');
+          }
+        }
       }
 
       // Upload image if selected
@@ -276,6 +343,11 @@ const InventoryManagement: React.FC = () => {
       }
 
       if (modalMode === 'add') {
+        // Determine the unit_of_measure (base unit label)
+        const baseUnitLabel = formData.enable_multi_unit 
+          ? productUnits.find(u => u.is_base_unit)?.unit_label || 'pcs'
+          : formData.unit_label || 'pcs';
+
         // Create product first
         const productData = {
           name: formData.name.trim(),
@@ -283,8 +355,13 @@ const InventoryManagement: React.FC = () => {
           description: formData.description.trim(),
           category_id: formData.category_id,
           supplier_id: formData.supplier_id,
+          brand: formData.brand || null,
+          unit_of_measure: baseUnitLabel,
+          image_url: imageUrl || null,
           is_active: true
         };
+
+        console.log('Creating product with data:', productData);
 
         const { data: newProduct, error: productError } = await supabase
           .from('products')
@@ -294,43 +371,90 @@ const InventoryManagement: React.FC = () => {
 
         if (productError) throw productError;
 
-        // Create product unit
-        const unitData = {
-          product_id: newProduct.id,
-          unit_name: formData.unit_name.trim() || formData.name.trim(),
-          unit_label: formData.unit_label.trim() || 'pcs',
-          conversion_factor: parseFloat(formData.conversion_factor),
-          is_base_unit: true, // First unit is always base unit
-          is_sellable: true,
-          price_per_unit: parseFloat(formData.price_per_unit),
-          min_sellable_quantity: parseFloat(formData.min_sellable_quantity)
-        };
+        // Create product units based on mode
+        if (formData.enable_multi_unit) {
+          // Multi-unit mode: Create multiple units
+          const unitsToInsert = productUnits.map(unit => ({
+            product_id: newProduct.id,
+            unit_name: unit.unit_name.trim(),
+            unit_label: unit.unit_label.trim(),
+            conversion_factor: parseFloat(unit.conversion_factor),
+            is_base_unit: unit.is_base_unit,
+            is_sellable: true,
+            price_per_unit: parseFloat(unit.price_per_unit),
+            min_sellable_quantity: parseFloat(unit.min_sellable_quantity)
+          }));
 
-        console.log('Creating product unit with data:', unitData);
+          console.log('Creating multiple product units:', unitsToInsert);
 
-        const { data: newUnit, error: unitError } = await supabase
-          .from('product_units')
-          .insert([unitData])
-          .select()
-          .single();
+          const { data: newUnits, error: unitError } = await supabase
+            .from('product_units')
+            .insert(unitsToInsert)
+            .select();
 
-        if (unitError) throw unitError;
+          if (unitError) throw unitError;
 
-        // Create inventory record
-        const inventoryData = {
-          branch_id: formData.branch_id,
-          product_unit_id: newUnit.id,
-          quantity_on_hand: parseInt(formData.stock_quantity),
-          quantity_reserved: 0,
-          reorder_level: parseInt(formData.reorder_level) || Math.max(10, parseInt(formData.stock_quantity) * 0.2),
-          max_stock_level: parseInt(formData.stock_quantity) * 2
-        };
+          // Get the base unit for inventory
+          const baseUnit = newUnits?.find(u => u.is_base_unit);
+          if (!baseUnit) throw new Error('Failed to create base unit');
 
-        const { error: inventoryError } = await supabase
-          .from('inventory')
-          .insert([inventoryData]);
+          // Create inventory record with base unit
+          const inventoryData = {
+            branch_id: formData.branch_id,
+            product_id: newProduct.id,
+            quantity_on_hand: parseFloat(formData.stock_quantity),
+            quantity_reserved: 0,
+            reorder_level: parseFloat(formData.reorder_level) || Math.max(10, parseFloat(formData.stock_quantity) * 0.2),
+            max_stock_level: parseFloat(formData.stock_quantity) * 2,
+            base_unit: baseUnit.unit_label
+          };
 
-        if (inventoryError) throw inventoryError;
+          const { error: inventoryError } = await supabase
+            .from('inventory')
+            .insert([inventoryData]);
+
+          if (inventoryError) throw inventoryError;
+
+        } else {
+          // Single-unit mode: Create one unit
+          const unitData = {
+            product_id: newProduct.id,
+            unit_name: formData.unit_name.trim() || formData.name.trim(),
+            unit_label: formData.unit_label.trim() || 'pcs',
+            conversion_factor: parseFloat(formData.conversion_factor),
+            is_base_unit: true,
+            is_sellable: true,
+            price_per_unit: parseFloat(formData.price_per_unit),
+            min_sellable_quantity: parseFloat(formData.min_sellable_quantity)
+          };
+
+          console.log('Creating single product unit with data:', unitData);
+
+          const { data: newUnit, error: unitError } = await supabase
+            .from('product_units')
+            .insert([unitData])
+            .select()
+            .single();
+
+          if (unitError) throw unitError;
+
+          // Create inventory record
+          const inventoryData = {
+            branch_id: formData.branch_id,
+            product_id: newProduct.id,
+            quantity_on_hand: parseFloat(formData.stock_quantity),
+            quantity_reserved: 0,
+            reorder_level: parseFloat(formData.reorder_level) || Math.max(10, parseFloat(formData.stock_quantity) * 0.2),
+            max_stock_level: parseFloat(formData.stock_quantity) * 2,
+            base_unit: newUnit.unit_label
+          };
+
+          const { error: inventoryError } = await supabase
+            .from('inventory')
+            .insert([inventoryData]);
+
+          if (inventoryError) throw inventoryError;
+        }
 
       } else if (modalMode === 'edit' && editingProductId) {
         // Find the product to get unit and inventory IDs
@@ -343,6 +467,8 @@ const InventoryManagement: React.FC = () => {
           sku: formData.sku.trim().toUpperCase(),
           description: formData.description.trim(),
           category_id: formData.category_id,
+          brand: formData.brand || null,
+          image_url: imageUrl || null,
           supplier_id: formData.supplier_id
         };
 
@@ -404,7 +530,9 @@ const InventoryManagement: React.FC = () => {
         unit_label: '',
         conversion_factor: '1',
         min_sellable_quantity: '1',
-        image_url: ''
+        image_url: '',
+        brand: '',
+        enable_multi_unit: false
       });
       setImageFile(null);
       setImagePreview(null);
@@ -437,12 +565,61 @@ const InventoryManagement: React.FC = () => {
       unit_label: '',
       conversion_factor: '1',
       min_sellable_quantity: '1',
-      image_url: ''
+      image_url: '',
+      barcode: '',
+      brand: '',
+      enable_multi_unit: false
     });
+    setProductUnits([
+      {
+        id: '1',
+        unit_name: '',
+        unit_label: '',
+        conversion_factor: '1',
+        price_per_unit: '',
+        min_sellable_quantity: '1',
+        is_base_unit: true
+      }
+    ]);
     setImageFile(null);
     setImagePreview(null);
     setError(null);
     setSuccess(null);
+  };
+
+  // Multi-unit management functions
+  const addProductUnit = () => {
+    const newUnit: ProductUnit = {
+      id: Date.now().toString(),
+      unit_name: '',
+      unit_label: '',
+      conversion_factor: '1',
+      price_per_unit: '',
+      min_sellable_quantity: '1',
+      is_base_unit: false
+    };
+    setProductUnits([...productUnits, newUnit]);
+  };
+
+  const removeProductUnit = (id: string) => {
+    if (productUnits.length <= 1) {
+      setError('At least one unit is required');
+      return;
+    }
+    setProductUnits(productUnits.filter(unit => unit.id !== id));
+  };
+
+  const updateProductUnit = (id: string, field: keyof ProductUnit, value: string | boolean) => {
+    setProductUnits(productUnits.map(unit => 
+      unit.id === id ? { ...unit, [field]: value } : unit
+    ));
+  };
+
+  const setBaseUnit = (id: string) => {
+    setProductUnits(productUnits.map(unit => ({
+      ...unit,
+      is_base_unit: unit.id === id
+    })));
   };
 
   const getStatusColor = (status: string) => {
@@ -509,7 +686,9 @@ const InventoryManagement: React.FC = () => {
       unit_label: '',
       conversion_factor: '1',
       min_sellable_quantity: '1',
-      image_url: ''
+      image_url: '',
+      brand: '',
+      enable_multi_unit: false
     });
     setImageFile(null);
     setImagePreview(null);
@@ -519,31 +698,31 @@ const InventoryManagement: React.FC = () => {
   };
 
   const openEditModal = (product: InventoryManagementRow) => {
-    setFormData({
-      name: product.product_name || '',
-      category_id: product.category_id || '',
-      sku: product.sku || '',
-      price_per_unit: String(product.price_per_unit ?? ''),
-      stock_quantity: String(product.quantity_available ?? ''),
-      reorder_level: String(product.reorder_level ?? ''),
-      supplier_id: '', // Not available in view, will need to fetch separately
-      branch_id: product.branch_id || '',
-      description: '', // Not available in view, will need to fetch separately
-      unit_name: product.unit_name || '',
-      unit_label: product.unit_label || '',
-      conversion_factor: String(product.conversion_factor ?? '1'),
-      min_sellable_quantity: '1', // Not available in view, will use default
-      image_url: product.image_url || '',
-      barcode: product.barcode || '',
-      brand: product.brand || ''
-    });
-    setImageFile(null);
-    setImagePreview(product.image_url || null);
-    setEditingProductId(product.product_id);
-    setModalMode('edit');
-    setIsModalOpen(true);
-  };
-
+  setFormData({
+    name: product.product_name || '',
+    category_id: product.category_id || '',
+    sku: product.sku || '',
+    price_per_unit: String(product.price_per_unit ?? ''),
+    stock_quantity: String(product.quantity_available ?? ''),
+    reorder_level: String(product.reorder_level ?? ''),
+    supplier_id: product.supplier_id || '', // ✅ Now populated from view
+    branch_id: product.branch_id || '',
+    description: product.description || '', // ✅ Now populated from view
+    unit_name: product.unit_name || '',
+    unit_label: product.unit_label || '',
+    conversion_factor: String(product.conversion_factor ?? '1'),
+    min_sellable_quantity: String(product.min_sellable_quantity ?? '1'), // ✅ Now populated from view
+    image_url: product.image_url || '',
+    barcode: product.barcode || '',
+    brand: product.brand || '',
+    enable_multi_unit: false // For simplicity, default to false; can be enhanced to fetch actual units
+  });
+  setImageFile(null);
+  setImagePreview(product.image_url || null);
+  setEditingProductId(product.product_id);
+  setModalMode('edit');
+  setIsModalOpen(true);
+};
   return (
     <div className="p-6 space-y-6">
       {/* Success/Error Messages */}
@@ -845,36 +1024,59 @@ const InventoryManagement: React.FC = () => {
                   </div>
 
                   <div>
-                    <label htmlFor="productPrice" className="block text-sm font-medium text-gray-700 mb-2">
-                      Price per Unit (₱) *
+                    <label htmlFor="productBrand" className="block text-sm font-medium text-gray-700 mb-2">
+                      Brand
                     </label>
-                    <input
-                      type="number"
-                      id="productPrice"
-                      value={formData.price_per_unit}
-                      onChange={(e) => setFormData(prev => ({...prev, price_per_unit: e.target.value}))}
+                    <select
+                      id="productBrand"
+                      value={formData.brand}
+                      onChange={(e) => setFormData(prev => ({...prev, brand: e.target.value}))}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                      placeholder="0.00"
-                      step="0.01"
-                      min="0"
-                      required
-                    />
+                    >
+                      <option value="">Select Brand (Optional)</option>
+                      {brands.map((brand) => (
+                        <option key={brand.id} value={brand.name}>
+                          {brand.name}
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
-                  <div>
-                    <label htmlFor="unitName" className="block text-sm font-medium text-gray-700 mb-2">
-                      Unit Name *
-                    </label>
-                    <input
-                      type="text"
-                      id="unitName"
-                      value={formData.unit_name}
-                      onChange={(e) => setFormData(prev => ({...prev, unit_name: e.target.value}))}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                      placeholder="e.g., Kilogram, Liter, Piece"
-                      required
-                    />
-                  </div>
+                  {!formData.enable_multi_unit && (
+                    <>
+                      <div>
+                        <label htmlFor="productPrice" className="block text-sm font-medium text-gray-700 mb-2">
+                          Price per Unit (₱) *
+                        </label>
+                        <input
+                          type="number"
+                          id="productPrice"
+                          value={formData.price_per_unit}
+                          onChange={(e) => setFormData(prev => ({...prev, price_per_unit: e.target.value}))}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                          placeholder="0.00"
+                          step="0.01"
+                          min="0"
+                          required
+                        />
+                      </div>
+
+                      <div>
+                        <label htmlFor="unitName" className="block text-sm font-medium text-gray-700 mb-2">
+                          Unit Name *
+                        </label>
+                        <input
+                          type="text"
+                          id="unitName"
+                          value={formData.unit_name}
+                          onChange={(e) => setFormData(prev => ({...prev, unit_name: e.target.value}))}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                          placeholder="e.g., Kilogram, Liter, Piece"
+                          required
+                        />
+                      </div>
+                    </>
+                  )}
 
                   <div>
                     <label
@@ -913,6 +1115,24 @@ const InventoryManagement: React.FC = () => {
                     />
                   </div>
 
+                  <div className="col-span-full">
+                    <div className="flex items-center space-x-3 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                      <input
+                        type="checkbox"
+                        id="enableMultiUnit"
+                        checked={formData.enable_multi_unit}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, enable_multi_unit: e.target.checked }))}
+                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                      />
+                      <label htmlFor="enableMultiUnit" className="text-sm font-medium text-gray-700">
+                        Enable Multi Unit
+                      </label>
+                      <span className="text-xs text-gray-500">
+                        (Allow this product to be sold in different units with different prices)
+                      </span>
+                    </div>
+                  </div>
+
 
                   {/* Form Error Display */}
                   {error && (
@@ -922,53 +1142,190 @@ const InventoryManagement: React.FC = () => {
                   )}
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div>
-                    <label htmlFor="unitLabel" className="block text-sm font-medium text-gray-700 mb-2">
-                      Unit Label
-                    </label>
-                    <input
-                      type="text"
-                      id="unitLabel"
-                      value={formData.unit_label}
-                      onChange={(e) => setFormData(prev => ({...prev, unit_label: e.target.value}))}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                      placeholder="e.g., kg, L, pcs"
-                    />
-                  </div>
+                {/* Conditional Unit Fields - Single or Multi Unit */}
+                {!formData.enable_multi_unit ? (
+                  // Single Unit Mode - Original fields
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div>
+                      <label htmlFor="unitLabel" className="block text-sm font-medium text-gray-700 mb-2">
+                        Unit Label
+                      </label>
+                      <input
+                        type="text"
+                        id="unitLabel"
+                        value={formData.unit_label}
+                        onChange={(e) => setFormData(prev => ({...prev, unit_label: e.target.value}))}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        placeholder="e.g., kg, L, pcs"
+                      />
+                    </div>
 
-                  <div>
-                    <label htmlFor="conversionFactor" className="block text-sm font-medium text-gray-700 mb-2">
-                      Conversion Factor
-                    </label>
-                    <input
-                      type="number"
-                      id="conversionFactor"
-                      value={formData.conversion_factor}
-                      onChange={(e) => setFormData(prev => ({...prev, conversion_factor: e.target.value}))}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                      placeholder="1.0"
-                      step="0.0001"
-                      min="0.0001"
-                    />
-                  </div>
+                    <div>
+                      <label htmlFor="conversionFactor" className="block text-sm font-medium text-gray-700 mb-2">
+                        Conversion Factor
+                      </label>
+                      <input
+                        type="number"
+                        id="conversionFactor"
+                        value={formData.conversion_factor}
+                        onChange={(e) => setFormData(prev => ({...prev, conversion_factor: e.target.value}))}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        placeholder="1.0"
+                        step="0.0001"
+                        min="0.0001"
+                      />
+                    </div>
 
-                  <div>
-                    <label htmlFor="minSellableQuantity" className="block text-sm font-medium text-gray-700 mb-2">
-                      Min Sellable Quantity
-                    </label>
-                    <input
-                      type="number"
-                      id="minSellableQuantity"
-                      value={formData.min_sellable_quantity}
-                      onChange={(e) => setFormData(prev => ({...prev, min_sellable_quantity: e.target.value}))}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                      placeholder="1"
-                      step="0.001"
-                      min="0.001"
-                    />
+                    <div>
+                      <label htmlFor="minSellableQuantity" className="block text-sm font-medium text-gray-700 mb-2">
+                        Min Sellable Quantity
+                      </label>
+                      <input
+                        type="number"
+                        id="minSellableQuantity"
+                        value={formData.min_sellable_quantity}
+                        onChange={(e) => setFormData(prev => ({...prev, min_sellable_quantity: e.target.value}))}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        placeholder="1"
+                        step="0.001"
+                        min="0.001"
+                      />
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  // Multi-Unit Mode - Dynamic unit manager
+                  <div className="space-y-4 border-t border-gray-200 pt-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-lg font-semibold text-gray-800">Product Units</h3>
+                      <button
+                        type="button"
+                        onClick={addProductUnit}
+                        className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span>Add Unit</span>
+                      </button>
+                    </div>
+
+                    {productUnits.map((unit, index) => (
+                      <div key={unit.id} className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                        <div className="flex items-center justify-between mb-4">
+                          <div className="flex items-center space-x-3">
+                            <span className="text-sm font-medium text-gray-700">
+                              Unit {index + 1}
+                            </span>
+                            {unit.is_base_unit && (
+                              <span className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded-full">
+                                Base Unit
+                              </span>
+                            )}
+                          </div>
+                          {productUnits.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => removeProductUnit(unit.id)}
+                              className="text-red-600 hover:text-red-800 transition-colors"
+                              title="Remove unit"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              Unit Name *
+                            </label>
+                            <input
+                              type="text"
+                              value={unit.unit_name}
+                              onChange={(e) => updateProductUnit(unit.id, 'unit_name', e.target.value)}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                              placeholder="e.g., Box, Case"
+                              required
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              Unit Label *
+                            </label>
+                            <input
+                              type="text"
+                              value={unit.unit_label}
+                              onChange={(e) => updateProductUnit(unit.id, 'unit_label', e.target.value)}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                              placeholder="e.g., box, case"
+                              required
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              Conversion *
+                            </label>
+                            <input
+                              type="number"
+                              value={unit.conversion_factor}
+                              onChange={(e) => updateProductUnit(unit.id, 'conversion_factor', e.target.value)}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                              placeholder="1.0"
+                              step="0.0001"
+                              min="0.0001"
+                              required
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              Price (₱) *
+                            </label>
+                            <input
+                              type="number"
+                              value={unit.price_per_unit}
+                              onChange={(e) => updateProductUnit(unit.id, 'price_per_unit', e.target.value)}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                              placeholder="0.00"
+                              step="0.01"
+                              min="0"
+                              required
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              Min Qty *
+                            </label>
+                            <input
+                              type="number"
+                              value={unit.min_sellable_quantity}
+                              onChange={(e) => updateProductUnit(unit.id, 'min_sellable_quantity', e.target.value)}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                              placeholder="1"
+                              step="0.001"
+                              min="0.001"
+                              required
+                            />
+                          </div>
+                        </div>
+
+                        <div className="mt-3">
+                          <label className="flex items-center space-x-2 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="baseUnit"
+                              checked={unit.is_base_unit}
+                              onChange={() => setBaseUnit(unit.id)}
+                              className="w-4 h-4 text-blue-600 focus:ring-blue-500"
+                            />
+                            <span className="text-sm text-gray-700">Set as base unit</span>
+                          </label>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 <div>
                   <label htmlFor="productDescription" className="block text-sm font-medium text-gray-700 mb-2">

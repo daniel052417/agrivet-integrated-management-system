@@ -69,7 +69,6 @@ export interface POSSession {
   updated_at: string;
   terminal_id?: string;
   session_type: 'sale' | 'return' | 'refund';
-  total_discounts: number;
   total_returns: number;
   total_taxes: number;
   closed_by?: string;
@@ -105,6 +104,8 @@ export interface CreateTransactionData {
   payment_method: 'cash' | 'gcash' | 'paymaya' | 'card' | 'bank_transfer';
   cash_amount?: number;
   reference_number?: string;
+  transaction_source?: string;
+  order_id?: string;
 }
 
 export class POSTransactionService {
@@ -145,8 +146,6 @@ export class POSTransactionService {
           branch_id: data.branch_id,
           transaction_type: 'sale',
           subtotal: data.subtotal,
-          discount_amount: data.discount_amount || 0,
-          discount_percentage: data.discount_percentage || 0,
           tax_amount: data.tax_amount || 0,
           total_amount: data.total_amount,
           payment_status: 'completed',
@@ -169,8 +168,6 @@ export class POSTransactionService {
         quantity: item.quantity,
         unit_of_measure: item.unit_of_measure,
         unit_price: item.unit_price,
-        discount_amount: item.discount_amount || 0,
-        discount_percentage: item.discount_percentage || 0,
         line_total: item.line_total,
         weight_kg: item.weight_kg,
         expiry_date: item.expiry_date,
@@ -242,7 +239,7 @@ export class POSTransactionService {
       // Get current session data
       const { data: session, error: sessionError } = await supabase
         .from('pos_sessions')
-        .select('total_sales, total_transactions, total_discounts, total_taxes')
+        .select('total_sales, total_transactions, total_taxes')
         .eq('id', sessionId)
         .single();
 
@@ -254,7 +251,6 @@ export class POSTransactionService {
       // Calculate new totals
       const newTotalSales = (session.total_sales || 0) + transactionData.total_amount;
       const newTotalTransactions = (session.total_transactions || 0) + 1;
-      const newTotalDiscounts = (session.total_discounts || 0) + (transactionData.discount_amount || 0);
       const newTotalTaxes = (session.total_taxes || 0) + (transactionData.tax_amount || 0);
 
       // Update session
@@ -263,7 +259,6 @@ export class POSTransactionService {
         .update({
           total_sales: newTotalSales,
           total_transactions: newTotalTransactions,
-          total_discounts: newTotalDiscounts,
           total_taxes: newTotalTaxes,
           updated_at: new Date().toISOString()
         })
@@ -275,7 +270,6 @@ export class POSTransactionService {
         console.log(`Updated session ${sessionId} totals:`, {
           total_sales: newTotalSales,
           total_transactions: newTotalTransactions,
-          total_discounts: newTotalDiscounts,
           total_taxes: newTotalTaxes
         });
       }

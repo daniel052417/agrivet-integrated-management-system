@@ -1,4 +1,4 @@
-import { Order, OrderItem } from '../types'
+import { Order, OrderItem } from '../types/index'
 import { supabase } from './supabase'
 
 export interface CustomerOrderServiceConfig {
@@ -58,26 +58,28 @@ class CustomerOrderService {
       }
 
       // Use the optimized database function with user_id
-      const { data: orders, error } = await supabase
+          const { data: orders, error } = await supabase
         .rpc('get_customer_orders', {
           p_user_id: userId || null,
           p_branch_id: request.branchId || null,
           p_status: request.status || null,
           p_limit: request.limit || 50,
           p_offset: request.offset || 0
-        })
+        }) as unknown as { data: Order[] | null; error: any }
 
       if (error) {
         console.error('Error fetching orders:', error)
+        
         return {
           success: false,
           error: `Failed to fetch orders: ${error.message}`
+          
         }
       }
 
       // Get order items for each order
       const ordersWithItems = await Promise.all(
-        (orders || []).map(async (order) => {
+        (orders || []).map(async (order: Order) => {
           const { data: orderItems, error: itemsError } = await supabase
             .from('order_items')
             .select(`
@@ -140,10 +142,14 @@ class CustomerOrderService {
       }
 
       // Use the optimized function to get order with items
-      const { data: result, error } = await supabase
-        .rpc('get_order_with_items', {
-          p_order_id: orderId
-        })
+      // 2️⃣ Fetch single order
+          const { data: result, error } = (await supabase.rpc('get_order_with_items', {
+        p_order_id: orderId
+      })) as unknown as {
+        data: { order_data: Order; order_items: OrderItem[] }[] | null
+        error: any
+      }
+
 
       if (error) {
         console.error('Error fetching order:', error)

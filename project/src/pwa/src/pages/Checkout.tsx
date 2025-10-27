@@ -78,10 +78,10 @@ const Checkout: React.FC = () => {
           {/* Main Content */}
           <div className="lg:col-span-2">
             <div className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
-              <div className="p-6 border-b border-gray-200 bg-gray-50">
+              {/* <div className="p-6 border-b border-gray-200 bg-gray-50">
                 <h2 className="text-xl font-bold text-gray-900">Checkout</h2>
                 <p className="text-gray-600 mt-1">Complete your order with our enhanced checkout system</p>
-              </div>
+              </div> */}
               <div className="p-6">
                 <EnhancedCheckoutForm
                   onOrderCreated={handleOrderCreated}

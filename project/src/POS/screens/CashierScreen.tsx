@@ -56,6 +56,7 @@ const CashierScreen: React.FC = () => {
     console.warn('No branch assigned to user, using fallback. User:', currentUser?.email || 'No user');
     return 'default-branch';
   };
+  
 
   useEffect(() => {
     const checkMobile = () => {
@@ -208,7 +209,10 @@ const CashierScreen: React.FC = () => {
             unit_name: defaultUnit.unit_name,
             unit_label: defaultUnit.unit_label,
             price: defaultUnit.price_per_unit,
-            is_base_unit: defaultUnit.is_base_unit
+            is_base_unit: defaultUnit.is_base_unit,
+            conversion_factor: defaultUnit.conversion_factor,
+            min_sellable_quantity: defaultUnit.min_sellable_quantity ?? 1, // 👈 add this
+            minimum_stock: defaultUnit.minimum_stock ?? 0
           } : null,
           inventory: {
             id: item.id,
@@ -275,9 +279,20 @@ const CashierScreen: React.FC = () => {
           unit_of_measure,
           expiry_date,
           is_active,
+          image_url,
           categories!inner(
             id,
             name
+          ),
+          product_units(
+            id,
+            unit_name,
+            unit_label,
+            price_per_unit,
+            is_base_unit,
+            is_sellable,
+            conversion_factor,
+            min_sellable_quantity
           )
         `)
         .eq('is_active', true);
@@ -288,49 +303,19 @@ const CashierScreen: React.FC = () => {
         throw error;
       }
 
-      // Transform the data without inventory - create one product per base product with mock units
+      // Transform the data without inventory
       const transformedProducts: ProductVariant[] = data?.map((item: any) => {
         const category = item.categories;
         
-        // Create mock units for demonstration (since product_units table doesn't exist)
-        const mockUnits = [
-          { 
-            id: '50kg', 
-            unit_name: '50kg',
-            unit_label: '50kg', 
-            price: item.unit_price || 0, 
-            is_base_unit: true,
-            conversion_factor: 1,
-            min_sellable_quantity: 1
-          },
-          { 
-            id: '25kg', 
-            unit_name: '25kg',
-            unit_label: '25kg', 
-            price: (item.unit_price || 0) * 0.5, 
-            is_base_unit: false,
-            conversion_factor: 0.5,
-            min_sellable_quantity: 1
-          },
-          { 
-            id: '1kg', 
-            unit_name: '1kg',
-            unit_label: '1kg', 
-            price: (item.unit_price || 0) * 0.02, 
-            is_base_unit: false,
-            conversion_factor: 0.02,
-            min_sellable_quantity: 1
-          },
-          { 
-            id: '0.25kg', 
-            unit_name: '0.25kg',
-            unit_label: '0.25kg', 
-            price: (item.unit_price || 0) * 0.005, 
-            is_base_unit: false,
-            conversion_factor: 0.005,
-            min_sellable_quantity: 0.25
-          }
-        ];
+        // Filter and sort sellable units from product_units table
+        const sellableUnits = (item.product_units || [])
+          .filter((unit: any) => unit.is_sellable)
+          .sort((a: any, b: any) => {
+            return parseFloat(b.conversion_factor) - parseFloat(a.conversion_factor);
+          });
+        
+        // Find base unit or default to first sellable unit
+        const defaultUnit = sellableUnits.find((u: any) => u.is_base_unit) || sellableUnits[0];
         
         return {
           id: item.id,
@@ -378,15 +363,27 @@ const CashierScreen: React.FC = () => {
             category_id: item.category_id,
             is_active: item.is_active
           },
-          // Add mock units for the grouped card design
-          availableUnits: mockUnits.map(unit => ({
+          // Store ALL units with the product from database
+          units: sellableUnits.map((unit: any) => ({
             id: unit.id,
-            label: unit.unit_label,
-            price: unit.price,
-            isBase: unit.is_base_unit
+            unit_name: unit.unit_name,
+            unit_label: unit.unit_label,
+            price: unit.price_per_unit,
+            is_base_unit: unit.is_base_unit,
+            conversion_factor: unit.conversion_factor,
+            min_sellable_quantity: unit.min_sellable_quantity
           })),
-          units: mockUnits,
-          selectedUnit: mockUnits[0] // Default to 50kg
+          // Default selected unit
+          selectedUnit: defaultUnit ? {
+            id: defaultUnit.id,
+            unit_name: defaultUnit.unit_name,
+            unit_label: defaultUnit.unit_label,
+            price: defaultUnit.price_per_unit,
+            is_base_unit: defaultUnit.is_base_unit,
+            conversion_factor: defaultUnit.conversion_factor,
+            min_sellable_quantity: defaultUnit.min_sellable_quantity ?? 1, // 👈 add this
+            minimum_stock: defaultUnit.minimum_stock ?? 0
+          } : null
         };
       }) || [];
 
@@ -430,154 +427,49 @@ const CashierScreen: React.FC = () => {
 
   const getCurrentPrice = (product: ProductVariant) => {
     const selectedUnit = getSelectedUnit(product);
-    const isBaseUnit = selectedUnit?.is_base_unit || selectedUnit?.isBase;
     
-    if (isBaseUnit) {
-      // Base unit uses its fixed price
-      return selectedUnit?.price || product.price;
-    } else {
-      // Sub-units calculate price based on selected unit's conversion factor
-      const units = product.units || (product as any).availableUnits || [];
-      const smallestUnit = units.reduce((smallest: any, unit: any) => {
-        if (!smallest || unit.conversion_factor < smallest.conversion_factor) {
-          return unit;
-        }
-        return smallest;
-      });
-      
-      if (smallestUnit && selectedUnit) {
-        const pricePerKg = smallestUnit.price / smallestUnit.conversion_factor;
-        return pricePerKg * selectedUnit.conversion_factor;
-      }
-      
-      return selectedUnit?.price || product.price;
-    }
+    // Return the exact price from the database (price_per_unit)
+    // No calculations needed - the database already has the correct price for each unit
+    return selectedUnit?.price || product.price;
   };
 
-  // Enhanced unit selection with tiered pricing system
+  // Get units directly from database (product_units table) - NO hardcoded units
   const generateDynamicUnits = (product: ProductVariant) => {
-    const units = product.units || (product as any).availableUnits || [];
+    // Get units from product.units (which comes from product_units table)
+    const units = product.units || [];
+    
+    // Return empty array if no units available
     if (units.length === 0) return [];
 
-    // Find the minimum sellable quantity from all units
-    const minSellableQuantity = Math.min(
-      ...units.map((unit: any) => unit.min_sellable_quantity || 0.25)
-    );
-
-    // Find the base unit (is_base_unit = true) and smallest unit for calculations
-    const baseUnit = units.find((u: any) => u.is_base_unit);
-    const smallestUnit = units.reduce((smallest: any, unit: any) => {
-      if (!smallest || unit.conversion_factor < smallest.conversion_factor) {
-        return unit;
-      }
-      return smallest;
+    // Filter only sellable units (is_sellable = true)
+    // This should already be filtered in the query, but we double-check here
+    const sellableUnits = units.filter((unit: any) => unit.is_sellable !== false);
+    
+    // Sort by conversion_factor descending (largest first: Sack, then Kg, etc.)
+    return sellableUnits.sort((a: any, b: any) => {
+      const aFactor = parseFloat(a.conversion_factor || 0);
+      const bFactor = parseFloat(b.conversion_factor || 0);
+      return bFactor - aFactor;
     });
-
-    // Generate practical unit options based on min sellable quantity
-    const baseUnits = [50, 25, 10, 5, 1, 0.5, 0.25]; // Common selling units
-    const availableUnits = baseUnits.filter(unit => unit >= minSellableQuantity);
-
-    // Create dynamic unit options with tiered pricing
-    const dynamicUnits = availableUnits.map(unit => {
-      let unitPrice = 0;
-      let pricingMethod = '';
-
-      if (baseUnit && unit >= baseUnit.conversion_factor) {
-        // For units >= base unit: use base unit pricing
-        unitPrice = baseUnit.price;
-        pricingMethod = 'base_unit';
-      } else if (smallestUnit) {
-        // For units < base unit: use smallest unit pricing
-        unitPrice = (smallestUnit.price / smallestUnit.conversion_factor) * unit;
-        pricingMethod = 'smallest_unit';
-      } else {
-        // Fallback to original calculation
-        unitPrice = (baseUnit?.price || 0) / (baseUnit?.conversion_factor || 1) * unit;
-        pricingMethod = 'fallback';
-      }
-      
-      // Format display label
-      let displayLabel = '';
-      if (unit >= 1) {
-        displayLabel = `${unit}kg`;
-      } else if (unit === 0.5) {
-        displayLabel = '1/2';
-      } else if (unit === 0.25) {
-        displayLabel = '1/4';
-      } else {
-        displayLabel = `${unit}kg`;
-      }
-
-      return {
-        id: `dynamic_${unit}`,
-        unit_name: `${unit}kg`,
-        unit_label: displayLabel,
-        price: unitPrice,
-        conversion_factor: unit,
-        min_sellable_quantity: minSellableQuantity,
-        is_dynamic: true,
-        pricing_method: pricingMethod,
-        base_unit_id: baseUnit?.id,
-        smallest_unit_id: smallestUnit?.id
-      };
-    });
-
-    // Add original units if they're not already covered
-    const originalUnits = units.map((unit: any) => ({
-      ...unit,
-      is_dynamic: false,
-      pricing_method: unit.is_base_unit ? 'base_unit' : 'smallest_unit'
-    }));
-
-    // Combine and deduplicate by conversion_factor
-    const allUnits = [...originalUnits, ...dynamicUnits];
-    const uniqueUnits = allUnits.reduce((acc: any[], unit: any) => {
-      const existing = acc.find(u => Math.abs(u.conversion_factor - unit.conversion_factor) < 0.01);
-      if (!existing) {
-        acc.push(unit);
-      }
-      return acc;
-    }, []);
-
-    // Sort by conversion_factor descending (largest first)
-    return uniqueUnits.sort((a: any, b: any) => b.conversion_factor - a.conversion_factor);
   };
 
 
   const addToCart = (product: ProductVariant) => {
     const selectedUnit = getSelectedUnit(product);
-    const currentPrice = getCurrentPrice(product);
+    const currentPrice = getCurrentPrice(product); // This is the exact price_per_unit from database
     
-    // Check if this is a base unit or sub-unit
-    const isBaseUnit = selectedUnit?.is_base_unit || selectedUnit?.isBase;
-    const unitQuantity = isBaseUnit ? 1 : (selectedUnit?.conversion_factor || 1);
+    // Use the minimum sellable quantity from the selected unit or default to 1
+    const minQuantity = parseFloat((selectedUnit as any)?.min_sellable_quantity || '1');
     
-    // Calculate the correct unit price for display
-    let displayUnitPrice = currentPrice;
-    if (!isBaseUnit) {
-      // For sub-units, use per-kg pricing for display
-      const units = product.units || (product as any).availableUnits || [];
-      const smallestUnit = units.reduce((smallest: any, unit: any) => {
-        if (!smallest || unit.conversion_factor < smallest.conversion_factor) {
-          return unit;
-        }
-        return smallest;
-      });
-      
-      if (smallestUnit) {
-        displayUnitPrice = smallestUnit.price / smallestUnit.conversion_factor;
-      }
-    }
-    
-    // Find existing item for the same product AND same unit type (base/sub)
+    // Find existing item with the same product AND same unit
     const existingItem = cart.find(item => 
       item.product.id === product.id && 
-      item.isBaseUnit === isBaseUnit
+      item.selectedUnit?.id === selectedUnit?.id
     );
     
     if (existingItem) {
-      // Merge with existing item of the same type
-      const newQuantity = existingItem.quantity + unitQuantity;
+      // Add minimum quantity to existing item
+      const newQuantity = existingItem.quantity + minQuantity;
       
       setCart(cart.map(item =>
         item.id === existingItem.id
@@ -589,52 +481,61 @@ const CashierScreen: React.FC = () => {
           : item
       ));
     } else {
-      // Create new item with unit type information
+      // Create new cart item with the selected unit and its price
       const newItem: CartItem = {
-        id: `${product.id}-${isBaseUnit ? 'base' : 'sub'}-${Date.now()}`,
+        id: `${product.id}-${selectedUnit?.id}-${Date.now()}`,
         product: {
           ...product,
-          price: currentPrice,
-          unit_of_measure: selectedUnit?.unit_label || selectedUnit?.label || product.unit_of_measure
+          price: currentPrice || 0,
+          unit_of_measure: selectedUnit?.unit_label || product.unit_of_measure
         },
-        quantity: unitQuantity,
-        unitPrice: displayUnitPrice, // Use per-kg price for sub-units
+        quantity: minQuantity,
+        unitPrice: currentPrice || 0, // Use the exact price_per_unit from database
         discount: 0,
-        lineTotal: displayUnitPrice * unitQuantity, // Use per-kg price * quantity for line total
-        selectedUnit: selectedUnit,
-        isBaseUnit: isBaseUnit // Add unit type flag
+        lineTotal: (currentPrice || 0) * minQuantity,
+        selectedUnit: {
+          ...selectedUnit!,
+          conversion_factor: (selectedUnit as any)?.conversion_factor || 1
+        },
+        isBaseUnit: selectedUnit?.is_base_unit || false
       };
       
       setCart([...cart, newItem]);
     }
   };
 
-  const updateQuantity = (itemId: string, newQuantity: number) => {
-    if (newQuantity <= 0) {
-      removeFromCart(itemId);
-    } else {
-      setCart(cart.map(item => {
-        if (item.id === itemId) {
-          // Calculate correct line total based on unit type
-          let lineTotal;
-          if (item.isBaseUnit) {
-            // Base units: quantity * unit price
-            lineTotal = newQuantity * item.unitPrice;
-          } else {
-            // Sub-units: quantity * unit price (per kg)
-            lineTotal = newQuantity * item.unitPrice;
+      const updateQuantity = async (itemId: string, newQuantity: number) => {
+      setCart((prevCart) =>
+        prevCart.map((item) => {
+          if (item.id === itemId) {
+            const { selectedUnit } = item;
+            const isBaseUnit = selectedUnit?.is_base_unit;
+            const minQty = selectedUnit?.min_sellable_quantity ?? 0.01;
+
+            let validQuantity = newQuantity;
+
+            if (isBaseUnit) {
+              validQuantity = Math.floor(newQuantity); // whole numbers only
+            } else {
+              const multiplier = Math.round(validQuantity / minQty);
+              validQuantity = parseFloat((multiplier * minQty).toFixed(2));
+            }
+
+            if (validQuantity <= 0) return null;
+
+            const lineTotal = validQuantity * item.unitPrice;
+
+            return {
+              ...item,
+              quantity: validQuantity,
+              lineTotal: lineTotal - (item.discount || 0),
+            };
           }
-          
-          return { 
-            ...item, 
-            quantity: newQuantity,
-            lineTotal: lineTotal - item.discount
-          };
-        }
-        return item;
-      }));
-    }
-  };
+          return item;
+        }).filter(Boolean) as CartItem[]
+      );
+    };
+
 
   const removeFromCart = (itemId: string) => {
     setCart(cart.filter(item => item.id !== itemId));
@@ -700,14 +601,11 @@ const CashierScreen: React.FC = () => {
           product_name: item.product.name,
           product_sku: item.product.sku,
           quantity: item.quantity,
-          unit_of_measure: item.isBaseUnit 
-            ? (item.selectedUnit?.unit_label || item.product.unit_of_measure)
-            : 'kg',
+          unit_of_measure: item.selectedUnit?.unit_label || item.product.unit_of_measure,
           unit_price: item.unitPrice,
           discount_amount: item.discount || 0,
           discount_percentage: item.discount > 0 ? (item.discount / item.lineTotal) * 100 : 0,
           line_total: item.lineTotal,
-          weight_kg: item.isBaseUnit ? undefined : item.quantity,
           expiry_date: item.product.expiry_date,
           batch_number: item.product.batch_number
         })),
@@ -869,14 +767,11 @@ const CashierScreen: React.FC = () => {
           <div className="flex flex-col items-end space-y-2 flex-shrink-0">
             <div className="text-right">
               <div className="text-lg font-bold text-emerald-600">
-                ₱{currentPrice.toFixed(2)}
+                ₱{(currentPrice || 0).toFixed(2)}
               </div>
               {selectedUnit && (
                 <div className="text-xs text-gray-500">
-                  per {selectedUnit.unit_label || selectedUnit.label}
-                  {selectedUnit.is_dynamic && (
-                    <span className="text-emerald-600 ml-1">•</span>
-                  )}
+                  per {selectedUnit.unit_label}
                 </div>
               )}
             </div>
@@ -968,14 +863,11 @@ const CashierScreen: React.FC = () => {
           <div className="flex items-center justify-between mb-3">
             <div>
               <span className="text-lg font-bold text-emerald-600">
-                ₱{currentPrice.toFixed(2)}
+                ₱{(currentPrice || 0).toFixed(2)}
               </span>
               {selectedUnit && (
                 <div className="text-xs text-gray-500">
-                  per {selectedUnit.unit_label || selectedUnit.label}
-                  {selectedUnit.is_dynamic && (
-                    <span className="text-emerald-600 ml-1">•</span>
-                  )}
+                  per {selectedUnit.unit_label}
                 </div>
               )}
             </div>
@@ -1057,14 +949,14 @@ const CashierScreen: React.FC = () => {
               </div>
             )}
             
-            <TouchButton
+            {/* <TouchButton
               onClick={() => barcodeInputRef.current?.focus()}
               variant="outline"
               icon={Barcode}
               className="px-6"
             >
               Scan
-            </TouchButton>
+            </TouchButton> */}
           </div>
         </div>
       </div>
@@ -1201,15 +1093,16 @@ const CashierScreen: React.FC = () => {
                       <label className="text-xs text-gray-500">Qty:</label>
                       <input
                         type="number"
-                        min="0.01"
-                        step="0.01"
+                        min={item.selectedUnit?.is_base_unit ? 1 : item.selectedUnit?.min_sellable_quantity ?? 0.01}
+                        step={item.selectedUnit?.is_base_unit ? 1 : item.selectedUnit?.min_sellable_quantity ?? 0.01}
                         value={item.quantity}
                         onChange={(e) => {
-                          const newQuantity = parseFloat(e.target.value) || 0.01;
+                          let newQuantity = parseFloat(e.target.value) || 0;
                           updateQuantity(item.id, newQuantity);
                         }}
                         className="w-16 px-2 py-1 text-sm border border-gray-300 rounded text-center focus:ring-2 focus:ring-green-500 focus:border-transparent"
                       />
+
                       <span className="text-xs text-gray-500">
                         {item.isBaseUnit ? (item.selectedUnit?.unit_label || 'unit') : 'kg'}
                       </span>
@@ -1348,28 +1241,26 @@ const CashierScreen: React.FC = () => {
                     
                     <div className="flex justify-between items-center mb-2">
                       <div className="text-sm text-gray-600">
-                        {(() => {
-                          if (item.isBaseUnit) {
-                            // Base unit pricing
-                            return `₱${item.unitPrice.toFixed(2)} per ${item.selectedUnit?.unit_label || 'unit'}`;
-                          } else {
-                            // Sub-unit pricing (per kg)
-                            return `₱${item.unitPrice.toFixed(2)} per 1kg`;
-                          }
-                        })()}
+                        ₱{item.unitPrice.toFixed(2)} per {item.selectedUnit?.unit_label || 'unit'}
                       </div>
                       <div className="quantity-control">
                         <button
-                          onClick={() => updateQuantity(item.id, Math.max(0.01, item.quantity - 0.01))}
+                          onClick={() => {
+                            const minQty = parseFloat((item.selectedUnit as any)?.min_sellable_quantity || '0.01');
+                            updateQuantity(item.id, Math.max(minQty, item.quantity - minQty));
+                          }}
                           className="quantity-btn"
                         >
                           <Minus className="w-4 h-4" />
                         </button>
                         <span className="quantity-display">
-                          {item.quantity}{item.isBaseUnit ? (item.selectedUnit?.unit_label || 'unit') : 'kg'}
+                          {item.quantity} {item.selectedUnit?.unit_label || 'unit'}
                         </span>
                         <button
-                          onClick={() => updateQuantity(item.id, item.quantity + 0.01)}
+                          onClick={() => {
+                            const minQty = parseFloat((item.selectedUnit as any)?.min_sellable_quantity || '0.01');
+                            updateQuantity(item.id, item.quantity + minQty);
+                          }}
                           className="quantity-btn"
                         >
                           <Plus className="w-4 h-4" />

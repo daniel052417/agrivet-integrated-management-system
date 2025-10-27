@@ -50,6 +50,7 @@ type BranchPerformance = {
   rank: number;
   color: string;
   status: 'excellent' | 'good' | 'average' | 'needs_attention';
+  performanceScore: number;
 };
 
 const COLORS = ['bg-blue-500', 'bg-green-500', 'bg-orange-500', 'bg-purple-500', 'bg-red-500', 'bg-teal-500'];
@@ -183,7 +184,8 @@ const BranchPerformance: React.FC = () => {
         efficiency: 0,
         rank: 0,
         color: COLORS[index % COLORS.length],
-        status: 'average'
+        status: 'average',
+        performanceScore: 0
       });
     });
 
@@ -196,23 +198,26 @@ const BranchPerformance: React.FC = () => {
     });
 
     // Calculate sales metrics
-    const customerSet = new Set<string>();
+    const uniqueCustomers = new Map<string, Set<string>>();
     transactions.forEach(tx => {
       const branch = performance.get(tx.branch_id);
       if (branch) {
         branch.sales += tx.total_amount || 0;
         branch.orders += 1;
         if (tx.customer_id) {
-          customerSet.add(tx.customer_id);
+          if (!uniqueCustomers.has(tx.branch_id)) {
+            uniqueCustomers.set(tx.branch_id, new Set());
+          }
+          uniqueCustomers.get(tx.branch_id)!.add(tx.customer_id);
         }
       }
     });
 
-    // Calculate customers per branch
-    transactions.forEach(tx => {
-      const branch = performance.get(tx.branch_id);
-      if (branch && tx.customer_id) {
-        branch.customers += 1;
+    // Set unique customer counts per branch
+    uniqueCustomers.forEach((customerSet, branchId) => {
+      const branch = performance.get(branchId);
+      if (branch) {
+        branch.customers = customerSet.size;
       }
     });
 
@@ -223,21 +228,59 @@ const BranchPerformance: React.FC = () => {
       }
     });
 
-    // Calculate growth (mock calculation - in real app, compare with previous period)
+    // Calculate growth (comparing current period average with overall average)
+    const allBranchTotals = Array.from(performance.values());
+    const avgSalesPerBranch = allBranchTotals.reduce((sum, b) => sum + b.sales, 0) / allBranchTotals.length;
+    
     performance.forEach(branch => {
-      branch.growth = Math.random() * 40 - 20; // Random growth between -20% and +20%
+      if (avgSalesPerBranch > 0) {
+        branch.growth = ((branch.sales - avgSalesPerBranch) / avgSalesPerBranch) * 100;
+      } else {
+        branch.growth = 0;
+      }
     });
 
-    // Rank branches by sales
+    // Calculate performance score based on multiple metrics
+    const maxSales = Math.max(...allBranchTotals.map(b => b.sales), 1);
+    const maxOrders = Math.max(...allBranchTotals.map(b => b.orders), 1);
+    const maxCustomers = Math.max(...allBranchTotals.map(b => b.customers), 1);
+    const maxEfficiency = Math.max(...allBranchTotals.map(b => b.efficiency), 1);
+
+    performance.forEach(branch => {
+      // Weighted performance score: 40% sales, 25% orders, 20% customers, 15% efficiency
+      const salesScore = (branch.sales / maxSales) * 40;
+      const ordersScore = (branch.orders / maxOrders) * 25;
+      const customersScore = (branch.customers / maxCustomers) * 20;
+      const efficiencyScore = (branch.efficiency / maxEfficiency) * 15;
+      
+      branch.performanceScore = salesScore + ordersScore + customersScore + efficiencyScore;
+    });
+
+    // Sort by performance score and assign status
     const sortedBranches = Array.from(performance.values())
-      .sort((a, b) => b.sales - a.sales)
-      .map((branch, index) => ({
-        ...branch,
-        rank: index + 1,
-        status: index === 0 ? 'excellent' : 
-                index < 2 ? 'good' : 
-                index < 4 ? 'average' : 'needs_attention'
-      }));
+      .sort((a, b) => b.performanceScore - a.performanceScore)
+      .map((branch, index) => {
+        const totalBranches = performance.size;
+        const percentile = (totalBranches - index) / totalBranches;
+        
+        // Determine status based on performance score and percentile
+        let status: 'excellent' | 'good' | 'average' | 'needs_attention';
+        if (branch.performanceScore >= 70 && percentile >= 0.75) {
+          status = 'excellent';
+        } else if (branch.performanceScore >= 50 && percentile >= 0.5) {
+          status = 'good';
+        } else if (branch.performanceScore >= 25 && percentile >= 0.25) {
+          status = 'average';
+        } else {
+          status = 'needs_attention';
+        }
+        
+        return {
+          ...branch,
+          rank: index + 1,
+          status
+        };
+      });
 
     return sortedBranches;
   }, [branches, transactions, staff]);
@@ -405,10 +448,14 @@ const BranchPerformance: React.FC = () => {
                 <div className="flex items-center space-x-4">
                   <div className="flex items-center space-x-1">
                     <DollarSign className="w-3 h-3" />
-                    <span>₱{formatCurrencyPHP(branch.efficiency)}/staff</span>
+                    <span>{formatCurrencyPHP(branch.efficiency)}/staff</span>
                   </div>
                   <div className="flex items-center space-x-1">
-                    <TrendingUp className="w-3 h-3" />
+                    {branch.growth >= 0 ? (
+                      <TrendingUp className="w-3 h-3 text-green-600" />
+                    ) : (
+                      <TrendingDown className="w-3 h-3 text-red-600" />
+                    )}
                     <span className={branch.growth >= 0 ? 'text-green-600' : 'text-red-600'}>
                       {branch.growth >= 0 ? '+' : ''}{branch.growth.toFixed(1)}%
                     </span>

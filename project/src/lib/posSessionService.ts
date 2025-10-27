@@ -85,6 +85,52 @@ class POSSessionService {
   }
 
   /**
+   * Update an existing POS session
+   * NEW METHOD - For updating starting_cash and other fields
+   */
+  async updateSession(
+    sessionId: string,
+    updates: {
+      starting_cash?: number;
+      ending_cash?: number;
+      status?: 'open' | 'closed';
+      closed_at?: string;
+      closed_by?: string;
+      notes?: string;
+      total_sales?: number;
+      total_transactions?: number;
+      total_discounts?: number;
+      total_returns?: number;
+      total_taxes?: number;
+    }
+  ): Promise<POSSession> {
+    try {
+      console.log('🔄 [POS Session] Updating session:', sessionId, updates);
+
+      const { data, error } = await supabase
+        .from('pos_sessions')
+        .update({
+          ...updates,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', sessionId)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('❌ [POS Session] Error updating session:', error);
+        throw new Error(`Failed to update POS session: ${error.message}`);
+      }
+
+      console.log('✅ [POS Session] Session updated successfully:', data);
+      return data;
+    } catch (error) {
+      console.error('❌ [POS Session] Error in updateSession:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Get an open session for a specific cashier
    */
   async getOpenSessionByCashier(cashierId: string): Promise<POSSession | null> {

@@ -39,6 +39,14 @@ class PaymentService {
   }
 
   /**
+   * Initialize Supabase client (helper method)
+   */
+  private async initSupabase(): Promise<void> {
+    // Wait a bit for Supabase to initialize
+    await new Promise(resolve => setTimeout(resolve, 100))
+  }
+
+  /**
    * Get all available payment methods
    */
   async getPaymentMethods(): Promise<{ success: boolean; methods?: PaymentMethod[]; error?: string }> {
@@ -416,6 +424,137 @@ class PaymentService {
         error: error instanceof Error ? error.message : 'Unknown error'
       }
     }
+  }
+
+  /**
+   * Process GCash payment (staff verification)
+   * This is called when staff verifies a GCash payment in the POS
+   */
+  async processGCashPayment(
+    orderId: string, 
+    amount: number, 
+    referenceNumber: string,
+    processedBy: string
+  ): Promise<CreatePaymentResponse> {
+    try {
+      // Wait for Supabase client to be initialized
+      if (!supabase) {
+        await this.initSupabase()
+      }
+
+      if (!supabase) {
+        throw new Error('Supabase client not initialized')
+      }
+
+      console.log('💳 Processing GCash payment verification...')
+      console.log('Order ID:', orderId)
+      console.log('Reference Number:', referenceNumber)
+      console.log('Amount:', amount)
+
+      // Get GCash payment method
+      const { data: gcashMethod, error: methodError } = await supabase
+        .from('payment_methods')
+        .select('*')
+        .eq('type', 'gcash')
+        .eq('is_active', true)
+        .single()
+
+      if (methodError) {
+        console.error('❌ GCash payment method not found:', methodError)
+        throw new Error(`GCash payment method not found: ${methodError.message}`)
+      }
+
+      console.log('✅ Found GCash payment method:', gcashMethod.id)
+
+      // Calculate processing fee (usually 0 for GCash P2P)
+      const processingFee = amount * (gcashMethod.processing_fee || 0)
+
+      // Create payment record
+      const paymentData = {
+        order_id: orderId,
+        payment_method_id: gcashMethod.id,
+        amount,
+        reference_number: referenceNumber,
+        status: 'completed', // GCash payment is completed after verification
+        processing_fee: processingFee,
+        notes: `GCash payment verified by staff. Reference: ${referenceNumber}`,
+        processed_by: processedBy,
+        completed_at: new Date().toISOString(),
+        created_at: new Date().toISOString()
+      }
+
+      console.log('📝 Creating payment record...')
+
+      const { data: payment, error: paymentError } = await supabase
+        .from('payments')
+        .insert(paymentData)
+        .select(`
+          *,
+          payment_method:payment_methods(*)
+        `)
+        .single()
+
+      if (paymentError) {
+        console.error('❌ Failed to create payment:', paymentError)
+        throw new Error(`Failed to create GCash payment: ${paymentError.message}`)
+      }
+
+      console.log('✅ Payment record created:', payment.id)
+
+      // Create payment transaction record for audit trail
+      const transactionData = {
+        order_id: orderId,
+        transaction_id: referenceNumber,
+        payment_method: 'gcash',
+        payment_gateway: 'GCash',
+        amount,
+        currency: 'PHP',
+        processing_fee: processingFee,
+        status: 'completed',
+        reference_number: referenceNumber,
+        gateway_response: {
+          verified_by: processedBy,
+          verified_at: new Date().toISOString(),
+          verification_method: 'manual'
+        },
+        created_at: new Date().toISOString()
+      }
+
+      console.log('📝 Creating transaction record...')
+
+      const { error: transactionError } = await supabase
+        .from('payment_transactions')
+        .insert(transactionData)
+
+      if (transactionError) {
+        console.warn('⚠️ Failed to create transaction record:', transactionError)
+        // Non-critical, continue
+      } else {
+        console.log('✅ Transaction record created')
+      }
+
+      return {
+        success: true,
+        payment,
+        paymentId: payment.id
+      }
+
+    } catch (error) {
+      console.error('❌ Error processing GCash payment:', error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }
+    }
+  }
+
+  /**
+   * Verify GCash reference number format
+   */
+  verifyGCashReference(referenceNumber: string): boolean {
+    // GCash reference numbers are typically 13 digits
+    const gcashPattern = /^\d{13}$/
+    return gcashPattern.test(referenceNumber.trim())
   }
 
   /**

@@ -46,6 +46,7 @@ export interface Product {
   updated_at: string
   barcode: string | null
   supplier_id: string | null
+  image_url: string | null  // Add this line
   // Joined data
   categories?: Category
   suppliers?: Supplier

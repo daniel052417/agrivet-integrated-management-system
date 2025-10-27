@@ -6,7 +6,7 @@ import { CustomUser } from '../../lib/customAuth';
 // Import all admin components for super admin access
 import Overview from '../dashboard/Overview';
 import AllSalesRecords from '../sales/AllSalesRecords';
-import SalesDashboard from '../sales/SalesDashboard';
+import SalesDashboard from '../sales/SalesMonitoring';
 import DailySalesSummary from '../sales/DailySalesSummary';
 import ProductSalesReport from '../sales/ProductSalesReport';
 import InventoryManagement from '../inventory/InventoryManagement';
@@ -26,6 +26,8 @@ import ReportsAnalytics from '../reports/ReportsAnalytics';
 import SettingsPage from '../settings/SettingsPage';
 import LowStockAlerts from '../inventory/LowStockAlerts';
 import Categories from '../inventory/Categories';
+import Supplier from '../inventory/Supplier';
+import Brands from '../inventory/Brands';
 // import ActiveUsers from '../users/ActiveUsers';
 import UserAccounts from '../users/UserAccounts';
 import UserActivity from '../users/UserActivity';
@@ -54,7 +56,7 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, onLogou
         return <Overview />;
       case 'sales-records':
         return <AllSalesRecords />;
-      case 'sales-dashboard':
+      case 'sales-monitoring':
         return <SalesDashboard />;
       case 'daily-sales':
         return <DailySalesSummary />;
@@ -72,6 +74,10 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, onLogou
         return <InventoryManagement />;
       case 'low-stock':
         return <LowStockAlerts />;
+      case 'suppliers':
+        return <Supplier />;
+      case 'brands':
+        return <Brands />;
       
       // Staff & User Management Section
       case 'staff-user-management':

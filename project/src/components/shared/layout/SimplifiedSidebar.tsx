@@ -5,7 +5,7 @@ import {
   Megaphone, Calendar, DollarSign,
   Archive, Warehouse, ChevronDown,
   Menu, X, LogOut, UserCheck,
-  Clock, Tag, Target, Star, Gift
+  Clock, Tag, Target, Star, Gift, Building
 } from 'lucide-react';
 import logo from '../../../assets/logo.png';
 import { CustomUser } from '../../../lib/customAuth';
@@ -99,6 +99,8 @@ const SimplifiedSidebar: React.FC<SimplifiedSidebarProps> = ({ user, activeSecti
       children: [
         { id: 'all-products', label: 'All Products', icon: Archive, category: 'Inventory' },
         { id: 'categories', label: 'Categories', icon: Package, category: 'Inventory' },
+        { id: 'brands', label: 'Brands', icon: Tag, category: 'Inventory' },
+        { id: 'suppliers', label: 'Suppliers', icon: Building, category: 'Inventory' },
         { id: 'low-stock', label: 'Low Stock Alerts', icon: AlertTriangle, category: 'Inventory' },
       ]
     },
@@ -110,7 +112,7 @@ const SimplifiedSidebar: React.FC<SimplifiedSidebarProps> = ({ user, activeSecti
       category: 'Sales',
       children: [
         { id: 'sales-records', label: 'All Sales Records', icon: BarChart3, category: 'Sales' },
-        { id: 'sales-dashboard', label: 'Sales Dashboard', icon: TrendingUp, category: 'Sales' },
+        { id: 'sales-monitoring', label: 'Sales Monitoring', icon: TrendingUp, category: 'Sales' },
         { id: 'daily-sales', label: 'Daily Sales Summary', icon: Calendar, category: 'Sales' },
         { id: 'product-sales', label: 'Product Sales Report', icon: FileText, category: 'Sales' },
       ]

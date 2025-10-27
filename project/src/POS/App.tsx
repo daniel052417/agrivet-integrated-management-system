@@ -6,17 +6,33 @@ import CustomerScreen from './screens/CustomerScreen';
 import UserManagementScreen from './screens/UserManagementScreen';
 import ReportsScreen from './screens/ReportsScreen';
 import OnlineOrdersScreen from './screens/OnlineOrdersScreen';
+import ClosingCashModal from './components/ClosingCashModal';
 import { customAuth, CustomUser } from '../lib/customAuth';
 import { OnlineOrdersService } from './services/onlineOrdersService';
+import { posSessionService } from '../lib/posSessionService';
 
 interface POSAppProps {
   user: CustomUser;
   onLogout?: () => void;
 }
 
+interface SessionSummary {
+  sessionNumber: string;
+  cashierName: string;
+  startTime: string;
+  startingCash: number;
+  totalSales: number;
+  totalTransactions: number;
+  duration: string;
+  expectedCash: number;
+}
+
 const POSApp: React.FC<POSAppProps> = ({ user, onLogout }) => {
   const [currentScreen, setCurrentScreen] = useState('cashier');
   const [onlineOrdersCount, setOnlineOrdersCount] = useState(0);
+  const [showClosingModal, setShowClosingModal] = useState(false);
+  const [sessionSummary, setSessionSummary] = useState<SessionSummary | null>(null);
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
 
   const handleScreenChange = (screen: string) => {
     setCurrentScreen(screen);
@@ -41,22 +57,149 @@ const POSApp: React.FC<POSAppProps> = ({ user, onLogout }) => {
     return () => clearInterval(interval);
   }, []);
 
+  // Get current POS session on mount
+  useEffect(() => {
+    const loadCurrentSession = async () => {
+      try {
+        const session = await posSessionService.getCurrentSession(user.id);
+        if (session) {
+          setCurrentSessionId(session.id);
+        }
+      } catch (error) {
+        console.error('Error loading current session:', error);
+      }
+    };
+
+    loadCurrentSession();
+  }, [user.id]);
+
   const handleOrdersCountUpdate = (count: number) => {
     setOnlineOrdersCount(count);
   };
 
-  const handleLogout = async () => {
+  /**
+   * Calculate session duration in hours and minutes
+   */
+  const calculateDuration = (startTime: string): string => {
+    const start = new Date(startTime);
+    const end = new Date();
+    const diffMs = end.getTime() - start.getTime();
+    
+    const hours = Math.floor(diffMs / (1000 * 60 * 60));
+    const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+    
+    if (hours > 0) {
+      return `${hours}h ${minutes}m`;
+    } else {
+      return `${minutes}m`;
+    }
+  };
+
+  /**
+   * Handle logout button click - show closing cash modal
+   */
+  const handleLogoutClick = async () => {
+    try {
+      // Get current session
+      const session = await posSessionService.getCurrentSession(user.id);
+      
+      if (!session) {
+        // No active session, logout directly
+        await performLogout();
+        return;
+      }
+
+      // Check if session is already closed
+      if (session.status === 'closed') {
+        await performLogout();
+        return;
+      }
+
+      // Calculate session summary
+      const duration = calculateDuration(session.opened_at);
+      const expectedCash = (session.starting_cash || 0) + (session.total_sales || 0);
+
+      const summary: SessionSummary = {
+        sessionNumber: session.session_number,
+        cashierName: `${user.first_name} ${user.last_name}`,
+        startTime: session.opened_at,
+        startingCash: session.starting_cash || 0,
+        totalSales: session.total_sales || 0,
+        totalTransactions: session.total_transactions || 0,
+        duration: duration,
+        expectedCash: expectedCash
+      };
+
+      setSessionSummary(summary);
+      setCurrentSessionId(session.id);
+      setShowClosingModal(true);
+    } catch (error) {
+      console.error('Error preparing logout:', error);
+      // If there's an error, still allow logout
+      const confirmLogout = window.confirm(
+        'Unable to load session data. Do you want to logout anyway?'
+      );
+      if (confirmLogout) {
+        await performLogout();
+      }
+    }
+  };
+
+  /**
+   * Handle closing cash submission
+   */
+  const handleClosingCashSubmit = async (endingCash: number) => {
+    try {
+      if (!currentSessionId) {
+        throw new Error('No active session found');
+      }
+
+      console.log('💰 Closing session with ending cash:', endingCash);
+
+      // Close the POS session
+      await posSessionService.closeSession(
+        currentSessionId,
+        user.id,
+        endingCash,
+        `Session closed by ${user.first_name} ${user.last_name}`
+      );
+
+      console.log('✅ Session closed successfully');
+
+      // Wait a moment for the success screen to show
+      await new Promise(resolve => setTimeout(resolve, 1500));
+
+      // Perform logout
+      await performLogout();
+    } catch (error) {
+      console.error('❌ Error closing session:', error);
+      throw error;
+    }
+  };
+
+  /**
+   * Perform actual logout
+   */
+  const performLogout = async () => {
     try {
       if (onLogout) {
         onLogout();
       } else {
         await customAuth.signOut();
-        // Redirect to login or home page
         window.location.href = '/';
       }
     } catch (error) {
       console.error('Logout error:', error);
+      // Force redirect even if logout fails
+      window.location.href = '/';
     }
+  };
+
+  /**
+   * Handle cancel on closing modal (if closable)
+   */
+  const handleClosingModalCancel = () => {
+    setShowClosingModal(false);
   };
 
   const renderCurrentScreen = () => {
@@ -94,15 +237,28 @@ const POSApp: React.FC<POSAppProps> = ({ user, onLogout }) => {
   }
 
   return (
-    <POSLayout
-      currentScreen={currentScreen}
-      onScreenChange={handleScreenChange}
-      onLogout={handleLogout}
-      user={currentUser}
-      onlineOrdersCount={onlineOrdersCount}
-    >
-      {renderCurrentScreen()}
-    </POSLayout>
+    <>
+      <POSLayout
+        currentScreen={currentScreen}
+        onScreenChange={handleScreenChange}
+        onLogout={handleLogoutClick}
+        user={currentUser}
+        onlineOrdersCount={onlineOrdersCount}
+      >
+        {renderCurrentScreen()}
+      </POSLayout>
+
+      {/* Closing Cash Modal */}
+      {showClosingModal && sessionSummary && (
+        <ClosingCashModal
+          isOpen={showClosingModal}
+          sessionSummary={sessionSummary}
+          onSubmit={handleClosingCashSubmit}
+          onCancel={handleClosingModalCancel}
+          isClosable={true} // Cannot dismiss - must enter ending cash
+        />
+      )}
+    </>
   );
 };
 

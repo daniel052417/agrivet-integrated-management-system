@@ -129,7 +129,7 @@ const Categories: React.FC = () => {
   );
 
   return (
-    <div className="categories-management">
+    <div className="categories-management space-y-6 p-6">
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Product Categories</h1>
           <p className="text-gray-600">Manage product categories and classifications</p>

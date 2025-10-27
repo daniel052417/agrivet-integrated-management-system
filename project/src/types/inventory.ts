@@ -20,10 +20,14 @@ export interface InventoryManagementRow {
   is_active: boolean;
   barcode: string | null;
   brand: string | null;
+  description?: string;
   
   category_id: string;
   category_name: string;
   
+  supplier_id: string;
+  supplier_name?: string;
+
   branch_id: string;
   branch_name: string;
   branch_code: string;
@@ -42,6 +46,7 @@ export interface InventoryManagementRow {
   unit_name: string | null;
   unit_label: string | null;
   price_per_unit: number | null;
+  min_sellable_quantity: number;
   conversion_factor: number | null;
   is_base_unit: boolean | null;
   
@@ -137,6 +142,7 @@ export interface ProductFormData {
   image_url: string;
   barcode?: string;
   brand?: string;
+  enable_multi_unit: boolean; 
 }
 
 export interface UnitFormData {

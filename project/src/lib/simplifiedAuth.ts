@@ -48,7 +48,7 @@ export const ROLE_SIDEBAR_CONFIG = {
     sections: [
       'overview',
       'inventory-management', 'all-products', 'categories', 'low-stock',
-      'sales-pos', 'sales-records', 'sales-dashboard', 'daily-sales', 'product-sales',
+      'sales-pos', 'sales-records', 'sales-monitoring', 'daily-sales', 'product-sales', 'suppliers', 'brands',
       'staff-user-management', 'user-accounts', 'session-history', 'user-roles-overview', 'roles-permissions', 'activity-logs',
       'hr', 'hr-dashboard', 'staff', 'attendance-dashboard', 'leave-management', 'hr-analytics', 'payroll',
       'marketing', 'marketing-overview', 'promotions-announcements', 'insights-analytics', 'client-notifications', 'facebook-integration',

@@ -41,10 +41,10 @@ const POSLayout: React.FC<POSLayoutProps> = ({
   const navigationItems = [
     { id: 'cashier', label: 'Cashier', icon: ShoppingCart, color: 'bg-green-500' },
     { id: 'inventory', label: 'Inventory', icon: Package, color: 'bg-blue-500' },
-    { id: 'customers', label: 'Customers', icon: Users, color: 'bg-purple-500' },
+    // { id: 'customers', label: 'Customers', icon: Users, color: 'bg-purple-500' },
     { id: 'online-orders', label: 'Online Orders', icon: ShoppingBag, color: 'bg-emerald-500' },
     { id: 'reports', label: 'Reports', icon: BarChart3, color: 'bg-orange-500' },
-    { id: 'users', label: 'Users', icon: Settings, color: 'bg-gray-500' },
+    // { id: 'users', label: 'Users', icon: Settings, color: 'bg-gray-500' },
   ];
 
   return (
@@ -192,7 +192,7 @@ const POSLayout: React.FC<POSLayoutProps> = ({
             </nav>
 
             {/* Quick Actions */}
-            <div className="p-4 border-t border-gray-200">
+            {/* <div className="p-4 border-t border-gray-200">
               <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
                 Quick Actions
               </h3>
@@ -204,7 +204,7 @@ const POSLayout: React.FC<POSLayoutProps> = ({
                   Quick Stock Check
                 </button>
               </div>
-            </div>
+            </div> */}
           </div>
         </aside>
 

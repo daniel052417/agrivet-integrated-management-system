@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { 
   MapPin, Clock, CheckCircle, AlertCircle, Phone, Users, Truck, Mail, Building,
-  CreditCard, Smartphone, Banknote, Timer
+  CreditCard, Smartphone, Banknote, Timer, ArrowLeft
 } from 'lucide-react'
 import { useBranch } from '../contexts/BranchContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -13,7 +13,6 @@ import LoadingSpinner from '../components/common/LoadingSpinner'
 import ErrorMessage from '../components/common/ErrorMessage'
 import ClosedBranchModal from '../components/modals/ClosedBranchModal'
 import { getNextOpeningTime, isBranchClosed } from '../utils/branchUtils'
-
 
 const BranchSelection: React.FC = () => {
   const navigate = useNavigate()
@@ -40,17 +39,14 @@ const BranchSelection: React.FC = () => {
       setIsLoading(true)
       setError(null)
       
-      // Use real Supabase data - get branches directly from service
       console.log('🔄 BranchSelection: Calling branchService.getBranches()...')
       const branches = await branchService.getBranches()
       console.log('📊 BranchSelection: Branches received from service:', branches)
       console.log('📊 BranchSelection: Number of branches:', branches.length)
       
-      // Also refresh context for other components
       console.log('🔄 BranchSelection: Calling refreshBranches()...')
       await refreshBranches()
       
-      // Use the branches from service directly
       if (branches.length > 0) {
         console.log('✅ BranchSelection: Using real database data')
         setBranches(branches)
@@ -73,18 +69,7 @@ const BranchSelection: React.FC = () => {
 
   const handleBranchSelect = async (branch: Branch) => {
     console.log('🎯 BranchSelection: Branch selected:', branch)
-    console.log('🎯 BranchSelection: Branch details:', {
-      id: branch.id,
-      name: branch.name,
-      code: branch.code,
-      address: branch.address,
-      city: branch.city,
-      province: branch.province,
-      branch_type: branch.branch_type,
-      is_active: branch.is_active
-    })
     
-    // Check if branch is closed
     if (isBranchClosed(branch)) {
       console.log('🚫 BranchSelection: Branch is closed, showing modal')
       setSelectedClosedBranch(branch)
@@ -92,7 +77,6 @@ const BranchSelection: React.FC = () => {
       return
     }
     
-    // Save preferred branch for authenticated users
     if (isAuthenticated && user) {
       try {
         const { error } = await supabase
@@ -119,14 +103,12 @@ const BranchSelection: React.FC = () => {
 
   const handleSetReminder = () => {
     console.log('⏰ BranchSelection: Set reminder clicked')
-    // TODO: Implement reminder functionality
     setShowClosedModal(false)
   }
 
   const handleFindAnotherBranch = () => {
     console.log('🔍 BranchSelection: Find another branch clicked')
     setShowClosedModal(false)
-    // Scroll to top to show all branches
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
@@ -144,14 +126,16 @@ const BranchSelection: React.FC = () => {
     setSelectedClosedBranch(null)
   }
 
+  const handleBackToHome = () => {
+    window.location.href = 'http://localhost:3000'
+  }
+
   const getSmartBranchStatus = (branch: Branch) => {
     console.log('🕐 BranchSelection: Checking smart status for branch:', branch.name)
     
-    // Use real-time status from database if available
     if (branch.real_time_status) {
       console.log('🕐 BranchSelection: Using database real-time status:', branch.real_time_status)
       
-      // Map database status to UI status
       if (branch.real_time_status.includes('Open')) {
         return {
           status: 'open',
@@ -200,7 +184,6 @@ const BranchSelection: React.FC = () => {
       }
     }
     
-    // Fallback to client-side logic if no database status
     if (!branch.operating_hours) {
       return {
         status: 'unknown',
@@ -213,21 +196,18 @@ const BranchSelection: React.FC = () => {
     }
 
     const now = new Date()
-    const currentDay = now.getDay() // 0 = Sunday, 1 = Monday, etc.
+    const currentDay = now.getDay()
     const currentTime = now.toLocaleTimeString('en-US', { 
       hour12: false, 
       hour: '2-digit', 
       minute: '2-digit' 
     })
 
-    // Get today's day name
     const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
     const todayName = dayNames[currentDay]
     
-    // Find today's operating hours from JSONB
     const todayHours = branch.operating_hours[todayName as keyof typeof branch.operating_hours]
     
-    // Check if the day is closed
     if (!todayHours || 'closed' in todayHours) {
       return {
         status: 'closed',
@@ -253,9 +233,7 @@ const BranchSelection: React.FC = () => {
       }
     }
     
-    // Check if currently open
     if (currentTime >= openTime && currentTime <= closeTime) {
-      // Check if closing soon (within 30 minutes)
       const closeTimeMinutes = timeToMinutes(closeTime)
       const currentTimeMinutes = timeToMinutes(currentTime)
       const timeUntilClose = closeTimeMinutes - currentTimeMinutes
@@ -280,7 +258,6 @@ const BranchSelection: React.FC = () => {
         borderColor: 'border-green-200'
       }
     } else {
-      // Check if opening soon (within 2 hours)
       const openTimeMinutes = timeToMinutes(openTime)
       const currentTimeMinutes = timeToMinutes(currentTime)
       const timeUntilOpen = openTimeMinutes - currentTimeMinutes
@@ -311,15 +288,12 @@ const BranchSelection: React.FC = () => {
     }
   }
 
-  // Helper function to convert time string to minutes
   const timeToMinutes = (timeString: string): number => {
     const [hours, minutes] = timeString.split(':').map(Number)
     return hours * 60 + minutes
   }
 
-
   const getPaymentOptions = (branch: Branch) => {
-    // Use payment options from database if available
     if (branch.payment_options && branch.payment_options.length > 0) {
       return branch.payment_options.map(option => {
         const optionMap: { [key: string]: { icon: any, color: string, bgColor: string } } = {
@@ -339,7 +313,6 @@ const BranchSelection: React.FC = () => {
       })
     }
     
-    // Fallback to default payment options
     return [
       {
         icon: Smartphone,
@@ -387,7 +360,6 @@ const BranchSelection: React.FC = () => {
       return 'Hours not available'
     }
     
-    // Group hours by time ranges from JSONB structure
     const timeGroups: { [key: string]: string[] } = {}
     
     Object.entries(branch.operating_hours).forEach(([day, hours]) => {
@@ -400,13 +372,11 @@ const BranchSelection: React.FC = () => {
       }
     })
     
-    // Format the hours display
     const timeRanges = Object.keys(timeGroups)
     if (timeRanges.length === 0) {
       return 'Hours not available'
     }
     
-    // If all days have the same hours, show simplified format
     if (timeRanges.length === 1) {
       const timeRange = timeRanges[0]
       const days = timeGroups[timeRange]
@@ -420,7 +390,6 @@ const BranchSelection: React.FC = () => {
       }
     }
     
-    // Multiple time ranges - show detailed format
     const detailedHours = timeRanges.map(timeRange => {
       const days = timeGroups[timeRange]
       const [open, close] = timeRange.split('-')
@@ -436,21 +405,22 @@ const BranchSelection: React.FC = () => {
     }
   }
 
-
   if (isLoading) {
-    console.log('⏳ BranchSelection: Rendering loading state')
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <LoadingSpinner message="Loading branches..." size="lg" />
+      <div className="min-h-screen bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-20 h-20 border-4 border-green-200 border-t-green-600 rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-700 font-semibold text-lg">Loading branches...</p>
+          <p className="text-gray-500 text-sm mt-2">Finding the best location for you</p>
+        </div>
       </div>
     )
   }
 
   if (error) {
-    console.log('❌ BranchSelection: Rendering error state:', error)
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
-        <div className="text-center max-w-md">
+      <div className="min-h-screen bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50 flex items-center justify-center px-4">
+        <div className="text-center max-w-md bg-white rounded-2xl shadow-xl p-8">
           <ErrorMessage message={error} />
           <button
             onClick={loadBranches}
@@ -463,16 +433,54 @@ const BranchSelection: React.FC = () => {
     )
   }
 
-
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 py-8">
+    <div className="min-h-screen bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50">
+      {/* Enhanced Header with Branding */}
+      <div className="bg-white/80 backdrop-blur-sm shadow-lg border-b border-green-100 sticky top-0 z-10">
+        <div className="max-w-7xl mx-auto px-4 py-6">
+          <div className="flex items-center justify-between mb-4">
+            {/* Back Button */}
+            <button
+              onClick={handleBackToHome}
+              className="flex items-center space-x-2 text-gray-600 hover:text-green-600 transition-colors group"
+            >
+              <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
+              <span className="font-medium">Back to Home</span>
+            </button>
+
+            {/* Logo/Brand */}
+            {/* <div className="flex items-center space-x-3">
+              <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-lg">
+                <span className="text-2xl">🌾</span>
+              </div>
+              <div>
+                <h1 className="text-xl font-bold text-gray-900">
+                  Tiongson <span className="text-green-600">AgriVet</span>
+                </h1>
+                <p className="text-xs text-gray-500">Your Agricultural Partner</p>
+              </div>
+            </div> */}
+
+            {/* User Info (if authenticated) */}
+            {isAuthenticated && user && (
+              <div className="flex items-center space-x-2 px-4 py-2 bg-green-50 rounded-lg">
+                <div className="w-8 h-8 bg-green-200 rounded-full flex items-center justify-center">
+                  <span className="text-green-700 font-semibold text-sm">
+                    {user.email?.charAt(0).toUpperCase()}
+                  </span>
+                </div>
+                <span className="text-sm font-medium text-gray-700">
+                  {user.email?.split('@')[0]}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Title Section */}
           <div className="text-center">
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">
-              Choose Your Branch
-            </h1>
+            <h2 className="text-3xl font-bold text-gray-900 mb-2">
+              Choose Your <span className="text-transparent bg-clip-text bg-gradient-to-r from-green-500 to-emerald-600">Branch</span>
+            </h2>
             <p className="text-gray-600 text-lg">
               Select the AgriVet branch where you'd like to pick up your order
             </p>
@@ -480,169 +488,183 @@ const BranchSelection: React.FC = () => {
         </div>
       </div>
 
-      {/* Branches Grid */}
-      <div className="max-w-6xl mx-auto px-4 py-12">
-        <div className="mb-8">
-          <h2 className="text-2xl font-bold text-gray-900 text-center mb-2">
-            Available Branches
-          </h2>
-          <p className="text-gray-600 text-center">
-            All branches offer the same quality products and services
-          </p>
-        </div>
+      {/* Main Content with Decorative Background */}
+      <div className="relative">
+        {/* Decorative Elements */}
+        <div className="absolute top-0 left-0 w-72 h-72 bg-green-200 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob"></div>
+        <div className="absolute top-0 right-0 w-72 h-72 bg-emerald-200 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob animation-delay-2000"></div>
+        <div className="absolute bottom-0 left-1/2 w-72 h-72 bg-teal-200 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob animation-delay-4000"></div>
 
-        <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
-          {branches
-            .filter(() => {
-              // Optional: Filter out closed branches
-              // Uncomment the next line if you want to hide closed branches
-              // return isBranchOpen(branch.id)
-              return true // Show all active branches regardless of current status
-            })
-            .map((branch) => {
-            console.log('🎨 BranchSelection: Rendering branch card for:', branch.name)
-            const status = getSmartBranchStatus(branch)
-            const StatusIcon = status.statusIcon
-            const paymentOptions = getPaymentOptions(branch)
-            const branchTypeBadge = getBranchTypeBadge(branch.branch_type)
-            const operatingHours = formatOperatingHours(branch)
-            console.log('🎨 BranchSelection: Branch status:', status)
+        {/* Branches Grid */}
+        <div className="relative max-w-6xl mx-auto px-4 py-12">
+          {/* Section Header */}
+          <div className="mb-8 text-center">
+            <div className="inline-flex items-center space-x-2 px-4 py-2 bg-white/80 backdrop-blur-sm rounded-full shadow-md mb-4">
+              <MapPin className="w-5 h-5 text-green-600" />
+              <span className="text-sm font-semibold text-gray-700">
+                {branches.length} Branches Available
+              </span>
+            </div>
+            <h3 className="text-2xl font-bold text-gray-900 mb-2">
+              Our Locations in Talisay City
+            </h3>
+            <p className="text-gray-600">
+              All branches offer the same quality products and expert service
+            </p>
+          </div>
 
-            return (
-              <div
-                key={branch.id}
-                className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6 hover:shadow-xl hover:scale-105 transition-all duration-300 cursor-pointer group"
-                onClick={() => handleBranchSelect(branch)}
-              >
-                {/* Branch Header */}
-                <div className="flex items-start justify-between mb-6">
-                  <div className="flex-1">
-                    <div className="flex items-center space-x-2 mb-2">
-                      <h3 className="text-xl font-bold text-gray-900 group-hover:text-agrivet-green transition-colors">
-                        {branch.name}
-                      </h3>
-                      <span className={`text-xs font-medium px-2 py-1 rounded-full border ${branchTypeBadge.color}`}>
-                        {branchTypeBadge.text}
-                      </span>
-                    </div>
-                    
-                    <div className="flex items-center space-x-1 mb-2">
-                      <Building className="w-3 h-3 text-gray-400" />
-                      <span className="text-xs text-gray-500 font-medium">{branch.code}</span>
-                    </div>
-                    
-                    <div className="flex items-start text-gray-600 mb-3">
-                      <MapPin className="w-4 h-4 mr-2 mt-0.5 flex-shrink-0" />
-                      <div className="text-sm leading-relaxed">
-                        <p>{branch.address}</p>
-                        <p>{branch.city}, {branch.province}</p>
-                        {branch.postal_code && (
-                          <p className="text-xs text-gray-500">{branch.postal_code}</p>
-                        )}
+          <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
+            {branches.map((branch) => {
+              const status = getSmartBranchStatus(branch)
+              const StatusIcon = status.statusIcon
+              const paymentOptions = getPaymentOptions(branch)
+              const branchTypeBadge = getBranchTypeBadge(branch.branch_type)
+              const operatingHours = formatOperatingHours(branch)
+
+              return (
+                <div
+                  key={branch.id}
+                  className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border-2 border-white/50 p-6 hover:shadow-2xl hover:scale-105 hover:border-green-300 transition-all duration-300 cursor-pointer group relative overflow-hidden"
+                  onClick={() => handleBranchSelect(branch)}
+                >
+                  {/* Decorative Gradient */}
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-green-400/10 to-emerald-500/10 rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform duration-500"></div>
+
+                  {/* Branch Header */}
+                  <div className="relative flex items-start justify-between mb-6">
+                    <div className="flex-1">
+                      <div className="flex items-center space-x-2 mb-2">
+                        <h3 className="text-xl font-bold text-gray-900 group-hover:text-green-600 transition-colors">
+                          {branch.name}
+                        </h3>
+                        <span className={`text-xs font-medium px-2 py-1 rounded-full border ${branchTypeBadge.color}`}>
+                          {branchTypeBadge.text}
+                        </span>
                       </div>
-                    </div>
-                    
-                    <div className="text-gray-600 mb-3">
-                      <div className="flex items-center mb-1">
-                        <Clock className="w-4 h-4 mr-2 flex-shrink-0" />
-                        <span className="text-sm font-medium">Operating Hours</span>
+                      
+                      <div className="flex items-center space-x-1 mb-2">
+                        <Building className="w-3 h-3 text-gray-400" />
+                        <span className="text-xs text-gray-500 font-medium">{branch.code}</span>
                       </div>
-                      <div className="ml-6">
-                        <div className="text-sm">
-                          {typeof operatingHours === 'string' ? (
-                            <span className="text-gray-500">{operatingHours}</span>
-                          ) : operatingHours.isSimplified ? (
-                            <>
-                              <div className="text-sm font-medium text-gray-900">
-                                {operatingHours.hours}
-                              </div>
-                              <div className="text-xs text-gray-500">
-                                {operatingHours.days.join(', ')}
-                              </div>
-                            </>
-                          ) : (
-                            <div className="space-y-1">
-                              {operatingHours.detailedHours?.map((hours, index) => (
-                                <div key={index} className="text-xs text-gray-600">
-                                  {hours}
-                                </div>
-                              ))}
-                            </div>
+                      
+                      {/* Address */}
+                      <div className="flex items-start text-gray-600 mb-3">
+                        <MapPin className="w-4 h-4 mr-2 mt-0.5 flex-shrink-0 text-green-600" />
+                        <div className="text-sm leading-relaxed">
+                          <p>{branch.address}</p>
+                          <p>{branch.city}, {branch.province}</p>
+                          {branch.postal_code && (
+                            <p className="text-xs text-gray-500">{branch.postal_code}</p>
                           )}
                         </div>
                       </div>
-                    </div>
-
-                    {branch.phone && (
-                      <div className="flex items-center text-gray-600 mb-3">
-                        <Phone className="w-4 h-4 mr-2 flex-shrink-0" />
-                        <a 
-                          href={`tel:${branch.phone}`}
-                          className="text-sm hover:text-agrivet-green transition-colors"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          {branch.phone}
-                        </a>
-                      </div>
-                    )}
-
-                    {branch.email && (
-                      <div className="flex items-center text-gray-600 mb-4">
-                        <Mail className="w-4 h-4 mr-2 flex-shrink-0" />
-                        <a 
-                          href={`mailto:${branch.email}`}
-                          className="text-sm hover:text-agrivet-green transition-colors"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          {branch.email}
-                        </a>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Smart Status Badge */}
-                <div className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium mb-4 ${status.bgColor} ${status.borderColor} border`}>
-                  <StatusIcon className={`w-4 h-4 mr-2 ${status.statusColor}`} />
-                  <span className={status.statusColor}>{status.statusText}</span>
-                </div>
-
-                {/* Payment Options */}
-                <div className="mb-6">
-                  <h4 className="text-sm font-medium text-gray-900 mb-3">Payment Options</h4>
-                  <div className="flex flex-wrap gap-2">
-                    {paymentOptions.map((option, index) => {
-                      const OptionIcon = option.icon
-                      return (
-                        <div
-                          key={index}
-                          className={`flex items-center space-x-1 text-xs px-2 py-1 rounded-full ${option.bgColor}`}
-                        >
-                          <OptionIcon className={`w-3 h-3 ${option.color}`} />
-                          <span className={option.color}>{option.text}</span>
+                      
+                      {/* Operating Hours */}
+                      <div className="text-gray-600 mb-3">
+                        <div className="flex items-center mb-1">
+                          <Clock className="w-4 h-4 mr-2 flex-shrink-0 text-green-600" />
+                          <span className="text-sm font-medium">Operating Hours</span>
                         </div>
-                      )
-                    })}
+                        <div className="ml-6">
+                          <div className="text-sm">
+                            {typeof operatingHours === 'string' ? (
+                              <span className="text-gray-500">{operatingHours}</span>
+                            ) : operatingHours.isSimplified ? (
+                              <>
+                                <div className="text-sm font-medium text-gray-900">
+                                  {operatingHours.hours}
+                                </div>
+                                <div className="text-xs text-gray-500">
+                                  {operatingHours.days.join(', ')}
+                                </div>
+                              </>
+                            ) : (
+                              <div className="space-y-1">
+                                {operatingHours.detailedHours?.map((hours: string, index: number) => (
+                                  <div key={index} className="text-xs text-gray-600">
+                                    {hours}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Contact Info */}
+                      {branch.phone && (
+                        <div className="flex items-center text-gray-600 mb-2">
+                          <Phone className="w-4 h-4 mr-2 flex-shrink-0 text-green-600" />
+                          <a 
+                            href={`tel:${branch.phone}`}
+                            className="text-sm hover:text-green-600 transition-colors"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {branch.phone}
+                          </a>
+                        </div>
+                      )}
+
+                      {branch.email && (
+                        <div className="flex items-center text-gray-600 mb-4">
+                          <Mail className="w-4 h-4 mr-2 flex-shrink-0 text-green-600" />
+                          <a 
+                            href={`mailto:${branch.email}`}
+                            className="text-sm hover:text-green-600 transition-colors"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {branch.email}
+                          </a>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Smart Status Badge */}
+                  <div className={`inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium mb-4 ${status.bgColor} ${status.borderColor} border-2 shadow-sm`}>
+                    <StatusIcon className={`w-4 h-4 mr-2 ${status.statusColor}`} />
+                    <span className={status.statusColor}>{status.statusText}</span>
+                  </div>
+
+                  {/* Payment Options */}
+                  <div className="mb-6">
+                    <h4 className="text-sm font-medium text-gray-900 mb-3 flex items-center">
+                      <CreditCard className="w-4 h-4 mr-2 text-green-600" />
+                      Payment Options
+                    </h4>
+                    <div className="flex flex-wrap gap-2">
+                      {paymentOptions.map((option: any, index: number) => {
+                        const OptionIcon = option.icon
+                        return (
+                          <div
+                            key={index}
+                            className={`flex items-center space-x-1.5 text-xs px-3 py-1.5 rounded-full ${option.bgColor} border border-transparent hover:border-current transition-all`}
+                          >
+                            <OptionIcon className={`w-3.5 h-3.5 ${option.color}`} />
+                            <span className={`${option.color} font-medium`}>{option.text}</span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Select Button */}
+                  <div className="pt-4 border-t border-gray-100">
+                    <button className="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white font-semibold py-3 rounded-xl hover:shadow-lg hover:scale-105 transition-all duration-300 flex items-center justify-center space-x-2">
+                      <span>Select This Branch</span>
+                      <ArrowLeft className="w-4 h-4 rotate-180" />
+                    </button>
                   </div>
                 </div>
+              )
+            })}
+          </div>
 
-                {/* Select Button */}
-                <div className="pt-4 border-t border-gray-100">
-                  <button className="w-full btn-primary text-sm py-2">
-                    Select This Branch
-                  </button>
-                </div>
-              </div>
-            )
-          })}
-        </div>
-
-        {branches.length === 0 && (() => {
-          console.log('📭 BranchSelection: Rendering empty state - no branches found')
-          return (
-            <div className="text-center py-12">
-              <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Building className="w-8 h-8 text-gray-400" />
+          {/* Empty State */}
+          {branches.length === 0 && (
+            <div className="text-center py-12 bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg max-w-md mx-auto">
+              <div className="w-20 h-20 bg-gradient-to-br from-green-100 to-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Building className="w-10 h-10 text-green-600" />
               </div>
               <h3 className="text-lg font-medium text-gray-900 mb-2">No Branches Available</h3>
               <p className="text-gray-600 mb-4">
@@ -655,45 +677,46 @@ const BranchSelection: React.FC = () => {
                 Refresh
               </button>
             </div>
-          )
-        })()}
+          )}
+        </div>
       </div>
 
-      {/* Footer Info */}
-      <div className="bg-white border-t">
-        <div className="max-w-6xl mx-auto px-4 py-8">
-          <div className="text-center">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">
-              Why Choose AgriVet?
+      {/* Enhanced Footer Info */}
+      <div className="bg-white/80 backdrop-blur-sm border-t border-green-100 mt-12">
+        <div className="max-w-6xl mx-auto px-4 py-12">
+          <div className="text-center mb-8">
+            <h3 className="text-2xl font-bold text-gray-900 mb-2">
+              Why Choose <span className="text-transparent bg-clip-text bg-gradient-to-r from-green-500 to-emerald-600">Tiongson AgriVet</span>?
             </h3>
-            <div className="grid gap-6 md:grid-cols-3">
-              <div className="flex flex-col items-center">
-                <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mb-3">
-                  <CheckCircle className="w-6 h-6 text-green-600" />
-                </div>
-                <h4 className="font-medium text-gray-900 mb-2">Quality Products</h4>
-                <p className="text-sm text-gray-600 text-center">
-                  Premium agricultural supplies and veterinary products
-                </p>
+            <p className="text-gray-600">Your trusted agricultural partner since 2014</p>
+          </div>
+          <div className="grid gap-8 md:grid-cols-3">
+            <div className="flex flex-col items-center p-6 bg-gradient-to-br from-green-50 to-emerald-50 rounded-2xl border border-green-100">
+              <div className="w-16 h-16 bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl flex items-center justify-center mb-4 shadow-lg">
+                <CheckCircle className="w-8 h-8 text-white" />
               </div>
-              <div className="flex flex-col items-center">
-                <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mb-3">
-                  <Truck className="w-6 h-6 text-blue-600" />
-                </div>
-                <h4 className="font-medium text-gray-900 mb-2">Convenient Pickup</h4>
-                <p className="text-sm text-gray-600 text-center">
-                  Order online and pick up at your preferred branch
-                </p>
+              <h4 className="font-bold text-gray-900 mb-2 text-lg">Quality Products</h4>
+              <p className="text-sm text-gray-600 text-center">
+                Premium agricultural supplies and veterinary products from trusted brands
+              </p>
+            </div>
+            <div className="flex flex-col items-center p-6 bg-gradient-to-br from-blue-50 to-cyan-50 rounded-2xl border border-blue-100">
+              <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-cyan-600 rounded-2xl flex items-center justify-center mb-4 shadow-lg">
+                <Truck className="w-8 h-8 text-white" />
               </div>
-              <div className="flex flex-col items-center">
-                <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center mb-3">
-                  <Users className="w-6 h-6 text-purple-600" />
-                </div>
-                <h4 className="font-medium text-gray-900 mb-2">Expert Support</h4>
-                <p className="text-sm text-gray-600 text-center">
-                  Knowledgeable staff to help with your agricultural needs
-                </p>
+              <h4 className="font-bold text-gray-900 mb-2 text-lg">Convenient Pickup</h4>
+              <p className="text-sm text-gray-600 text-center">
+                Order online and pick up at your preferred branch location
+              </p>
+            </div>
+            <div className="flex flex-col items-center p-6 bg-gradient-to-br from-purple-50 to-pink-50 rounded-2xl border border-purple-100">
+              <div className="w-16 h-16 bg-gradient-to-br from-purple-500 to-pink-600 rounded-2xl flex items-center justify-center mb-4 shadow-lg">
+                <Users className="w-8 h-8 text-white" />
               </div>
+              <h4 className="font-bold text-gray-900 mb-2 text-lg">Expert Support</h4>
+              <p className="text-sm text-gray-600 text-center">
+                Knowledgeable staff ready to help with all your agricultural needs
+              </p>
             </div>
           </div>
         </div>

@@ -19,7 +19,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { useGuestSession } from '../hooks/useAnonymousSession'
 import LoadingSpinner from '../components/common/LoadingSpinner'
 import ErrorMessage from '../components/common/ErrorMessage'
-import facebookLogo from '../assets/facebook.png'
+// import facebookLogo from '../assets/facebook.png'
 import googleLogo from '../assets/google.png'
 
 const AuthSelection: React.FC = () => {
@@ -55,25 +55,25 @@ const AuthSelection: React.FC = () => {
     acceptTerms: false
   })
 
-  const handleGuestContinue = async () => {
-    try {
-      setError(null)
+  // const handleGuestContinue = async () => {
+  //   try {
+  //     setError(null)
       
-      // Start guest session first
-      const success = await startSession()
+  //     // Start guest session first
+  //     // const success = await startSession()
       
-      if (success) {
-        // Clear any existing cart for fresh guest session
-        clearCart()
-        navigate('/catalog')
-      } else {
-        setError('Failed to start guest session. Please try again.')
-      }
-    } catch (error) {
-      setError('Failed to start guest session. Please try again.')
-      console.error('Guest session error:', error)
-    }
-  }
+  //     if (success) {
+  //       // Clear any existing cart for fresh guest session
+  //       clearCart()
+  //       navigate('/catalog')
+  //     } else {
+  //       setError('Failed to start guest session. Please try again.')
+  //     }
+  //   } catch (error) {
+  //     setError('Failed to start guest session. Please try again.')
+  //     console.error('Guest session error:', error)
+  //   }
+  // }
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -152,31 +152,34 @@ const AuthSelection: React.FC = () => {
     }
   }
 
-  const handleSocialLogin = async (provider: 'google' | 'facebook') => {
-    setError(null)
-    
-    try {
-      // Start guest session first for RLS access
-      const guestSuccess = await startSession()
-      if (!guestSuccess) {
-        setError('Failed to initialize session. Please try again.')
-        return
-      }
+  // FIXED: handleSocialLogin function
+// Replace lines 155-179 in your AuthSelection.tsx with this:
 
-      // Updated to use new socialLogin signature
-      const result = await socialLogin(provider)
-      
-      if (result.error) {
-        setError(result.error)
-      } else {
-        // For OAuth, the user will be redirected to the provider
-        // The actual login happens in the callback
-        console.log('Redirecting to OAuth provider...')
-      }
-    } catch (error) {
-      setError(`${provider} login failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
+const handleSocialLogin = async (provider: 'google' | 'facebook') => {
+  setError(null)
+  
+  try {
+    console.log(`🔐 Starting ${provider} OAuth flow...`)
+    
+    // ❌ REMOVED: Don't start guest session before OAuth!
+    // const guestSuccess = await startSession()
+    
+    // ✅ FIXED: Call OAuth directly
+    const result = await socialLogin(provider)
+    
+    if (result.error) {
+      console.error(`❌ ${provider} OAuth error:`, result.error)
+      setError(result.error)
+    } else {
+      // For OAuth, the user will be redirected to the provider
+      // The actual login happens in the callback
+      console.log(`✅ Redirecting to ${provider} OAuth provider...`)
     }
+  } catch (error) {
+    console.error(`❌ ${provider} login failed:`, error)
+    setError(`${provider} login failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
   }
+}
 
   const resetForm = () => {
     setAuthMethod(null)
@@ -362,7 +365,7 @@ const AuthSelection: React.FC = () => {
               <h3 className="text-lg font-semibold text-gray-900 mb-4 text-center">
                 Or continue with
               </h3>
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid gap-4 md:grid-cols-1">
                 <button
                   onClick={() => handleSocialLogin('google')}
                   className="flex items-center justify-center space-x-3 py-3 px-4 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
@@ -374,7 +377,7 @@ const AuthSelection: React.FC = () => {
                   />
                   <span className="font-medium text-gray-700">Google</span>
                 </button>
-                <button
+                {/* <button
                   onClick={() => handleSocialLogin('facebook')}
                   className="flex items-center justify-center space-x-3 py-3 px-4 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
                 >
@@ -384,7 +387,7 @@ const AuthSelection: React.FC = () => {
                     className="w-5 h-5"
                   />
                   <span className="font-medium text-gray-700">Facebook</span>
-                </button>
+                </button> */}
               </div>
             </div>
           </div>
@@ -426,7 +429,7 @@ const AuthSelection: React.FC = () => {
                   Go Back
                 </button>
                 <button
-                  onClick={handleGuestContinue}
+                  // onClick={handleGuestContinue}
                   disabled={isGuestLoading}
                   className="flex-1 btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
                 >
