@@ -31,6 +31,7 @@ export interface AuthResponse {
   user: AuthUser | null
   session: any | null
   error: string | null
+  requiresProfileCompletion?: boolean 
 }
 
 class AuthService {
@@ -77,48 +78,49 @@ class AuthService {
 
       console.log('✅ User created in auth.users:', authData.user.id)
 
-      // Wait a moment for any database triggers
-      await new Promise(resolve => setTimeout(resolve, 1000))
-
-      // Create customer record manually (linked to auth.users via user_id)
-      const timestamp = Date.now().toString().slice(-8)
-      const customerNumber = `CUST-${timestamp}`
-      const customerCode = `C${timestamp}`
-
-      const { data: customer, error: customerError } = await supabase
-        .from('customers')
-        .insert({
-          user_id: authData.user.id, // Links to auth.users
-          customer_number: customerNumber,
-          customer_code: customerCode,
+      // Create customer record using Edge Function
+      console.log('📞 Registration: Calling Edge Function to create customer...')
+      const customerResult = await this.createCustomerViaEdgeFunction({
+        user_id: authData.user.id,
+        email: data.email,
+        user_metadata: {
           first_name: data.first_name,
           last_name: data.last_name,
-          email: data.email,
-          phone: data.phone,
-          customer_type: 'individual',
-          is_active: true,
-          is_guest: false,
-          registration_date: new Date().toISOString(),
-          total_spent: 0.00,
-          total_lifetime_spent: 0.00,
-          loyalty_points: 0,
-          loyalty_tier: 'bronze',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        })
-        .select('*')
-        .single()
+          phone: data.phone
+        },
+        raw_user_meta_data: {
+          first_name: data.first_name,
+          last_name: data.last_name,
+          phone: data.phone
+        }
+      })
 
-      if (customerError || !customer) {
-        console.error('❌ Error creating customer:', customerError)
+      if (!customerResult.success) {
+        console.error('❌ Registration: Edge Function failed:', customerResult.error)
         return {
           user: null,
           session: null,
-          error: 'User created but failed to create customer record'
+          error: `User created but customer creation failed: ${customerResult.error}`
         }
       }
 
-      console.log('✅ Customer record created:', customer.id)
+      console.log('✅ Customer record created via Edge Function:', customerResult.customer.id)
+      
+      // Get the full customer record
+      const { data: customer, error: customerError } = await supabase
+        .from('customers')
+        .select('*')
+        .eq('user_id', authData.user.id)
+        .single()
+
+      if (customerError || !customer) {
+        console.error('❌ Registration: Could not fetch customer record:', customerError)
+        return {
+          user: null,
+          session: null,
+          error: 'User created but could not fetch customer record'
+        }
+      }
 
       // Convert to AuthUser format
       const publicUser: AuthUser = {
@@ -268,23 +270,47 @@ class AuthService {
   // Social login (Google/Facebook) using Supabase Auth
   async socialLogin(provider: 'google' | 'facebook'): Promise<AuthResponse> {
     try {
-      console.log('🔐 Attempting social login with:', provider)
-      console.log('🔐 Current origin:', window.location.origin)
-      console.log('🔐 Redirect will be to:', `${window.location.origin}/auth/callback`)
+      console.log('🔐 Social Login: Starting OAuth flow with provider:', provider)
+      console.log('🔐 Social Login: Current origin:', window.location.origin)
+      console.log('🔐 Social Login: Current URL:', window.location.href)
+      console.log('🔐 Social Login: Redirect will be to:', `${window.location.origin}/auth/callback`)
+      console.log('🔐 Social Login: Supabase client ready:', !!supabase)
       
       // Use Supabase Auth for social login (creates in auth.users automatically)
+      console.log('🔐 Social Login: Calling supabase.auth.signInWithOAuth...')
+      console.log('🔐 Social Login: Provider:', provider)
+      console.log('🔐 Social Login: Redirect URL:', `${window.location.origin}/auth/callback`)
+      
       const { data, error: authError } = await supabase.auth.signInWithOAuth({
         provider: provider,
         options: {
-          redirectTo: `http://localhost:3001/auth/callback`,
-          skipBrowserRedirect: false
+          redirectTo: `${window.location.origin}/auth/callback`,
+          skipBrowserRedirect: false,
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent',
+          }
         }
       })
 
-      console.log('🔐 signInWithOAuth response:', { data, error: authError })
+      console.log('🔐 Social Login: signInWithOAuth response:', { 
+        hasData: !!data, 
+        hasError: !!authError,
+        errorMessage: authError?.message,
+        errorCode: authError?.code,
+        dataUrl: data?.url,
+        dataProvider: data?.provider
+      })
 
       if (authError) {
-        console.error('❌ Supabase Auth error:', authError)
+        console.error('❌ Social Login: Supabase Auth error:', authError)
+        console.error('❌ Social Login: Error details:', {
+          code: authError.code,
+          message: authError.message,
+          status: authError.status,
+          statusText: authError.statusText
+        })
+        console.error('❌ Social Login: Full error object:', JSON.stringify(authError, null, 2))
         return {
           user: null,
           session: null,
@@ -292,6 +318,21 @@ class AuthService {
         }
       }
 
+      console.log('✅ Social Login: OAuth redirect initiated successfully')
+      console.log('✅ Social Login: Data received:', data)
+      console.log('✅ Social Login: Redirect URL from Supabase:', data?.url)
+      console.log('✅ Social Login: User will be redirected to provider')
+      console.log('✅ Social Login: After OAuth, user will return to /auth/callback')
+      
+      // Check if we got a redirect URL
+      if (data?.url) {
+        console.log('🔄 Social Login: Redirecting to:', data.url)
+        // The redirect should happen automatically, but let's log it
+      } else {
+        console.warn('⚠️ Social Login: No redirect URL received from Supabase')
+        console.warn('⚠️ Social Login: This might indicate a configuration issue')
+      }
+      
       // Note: For OAuth, the user will be redirected to the provider
       // and then back to your app. The actual user creation happens
       // in the callback handler, not here.
@@ -302,7 +343,13 @@ class AuthService {
         error: null
       }
     } catch (error) {
-      console.error('❌ Social login exception:', error)
+      console.error('❌ Social Login: Exception caught:', error)
+      console.error('❌ Social Login: Error type:', typeof error)
+      console.error('❌ Social Login: Error details:', {
+        name: error instanceof Error ? error.name : 'Unknown',
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : 'No stack trace'
+      })
       return {
         user: null,
         session: null,
@@ -315,17 +362,11 @@ class AuthService {
   async handleOAuthCallback(provider?: string): Promise<AuthResponse> {
     try {
       console.log('🔐 OAuth Callback: Starting handler...', { provider })
-
-      // Step 1: Check if we have a code to exchange (PKCE flow)
+  
       const url = new URL(window.location.href)
       const code = url.searchParams.get('code')
       
-      console.log('🔍 OAuth Callback: Checking URL params...', {
-        hasCode: !!code,
-        fullURL: window.location.href
-      })
-
-      // Step 2: Exchange code for session if present
+      // Exchange code for session if present
       if (code) {
         console.log('🔄 OAuth Callback: Exchanging code for session...')
         const { data, error } = await supabase.auth.exchangeCodeForSession(code)
@@ -338,11 +379,9 @@ class AuthService {
             error: `OAuth code exchange failed: ${error.message}` 
           }
         }
-        
-        console.log('✅ OAuth Callback: Code exchange successful')
       }
-
-      // Step 3: Get the current session from auth.users
+  
+      // Get the current session
       const { data: { session }, error: sessionError } = await supabase.auth.getSession()
       
       if (sessionError || !session?.user) {
@@ -353,157 +392,78 @@ class AuthService {
           error: 'OAuth callback failed - no session found after exchange',
         }
       }
-
+  
       const authUser = session.user
-      console.log('✅ OAuth Callback: Session found from auth.users:', {
-        authUserId: authUser.id,
-        email: authUser.email,
-        provider: authUser.app_metadata?.provider
-      })
-
-      // Step 4: Extract user data from OAuth metadata
+      console.log('✅ OAuth Callback: Session found:', authUser.id)
+  
+      // Extract user data
       const email = authUser.email || ''
       if (!email) {
-        console.error('❌ OAuth Callback: No email in user data')
         return {
           user: null,
           session: null,
           error: 'No email found in OAuth account',
         }
       }
-
+  
       const metadata = authUser.user_metadata || {}
       const fullName = metadata.full_name || metadata.name || ''
       const firstName = metadata.given_name || metadata.first_name || fullName.split(' ')[0] || email.split('@')[0] || 'User'
       const lastName = metadata.family_name || metadata.last_name || fullName.split(' ').slice(1).join(' ') || ''
       const phone = metadata.phone || metadata.phone_number || null
-
-      console.log('👤 OAuth Callback: Extracted user data:', {
-        email,
-        firstName,
-        lastName,
-        phone,
-        authUserId: authUser.id
-      })
-
-      // Step 5: Check if customer exists (linked to auth.users via user_id)
+  
+      // ✅ NEW: Check if customer exists
+      console.log('🔍 OAuth Callback: Checking if customer exists...')
       const { data: existingCustomer, error: customerCheckError } = await supabase
         .from('customers')
         .select('*')
         .eq('user_id', authUser.id)
         .maybeSingle()
-
+  
       if (customerCheckError && customerCheckError.code !== 'PGRST116') {
         console.error('❌ OAuth Callback: Error checking customer:', customerCheckError)
         throw customerCheckError
       }
-
-      let customer: any
-
-      if (existingCustomer) {
-        console.log('✅ OAuth Callback: Existing customer found:', existingCustomer.id)
+  
+      // ✅ NEW: If no customer exists, require profile completion
+      if (!existingCustomer) {
+        console.log('📝 OAuth Callback: No customer found - profile completion required')
         
-        // Update customer last activity
-        await supabase
-          .from('customers')
-          .update({
-            last_purchase_date: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', existingCustomer.id)
-        
-        customer = existingCustomer
-      } else {
-        // Step 6: Create new customer record (auth.users already exists from OAuth)
-        console.log('📝 OAuth Callback: Creating new customer record...')
-        console.log('📝 OAuth Callback: auth.users ID:', authUser.id)
-        console.log('📝 OAuth Callback: Will create customer with data:', {
-          firstName,
-          lastName,
-          email,
-          phone,
-          authUserId: authUser.id
-        })
-        
-        // Generate unique customer identifiers
-        const timestamp = Date.now().toString().slice(-8)
-        const customerNumber = `CUST-${timestamp}`
-        const customerCode = `C${timestamp}`
-        
-        console.log('📝 OAuth Callback: Generated IDs:', {
-          customerNumber,
-          customerCode,
-          timestamp
-        })
-
-        console.log('📝 OAuth Callback: Attempting INSERT into customers table...')
-        
-        const { data: newCustomer, error: createCustomerError } = await supabase
-          .from('customers')
-          .insert({
-            user_id: authUser.id, // Links to auth.users
-            customer_number: customerNumber,
-            customer_code: customerCode,
-            first_name: firstName,
-            last_name: lastName,
-            email: email,
-            phone: phone,
-            customer_type: 'individual',
-            is_active: true,
-            is_guest: false,
-            registration_date: new Date().toISOString(),
-            total_spent: 0.00,
-            total_lifetime_spent: 0.00,
-            loyalty_points: 0,
-            loyalty_tier: 'bronze',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          })
-          .select('*')
-          .single()
-
-        console.log('📝 OAuth Callback: INSERT completed')
-        console.log('📝 OAuth Callback: New customer data:', newCustomer)
-        console.log('📝 OAuth Callback: Insert error:', createCustomerError)
-
-        if (createCustomerError) {
-          console.error('❌ OAuth Callback: Error creating customer:', createCustomerError)
-          console.error('❌ OAuth Callback: Error details:', {
-            code: createCustomerError.code,
-            message: createCustomerError.message,
-            details: createCustomerError.details,
-            hint: createCustomerError.hint
-          })
-          console.error('❌ OAuth Callback: Full error object:', JSON.stringify(createCustomerError, null, 2))
-          
-          // Check if it's an RLS policy error
-          if (createCustomerError.code === '42501' || createCustomerError.message?.includes('policy')) {
-            console.error('❌ OAuth Callback: This is an RLS POLICY error!')
-            console.error('❌ OAuth Callback: You need to check your Row Level Security policies on the customers table')
-          }
-          
-          // Check if it's a foreign key error
-          if (createCustomerError.code === '23503') {
-            console.error('❌ OAuth Callback: This is a FOREIGN KEY error!')
-            console.error('❌ OAuth Callback: The user_id column might not be properly set up')
-          }
-          
-          throw createCustomerError
+        const publicUser: AuthUser = {
+          id: authUser.id,
+          email: email,
+          first_name: firstName,
+          last_name: lastName,
+          phone: phone,
+          user_type: 'customer',
+          is_active: true,
+          email_verified: true,
+          created_at: authUser.created_at,
+          updated_at: authUser.updated_at || authUser.created_at
         }
-
-        customer = newCustomer
-        console.log('✅ OAuth Callback: Customer created successfully!')
-        console.log('✅ OAuth Callback: Customer ID:', customer.id)
-        console.log('✅ OAuth Callback: Customer email:', customer.email)
+  
+        return { 
+          user: publicUser, 
+          session, 
+          error: null,
+          requiresProfileCompletion: true  // ✅ Signal that profile is needed
+        }
       }
-
-      if (!customer) {
-        throw new Error('Customer record not found or created.')
-      }
-
-      // Step 7: Return AuthUser format
+  
+      // Existing customer - proceed normally
+      console.log('✅ OAuth Callback: Existing customer found:', existingCustomer.id)
+      
+      // Update customer last activity
+      await supabase
+        .from('customers')
+        .update({
+          last_purchase_date: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existingCustomer.id)
+  
       const publicUser: AuthUser = {
-        id: authUser.id, // This is the auth.users ID
+        id: authUser.id,
         email: email,
         first_name: firstName,
         last_name: lastName,
@@ -511,17 +471,11 @@ class AuthService {
         user_type: 'customer',
         is_active: true,
         email_verified: true,
-        created_at: customer.created_at,
-        updated_at: customer.updated_at,
-        preferred_branch_id: customer.preferred_branch_id
+        created_at: existingCustomer.created_at,
+        updated_at: existingCustomer.updated_at,
+        preferred_branch_id: existingCustomer.preferred_branch_id
       }
-
-      console.log('✅ OAuth Callback: Success! User ready:', {
-        authUserId: publicUser.id,
-        email: publicUser.email,
-        customerEmail: customer.email
-      })
-      
+  
       return { user: publicUser, session, error: null }
       
     } catch (error) {
@@ -533,6 +487,7 @@ class AuthService {
       }
     }
   }
+  
 
   // Logout
   async logout(): Promise<{ success: boolean; error?: string }> {
@@ -588,6 +543,49 @@ class AuthService {
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Email verification failed' 
+      }
+    }
+  }
+
+  // Create customer record via Edge Function
+  private async createCustomerViaEdgeFunction(userData: {
+    user_id: string
+    email: string
+    user_metadata: any
+    raw_user_meta_data: any
+  }): Promise<{ success: boolean; customer?: any; error?: string }> {
+    try {
+      console.log('📞 Edge Function: Calling create-customer function...')
+      
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-customer`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify(userData)
+      })
+
+      const result = await response.json()
+      
+      if (!response.ok) {
+        console.error('❌ Edge Function: HTTP error:', response.status, result)
+        return { success: false, error: result.error || 'Edge Function failed' }
+      }
+
+      if (!result.success) {
+        console.error('❌ Edge Function: Function error:', result.error)
+        return { success: false, error: result.error }
+      }
+
+      console.log('✅ Edge Function: Customer created successfully:', result.customer)
+      return { success: true, customer: result.customer }
+      
+    } catch (error) {
+      console.error('❌ Edge Function: Network error:', error)
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Edge Function call failed' 
       }
     }
   }

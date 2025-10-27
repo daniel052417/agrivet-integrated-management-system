@@ -8,19 +8,88 @@ console.log('🔧 VITE_SUPABASE_URL:', supabaseUrl ? 'Present' : 'Missing')
 console.log('🔧 VITE_SUPABASE_ANON_KEY:', supabaseAnonKey ? 'Present' : 'Missing')
 console.log('🔧 Full URL:', supabaseUrl)
 console.log('🔧 Key starts with:', supabaseAnonKey?.substring(0, 10) + '...')
+console.log('🔧 Environment check:', {
+  NODE_ENV: import.meta.env.MODE,
+  DEV: import.meta.env.DEV,
+  PROD: import.meta.env.PROD,
+  BASE_URL: import.meta.env.BASE_URL
+})
+
+// Check all available environment variables
+console.log('🔧 All environment variables:', Object.keys(import.meta.env))
+console.log('🔧 VITE_ variables:', Object.keys(import.meta.env).filter(key => key.startsWith('VITE_')))
+
+// Create Supabase client based on environment variables
+let supabaseClient: any
 
 if (!supabaseUrl || !supabaseAnonKey) {
   console.error('❌ Missing Supabase environment variables')
-  throw new Error('Missing Supabase environment variables')
+  console.error('❌ VITE_SUPABASE_URL:', supabaseUrl)
+  console.error('❌ VITE_SUPABASE_ANON_KEY:', supabaseAnonKey ? 'Present but empty' : 'Missing')
+  console.error('❌ Please create a .env file with your Supabase credentials')
+  console.error('❌ Example .env file:')
+  console.error('❌ VITE_SUPABASE_URL=https://your-project-id.supabase.co')
+  console.error('❌ VITE_SUPABASE_ANON_KEY=your-anon-key-here')
+  
+  // Create a mock Supabase client to prevent app crashes
+  console.warn('⚠️ Creating mock Supabase client to prevent app crashes')
+  supabaseClient = {
+    auth: {
+      signInWithOAuth: () => Promise.resolve({ data: null, error: { message: 'Supabase not configured' } }),
+      signInWithPassword: () => Promise.resolve({ data: null, error: { message: 'Supabase not configured' } }),
+      signUp: () => Promise.resolve({ data: null, error: { message: 'Supabase not configured' } }),
+      signOut: () => Promise.resolve({ error: null }),
+      getSession: () => Promise.resolve({ data: { session: null }, error: null }),
+      exchangeCodeForSession: () => Promise.resolve({ data: null, error: { message: 'Supabase not configured' } })
+    },
+    from: () => ({
+      select: () => ({ eq: () => ({ single: () => Promise.resolve({ data: null, error: { message: 'Supabase not configured' } }) }) }),
+      insert: () => ({ select: () => ({ single: () => Promise.resolve({ data: null, error: { message: 'Supabase not configured' } }) }) }),
+      update: () => ({ eq: () => Promise.resolve({ error: { message: 'Supabase not configured' } }) })
+    })
+  }
+} else {
+  supabaseClient = createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      autoRefreshToken: true,
+      persistSession: true,
+      detectSessionInUrl: true
+    }
+  })
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    autoRefreshToken: true,
-    persistSession: true,
-    detectSessionInUrl: true
+export const supabase = supabaseClient
+
+// Test Supabase connection
+console.log('🔧 Supabase Client Created:')
+console.log('🔧 Client instance:', !!supabase)
+console.log('🔧 Auth instance:', !!supabase.auth)
+
+// Test OAuth providers availability
+const testOAuthProviders = async () => {
+  try {
+    console.log('🔧 Testing OAuth providers...')
+    // This will help us see if Google OAuth is properly configured
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback`,
+        skipBrowserRedirect: true // Don't actually redirect, just test
+      }
+    })
+    
+    if (error) {
+      console.error('🔧 OAuth Provider Test Error:', error)
+    } else {
+      console.log('🔧 OAuth Provider Test Success:', data)
+    }
+  } catch (err) {
+    console.error('🔧 OAuth Provider Test Exception:', err)
   }
-})
+}
+
+// Run the test (but don't block the app)
+setTimeout(testOAuthProviders, 1000)
 
 // Session management state
 let isInitializing = false
