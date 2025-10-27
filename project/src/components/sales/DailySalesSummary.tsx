@@ -45,9 +45,9 @@ const DailySalesSummary: React.FC = () => {
 
       // Load transactions for selected date
       const { data: transactions, error: transactionsError } = await supabase
-        .from('sales_transactions')
+        .from('pos_transactions')
         .select(`
-          id, transaction_date, total_amount, customer_id, created_by_user_id, branch_id,
+          id, transaction_date, total_amount, customer_id, cashier_id, branch_id,
           subtotal, tax_amount, payment_status,
           customers:customer_id (first_name, last_name)
         `)
@@ -57,27 +57,24 @@ const DailySalesSummary: React.FC = () => {
 
       if (transactionsError) throw transactionsError;
 
-      // Load staff information using the staff_user_link table
-      const userIds = [...new Set(transactions?.map(t => t.created_by_user_id).filter(Boolean) || [])];
+      // Load staff information directly from staff table
+      const userIds = [...new Set(transactions?.map(t => t.cashier_id).filter(Boolean) || [])];
       const { data: staff, error: staffError } = await supabase
-        .from('staff_user_link')
+        .from('staff')
         .select(`
-          user_id,
-          staff:staff_id (
-            id, first_name, last_name, department
-          )
+          id, first_name, last_name, department, email
         `)
-        .in('user_id', userIds)
-        .eq('is_primary', true);
+        .in('id', userIds)
+        .eq('is_active', true);
 
       if (staffError) throw staffError;
 
-      // Load transaction items for top selling products (using correct table name)
+      // Load transaction items for top selling products (using pos_transaction_items table)
       const { data: items, error: itemsError } = await supabase
-        .from('transaction_items')
+        .from('pos_transaction_items')
         .select(`
-          quantity, unit_price, total_price,
-          products:product_id (name)
+          quantity, unit_price, line_total,
+          product_name
         `)
         .in('transaction_id', transactions?.map(t => t.id) || []);
 
@@ -120,10 +117,10 @@ const DailySalesSummary: React.FC = () => {
       const productSales = new Map<string, { quantity: number; revenue: number; name: string }>();
       
       items?.forEach(item => {
-        const productName = (item.products as any)?.name || 'Unknown Product';
+        const productName = item.product_name || 'Unknown Product';
         const existing = productSales.get(productName) || { quantity: 0, revenue: 0, name: productName };
         existing.quantity += item.quantity || 0;
-        existing.revenue += item.total_price || 0;
+        existing.revenue += item.line_total || 0;
         productSales.set(productName, existing);
       });
 
@@ -141,8 +138,7 @@ const DailySalesSummary: React.FC = () => {
 
       // Format today's transactions
       const formattedTransactions = transactions?.slice(0, 10).map(transaction => {
-        const staffLink = staff?.find(s => s.user_id === transaction.created_by_user_id);
-        const staffMember = staffLink?.staff;
+        const staffMember = staff?.find(s => s.id === transaction.cashier_id);
         return {
           time: new Date(transaction.transaction_date).toLocaleTimeString(),
           customer: transaction.customers 
@@ -152,7 +148,7 @@ const DailySalesSummary: React.FC = () => {
           total: transaction.total_amount || 0,
           payment: transaction.payment_status || 'Unknown',
           staff: staffMember
-            ? `${(staffMember as any).first_name || ''} ${(staffMember as any).last_name || ''}`.trim()
+            ? `${staffMember.first_name || ''} ${staffMember.last_name || ''}`.trim()
             : 'Unknown'
         };
       }) || [];

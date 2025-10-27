@@ -46,25 +46,24 @@ const LowStockAlert: React.FC = () => {
           quantity_available,
           reorder_level,
           max_stock_level,
-          product_variants!inner(
+          products!inner(
             id,
             name,
             sku,
-            variant_type,
-            variant_value,
-            products!inner(
+            category_id,
+            is_active,
+            product_units!inner(
               id,
-              name,
-              sku,
-              category_id,
-              unit_of_measure,
-              is_active
+              unit_name,
+              unit_label,
+              conversion_factor,
+              is_base_unit
             )
           )
         `)
         .not('quantity_on_hand', 'is', null)
         .not('reorder_level', 'is', null)
-        .eq('product_variants.products.is_active', true)
+        .eq('products.is_active', true)
         .order('quantity_on_hand', { ascending: true });
 
       if (inventoryError) {
@@ -93,7 +92,7 @@ const LowStockAlert: React.FC = () => {
       inventoryData?.forEach(item => {
         // Only process items where quantity_on_hand <= reorder_level (low stock condition)
         if (item.quantity_on_hand <= item.reorder_level) {
-          const category = categories?.find(c => c.id === item.product_variants.products.category_id);
+          const category = categories?.find(c => c.id === item.products.category_id);
           let urgency: 'critical' | 'warning' | 'low' = 'low';
           
           // Determine urgency based on stock levels
@@ -105,11 +104,11 @@ const LowStockAlert: React.FC = () => {
             urgency = 'low';
           }
 
-          // Create display name with variant information
-          const productName = item.product_variants.products.name;
-          const variantName = item.product_variants.name;
-          const displayName = variantName !== productName 
-            ? `${productName} - ${variantName}` 
+          // Create display name with unit information
+          const productName = item.products.name;
+          const unitName = item.products.product_units?.[0]?.unit_name || 'unit';
+          const displayName = unitName !== productName 
+            ? `${productName} - ${unitName}` 
             : productName;
 
           lowStockList.push({
@@ -222,7 +221,7 @@ const LowStockAlert: React.FC = () => {
         ) : (
           <div className="space-y-3">
             {lowStockItems.map((item, index) => (
-              <div key={index} className={`p-3 rounded-lg border ${getUrgencyColor(item.urgency)}`}>
+              <div key={item.id} className={`p-3 rounded-lg border ${getUrgencyColor(item.urgency)}`}>
                 <div className="flex items-start space-x-3">
                   <div className="flex-shrink-0 mt-0.5">
                     {getUrgencyIcon(item.urgency)}

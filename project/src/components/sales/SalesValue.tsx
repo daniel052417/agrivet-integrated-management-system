@@ -94,22 +94,22 @@ const SalesValue: React.FC = () => {
       if (productsError) throw productsError;
       if (categoriesError) throw categoriesError;
 
-      // Load product variants for cost data
-      const { data: variants, error: variantsError } = productIds.length > 0
+      // Load product units for cost data
+      const { data: units, error: unitsError } = productIds.length > 0
         ? await supabase
-            .from('product_variants')
-            .select('id, product_id, cost, price, name')
+            .from('product_units')
+            .select('id, product_id, price_per_unit, unit_name')
             .in('product_id', productIds)
-            .eq('is_active', true)
+            .eq('is_sellable', true)
         : { data: [], error: null };
 
-      if (variantsError) throw variantsError;
+      if (unitsError) throw unitsError;
 
-      // Create variant lookup by product_id
-      const variantByProductId = new Map<string, VariantRow>();
-      variants?.forEach(v => {
-        if (!variantByProductId.has(v.product_id)) {
-          variantByProductId.set(v.product_id, v);
+      // Create unit lookup by product_id
+      const unitByProductId = new Map<string, any>();
+      units?.forEach(u => {
+        if (!unitByProductId.has(u.product_id)) {
+          unitByProductId.set(u.product_id, u);
         }
       });
 
@@ -207,9 +207,9 @@ const SalesValue: React.FC = () => {
           existing.sales += item.total_price || 0;
           existing.units += item.quantity;
           
-          // Use variant cost for margin calculation
-          const variant = variantByProductId.get(product.id);
-          const unitCost = variant ? (variant.cost || 0) : 0;
+          // Use unit cost for margin calculation
+          const unit = unitByProductId.get(product.id);
+          const unitCost = unit ? (unit.price_per_unit || 0) : 0;
           existing.cost += item.quantity * unitCost;
           productSales.set(product.name, existing);
         }

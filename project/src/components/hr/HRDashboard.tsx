@@ -6,7 +6,7 @@ import {
   ListTodo, Zap, DollarSign
 } from 'lucide-react';
 
-import PayrollCompensation from './PayrollCompensation';
+// import PayrollCompensation from './PayrollCompensation';
 
 interface HRMetrics {
   totalEmployees: number;
@@ -135,9 +135,9 @@ const HRDashboard: React.FC = () => {
     </div>
   );
 
-  const renderPayroll = () => (
-    <PayrollCompensation />
-  );
+  // const renderPayroll = () => (
+  //   <PayrollCompensation />
+  // );
 
   return (
     <div className="hr-dashboard">
@@ -159,7 +159,7 @@ const HRDashboard: React.FC = () => {
           >
             Overview
           </button>
-          <button
+          {/* <button
               onClick={() => setActiveTab('payroll')}
               className={`py-4 px-1 border-b-2 font-medium text-sm ${
                 activeTab === 'payroll'
@@ -168,20 +168,32 @@ const HRDashboard: React.FC = () => {
               }`}
             >
               Payroll & Compensation
-            </button>
+            </button> */}
         </nav>
       </div>
 
       {/* Tab Content */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200">
         {activeTab === 'overview' && renderOverview()}
-        {activeTab === 'payroll' && renderPayroll()}
+        {/* {activeTab === 'payroll' && renderPayroll()} */}
       </div>
     </div>
   );
 };
 
 export default HRDashboard;
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

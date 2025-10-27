@@ -10,15 +10,29 @@ export interface ValidationResult {
 
 export class ValidationService {
   // Email validation
-  static validateEmail(email: string): boolean {
+  static isValidEmail(email: string): boolean {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     return emailRegex.test(email);
   }
 
-  // Phone number validation (supports international formats)
-  static validatePhone(phone: string): boolean {
-    const phoneRegex = /^[\+]?[1-9][\d]{0,15}$/;
-    return phoneRegex.test(phone.replace(/[\s\-\(\)]/g, ''));
+  // Phone number validation for Philippine numbers
+  static isValidPhone(phone: string): boolean {
+    if (!phone || typeof phone !== 'string') return false;
+    
+    // Remove all non-digit characters
+    const cleanPhone = phone.replace(/[\s\-\(\)\+]/g, '');
+    
+    // Philippine mobile numbers: 09XX-XXX-XXXX (11 digits starting with 09)
+    // Philippine landline: 0X-XXX-XXXX (8-9 digits starting with 02, 03, 04, 05, 06, 07, 08)
+    // International format: +63XXXXXXXXXX (12 digits starting with +63)
+    
+    const mobileRegex = /^09\d{9}$/; // 09XX-XXX-XXXX
+    const landlineRegex = /^0[2-8]\d{7,8}$/; // 0X-XXX-XXXX or 0X-XXXX-XXXX
+    const internationalRegex = /^63\d{10}$/; // +63XXXXXXXXXX
+    
+    return mobileRegex.test(cleanPhone) || 
+           landlineRegex.test(cleanPhone) || 
+           internationalRegex.test(cleanPhone);
   }
 
   // Password strength validation
@@ -85,8 +99,12 @@ export class ValidationService {
 
     if (!data.email?.trim()) {
       errors.email = 'Email is required';
-    } else if (!this.validateEmail(data.email)) {
+    } else if (!this.isValidEmail(data.email)) {
       errors.email = 'Please enter a valid email address';
+    }
+
+    if (data.phone && !this.isValidPhone(data.phone)) {
+      errors.phone = 'Please enter a valid Philippine phone number';
     }
 
     if (!data.position?.trim()) {
@@ -97,11 +115,7 @@ export class ValidationService {
       errors.department = 'Department is required';
     }
 
-    // Optional field validation
-    if (data.phone && !this.validatePhone(data.phone)) {
-      errors.phone = 'Please enter a valid phone number';
-    }
-
+   
     if (data.salary && data.salary < 0) {
       errors.salary = 'Salary cannot be negative';
     }
@@ -139,7 +153,7 @@ export class ValidationService {
     // Required fields
     if (!data.email?.trim()) {
       errors.email = 'Email is required';
-    } else if (!this.validateEmail(data.email)) {
+    } else if (!this.isValidEmail(data.email)) {
       errors.email = 'Please enter a valid email address';
     }
 
@@ -163,11 +177,7 @@ export class ValidationService {
       }
     }
 
-    // Phone validation
-    if (data.phone && !this.validatePhone(data.phone)) {
-      errors.phone = 'Please enter a valid phone number';
-    }
-
+   
     return {
       isValid: Object.keys(errors).length === 0,
       errors,
@@ -225,7 +235,7 @@ export class ValidationService {
 
     // Role consistency check
     if (data.createUserAccount && data.accountDetails) {
-      const staffRole = data.role.toLowerCase();
+      const staffRole = data.role?.toLowerCase();
       const accountRole = data.accountDetails.role.toLowerCase();
 
       if (staffRole === 'admin' && accountRole !== 'admin') {

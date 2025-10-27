@@ -46,6 +46,11 @@ const SalesByBranch: React.FC = () => {
       setLoading(true);
       setError(null);
 
+      // Get date range for last 30 days
+      const endDate = new Date();
+      const startDate = new Date();
+      startDate.setDate(endDate.getDate() - 30);
+
       // Load branches
       const { data: branchesData, error: branchesError } = await supabase
         .from('branches')
@@ -54,17 +59,64 @@ const SalesByBranch: React.FC = () => {
 
       if (branchesError) throw branchesError;
 
-      // Load transactions for last 30 days
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      // Load transactions for the last 30 days with fallback logic
+      let transactionsData = null;
+      let transactionsError = null;
 
-      const { data: transactionsData, error: transactionsError } = await supabase
-        .from('sales_transactions')
+      // Try strict filters first
+      const { data: strictData, error: strictError } = await supabase
+        .from('pos_transactions')
         .select('id, branch_id, customer_id, total_amount, transaction_date')
-        .gte('transaction_date', thirtyDaysAgo.toISOString())
-        .order('transaction_date', { ascending: false });
+        .eq('transaction_type', 'sale')
+        .eq('payment_status', 'completed')
+        .eq('status', 'active')
+        .gte('transaction_date', startDate.toISOString())
+        .lte('transaction_date', endDate.toISOString());
 
-      if (transactionsError) throw transactionsError;
+      if (strictError) {
+        console.error('SalesByBranch - Strict filter error:', strictError);
+        transactionsError = strictError;
+      } else if (strictData && strictData.length > 0) {
+        transactionsData = strictData;
+        console.log('SalesByBranch - Using strict filters, found:', strictData.length, 'transactions');
+      } else {
+        console.log('SalesByBranch - No data with strict filters, trying fallback...');
+        
+        // Fallback 1: Remove status filter
+        const { data: fallbackData, error: fallbackError } = await supabase
+          .from('pos_transactions')
+          .select('id, branch_id, customer_id, total_amount, transaction_date')
+          .eq('transaction_type', 'sale')
+          .eq('payment_status', 'completed')
+          .gte('transaction_date', startDate.toISOString())
+          .lte('transaction_date', endDate.toISOString());
+
+        if (fallbackError) {
+          console.error('SalesByBranch - Fallback filter error:', fallbackError);
+          transactionsError = fallbackError;
+        } else if (fallbackData && fallbackData.length > 0) {
+          transactionsData = fallbackData;
+          console.log('SalesByBranch - Using fallback filters, found:', fallbackData.length, 'transactions');
+        } else {
+          console.log('SalesByBranch - No data with fallback filters, trying final fallback...');
+          
+          // Final fallback: Only transaction_type filter
+          const { data: finalData, error: finalError } = await supabase
+            .from('pos_transactions')
+            .select('id, branch_id, customer_id, total_amount, transaction_date')
+            .eq('transaction_type', 'sale')
+            .gte('transaction_date', startDate.toISOString())
+            .lte('transaction_date', endDate.toISOString());
+
+          if (finalError) {
+            console.error('SalesByBranch - Final filter error:', finalError);
+            transactionsError = finalError;
+          } else {
+            transactionsData = finalData;
+            console.log('SalesByBranch - Using final fallback, found:', finalData?.length || 0, 'transactions');
+          }
+        }
+      }
 
       setBranches(branchesData || []);
       setTransactions(transactionsData || []);
@@ -77,42 +129,36 @@ const SalesByBranch: React.FC = () => {
   };
 
   const branchMetrics = useMemo(() => {
-    const metrics = new Map<string, BranchMetric>();
+    const branchMap = new Map<string, BranchMetric>();
     
-    branches.forEach(branch => {
-      metrics.set(branch.id, {
+    // Initialize branches
+    branches.forEach((branch, index) => {
+      branchMap.set(branch.id, {
         id: branch.id,
         name: branch.name,
         sales: 0,
         orders: 0,
         customers: 0,
         growth: 0,
-        color: COLORS[metrics.size % COLORS.length]
+        color: COLORS[index % COLORS.length]
       });
     });
 
+    // Calculate metrics from transactions
     const customerSet = new Set<string>();
-    
-    transactions.forEach(tx => {
-      const metric = metrics.get(tx.branch_id);
-      if (metric) {
-        metric.sales += tx.total_amount || 0;
-        metric.orders += 1;
-        if (tx.customer_id) {
-          customerSet.add(tx.customer_id);
+    transactions.forEach(transaction => {
+      const branch = branchMap.get(transaction.branch_id);
+      if (branch) {
+        branch.sales += transaction.total_amount || 0;
+        branch.orders += 1;
+        if (transaction.customer_id) {
+          customerSet.add(transaction.customer_id);
+          branch.customers += 1;
         }
       }
     });
 
-    // Calculate customers per branch
-    transactions.forEach(tx => {
-      const metric = metrics.get(tx.branch_id);
-      if (metric && tx.customer_id) {
-        metric.customers += 1;
-      }
-    });
-
-    return Array.from(metrics.values()).sort((a, b) => b.sales - a.sales);
+    return Array.from(branchMap.values()).sort((a, b) => b.sales - a.sales);
   }, [branches, transactions]);
 
   const totalSales = useMemo(() => 
@@ -228,4 +274,5 @@ const SalesByBranch: React.FC = () => {
 };
 
 export default SalesByBranch;
+
 

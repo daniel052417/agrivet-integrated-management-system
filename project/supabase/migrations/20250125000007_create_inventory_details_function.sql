@@ -5,11 +5,14 @@ RETURNS TABLE (
   product_name TEXT,
   description TEXT,
   category_id UUID,
-  variant_id UUID,
-  variant_name TEXT,
-  variant_type TEXT,
-  variant_value TEXT,
-  price NUMERIC(10,2),
+  unit_id UUID,
+  unit_name TEXT,
+  unit_label TEXT,
+  conversion_factor NUMERIC(10,4),
+  is_base_unit BOOLEAN,
+  is_sellable BOOLEAN,
+  price_per_unit NUMERIC(10,2),
+  min_sellable_quantity NUMERIC(10,3),
   inventory_id UUID,
   branch_id UUID,
   quantity_on_hand NUMERIC(10,2),
@@ -28,11 +31,14 @@ AS $$
     p.name         AS product_name,
     p.description,
     p.category_id,
-    pv.id          AS variant_id,
-    pv.name        AS variant_name,
-    pv.variant_type,
-    pv.variant_value,
-    pv.price,
+    pu.id          AS unit_id,
+    pu.unit_name,
+    pu.unit_label,
+    pu.conversion_factor,
+    pu.is_base_unit,
+    pu.is_sellable,
+    pu.price_per_unit,
+    pu.min_sellable_quantity,
     i.id           AS inventory_id,
     i.branch_id,
     i.quantity_on_hand,
@@ -43,13 +49,13 @@ AS $$
     b.name         AS branch_name,
     b.code         AS branch_code
   FROM inventory i
-  JOIN product_variants pv ON i.product_variant_id = pv.id
-  JOIN products p ON pv.product_id = p.id
+  JOIN product_units pu ON i.product_unit_id = pu.id
+  JOIN products p ON pu.product_id = p.id
   JOIN branches b ON i.branch_id = b.id
   WHERE p.is_active = true 
-    AND pv.is_active = true
+    AND pu.is_sellable = true
     AND (branch_filter IS NULL OR i.branch_id = branch_filter)
-  ORDER BY p.name, pv.name;
+  ORDER BY p.name, pu.unit_name;
 $$;
 
 -- Grant execute permission to authenticated users

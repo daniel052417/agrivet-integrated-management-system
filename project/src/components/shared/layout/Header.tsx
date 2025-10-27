@@ -26,14 +26,14 @@ const Header: React.FC<HeaderProps> = ({
           >
             <Menu className="w-5 h-5 text-gray-600" />
           </button>
-          <h2 className="text-2xl font-semibold text-gray-800">{title}</h2>
+          {/* <h2 className="text-2xl font-semibold text-gray-800">{title}</h2>
           {showLiveIndicator && (
             <div className="hidden sm:block">
               <span className="px-3 py-1 text-xs font-medium text-emerald-600 bg-emerald-50 rounded-full">
                 Live
               </span>
             </div>
-          )}
+          )} */}
         </div>
 
         <div className="flex items-center space-x-4">
@@ -54,10 +54,10 @@ const Header: React.FC<HeaderProps> = ({
           <div className="flex items-center space-x-3 pl-4 border-l border-gray-200">
             <div className="text-right">
               <p className="text-sm font-medium text-gray-900">
-                {user?.name || 'User'}
+                {user?.name || 'Daniel John Pepito'}
               </p>
               <p className="text-xs text-gray-500 capitalize">
-                {user?.role || 'Role'}
+                {user?.role || 'Super Admin'}
               </p>
             </div>
             
@@ -92,6 +92,18 @@ const Header: React.FC<HeaderProps> = ({
 };
 
 export default Header;
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

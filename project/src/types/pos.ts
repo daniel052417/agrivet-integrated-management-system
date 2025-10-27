@@ -136,6 +136,15 @@ export interface CartItem {
   lineTotal: number;
   expiryDate?: string;
   batchNumber?: string;
+  isBaseUnit?: boolean; // Flag to distinguish base units from sub-units
+  selectedUnit?: {
+    id: string;
+    unit_name: string;
+    unit_label: string;
+    price: number;
+    is_base_unit: boolean;
+    conversion_factor: number;
+  };
 }
 
 export interface Customer {
@@ -544,7 +553,7 @@ export interface OnlineOrder {
   customer_address: string;
   branch_id: string;
   order_type: 'pickup' | 'delivery' | 'reservation';
-  status: 'pending_confirmation' | 'confirmed' | 'ready_for_pickup' | 'completed' | 'cancelled';
+  status: 'pending_confirmation' | 'confirmed' | 'ready_for_pickup' | 'for_payment' | 'for_dispatch' | 'completed' | 'cancelled';
   payment_status: 'pending' | 'paid' | 'failed' | 'refunded';
   payment_method: 'cash' | 'digital' | 'card';
   subtotal: number;
@@ -560,6 +569,16 @@ export interface OnlineOrder {
   updated_at: string;
   confirmed_at?: string;
   completed_at?: string;
+  ready_at?: string;
+  // Delivery-related fields
+  delivery_method?: 'maxim' | 'other';
+  delivery_address?: string;
+  delivery_contact_number?: string;
+  delivery_landmark?: string;
+  delivery_status?: 'pending' | 'booked' | 'in_transit' | 'delivered' | 'failed';
+  delivery_tracking_number?: string;
+  delivery_latitude?: number;
+  delivery_longitude?: number;
   items: OnlineOrderItem[];
 }
 

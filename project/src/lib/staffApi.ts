@@ -1,23 +1,46 @@
 import { supabase } from './supabase';
+import { customAuth } from './customAuth';
 
 // Types for Staff Management
 export interface Staff {
   id: string;
-  employee_id: string;
   first_name: string;
+  middle_name?: string;
   last_name: string;
   email: string;
-  phone: string;
-  position: string;
-  department: string;
+  employee_id?: string;
+  department?: string;
   branch_id?: string;
-  hire_date: string;
+  is_active?: boolean;
+  date_of_birth?: string;
+  gender?: string;
+  marital_status?: string;
+  sss_number?: string;
+  philhealth_number?: string;
+  pagibig_number?: string;
+  tin_number?: string;
+  bank_account?: string;
+  bank_name?: string;
+  emergency_contact?: string;
+  emergency_phone?: string;
+  profile_picture?: string;
+  notes?: string;
+  created_by?: string;
+  updated_by?: string;
+  created_at?: string;
+  updated_at?: string;
+  address?: string;
+  phone?: string;
+  position?: string;
+  hire_date?: string;
   salary?: number;
-  is_active: boolean;
-  role: string;
-  user_account_id?: string | null;
-  created_at: string;
-  updated_at: string;
+  role?: string;
+  employment_type?: string;
+  salary_type?: string;
+  work_schedule?: string;
+  attendance_id?: string;
+  payment_method?: string;
+  work_schedule_id?: string;
 }
 
 // Enhanced Staff with User Account Information
@@ -32,16 +55,37 @@ export interface StaffWithAccount extends Staff {
 export interface CreateStaffData {
   first_name: string;
   last_name: string;
+  middle_name?: string;
   email: string;
-  phone: string;
-  position: string;
-  department: string;
+  phone?: string;
+  address?: string;
+  date_of_birth?: string;
+  gender?: string;
+  marital_status?: string;
+  sss_number?: string;
+  philhealth_number?: string;
+  pagibig_number?: string;
+  tin_number?: string;
+  bank_account?: string;
+  bank_name?: string;
+  emergency_contact?: string;
+  emergency_phone?: string;
+  profile_picture?: string;
+  notes?: string;
+  position?: string;
+  department?: string;
   branch_id?: string;
-  hire_date: string;
+  hire_date?: string;
   salary?: number;
-  is_active: boolean;
-  role: string;
+  is_active?: boolean;
+  role?: string;
   employee_id?: string;
+  employment_type?: string;
+  salary_type?: string;
+  work_schedule?: string;
+  attendance_id?: string;
+  payment_method?: string;
+  work_schedule_id?: string;
 }
 
 // Enhanced Staff Creation with Account Option
@@ -223,9 +267,47 @@ export const staffApi = {
 
   // Create new staff member
   async createStaff(staffData: CreateStaffData): Promise<Staff> {
+    // Generate employee ID if not provided
+    const employeeId = staffData.employee_id || `EMP-${Date.now()}`;
+    
+    // Prepare payload with proper field mapping
     const payload = {
-      ...staffData,
-      employee_id: staffData.employee_id || `EMP-${Date.now()}`,
+      first_name: staffData.first_name,
+      last_name: staffData.last_name,
+      middle_name: staffData.middle_name || null,
+      email: staffData.email,
+      employee_id: employeeId,
+      phone: staffData.phone || null,
+      address: staffData.address || null,
+      date_of_birth: staffData.date_of_birth || null,
+      gender: staffData.gender || null,
+      marital_status: staffData.marital_status || null,
+      sss_number: staffData.sss_number || null,
+      philhealth_number: staffData.philhealth_number || null,
+      pagibig_number: staffData.pagibig_number || null,
+      tin_number: staffData.tin_number || null,
+      bank_account: staffData.bank_account || null,
+      bank_name: staffData.bank_name || null,
+      emergency_contact: staffData.emergency_contact || null,
+      emergency_phone: staffData.emergency_phone || null,
+      profile_picture: staffData.profile_picture || null,
+      notes: staffData.notes || null,
+      position: staffData.position || null,
+      department: staffData.department || null,
+      branch_id: staffData.branch_id || null,
+      hire_date: staffData.hire_date || null,
+      salary: staffData.salary || null,
+      is_active: staffData.is_active ?? true,
+      role: staffData.role || null,
+      employment_type: staffData.employment_type || null,
+      salary_type: staffData.salary_type || null,
+      work_schedule: staffData.work_schedule || null,
+      attendance_id: staffData.attendance_id || null,
+      payment_method: staffData.payment_method || null,
+      work_schedule_id: staffData.work_schedule_id || null,
+      // Set created_by to current user if available
+      created_by: customAuth.getCurrentUser()?.id || null,
+      updated_by: null
     };
 
     const { data, error } = await supabase
@@ -234,7 +316,10 @@ export const staffApi = {
       .select()
       .single();
     
-    if (error) throw error;
+    if (error) {
+      console.error('Error creating staff:', error);
+      throw new Error(`Failed to create staff member: ${error.message}`);
+    }
     return data;
   },
 
@@ -360,6 +445,71 @@ export const userApi = {
       .single();
     
     if (error) throw error;
+
+    // Assign role to the user
+    console.log('🔗 Assigning role to user in createUser:', { userId: data.id, role: userData.role });
+    
+    // First, let's check what roles exist in the database
+    const { data: allRoles, error: allRolesError } = await supabase
+      .from('roles')
+      .select('id, name, display_name')
+      .eq('is_active', true);
+
+    console.log('📋 Available roles in database (createUser):', allRoles);
+
+    if (allRolesError) {
+      console.error('❌ Error fetching roles in createUser:', allRolesError);
+      // Continue without role assignment - user will get default role in authentication
+    } else if (!allRoles || allRoles.length === 0) {
+      console.warn('⚠️ No roles found in database (createUser), skipping role assignment');
+      // Continue without role assignment - user will get default role in authentication
+    } else {
+      // Try to find the role
+      const targetRole = allRoles.find(role => 
+        role.name === userData.role || 
+        role.name === 'staff' || 
+        role.name === 'user'
+      );
+
+      if (!targetRole) {
+        console.warn('⚠️ No matching role found in createUser, using first available role:', allRoles[0]);
+        // Use the first available role as fallback
+        const fallbackRole = allRoles[0];
+        
+        const { error: userRoleError } = await supabase
+          .from('user_roles')
+          .insert({
+            user_id: data.id,
+            role_id: fallbackRole.id,
+            assigned_at: new Date().toISOString()
+          });
+
+        if (userRoleError) {
+          console.error('❌ Error assigning fallback role in createUser:', userRoleError);
+        } else {
+          console.log('✅ Fallback role assigned successfully in createUser to user:', data.id);
+        }
+      } else {
+        console.log('✅ Found matching role in createUser:', { roleId: targetRole.id, roleName: targetRole.name });
+        
+        // Insert role assignment
+        const { error: userRoleError } = await supabase
+          .from('user_roles')
+          .insert({
+            user_id: data.id,
+            role_id: targetRole.id,
+            assigned_at: new Date().toISOString()
+          });
+
+        if (userRoleError) {
+          console.error('❌ Error assigning role in createUser:', userRoleError);
+          // Continue - user will get default role in authentication
+        } else {
+          console.log('✅ Role assigned successfully in createUser to user:', data.id);
+        }
+      }
+    }
+
     return data;
   },
 
@@ -610,13 +760,26 @@ export const leaveRequestApi = {
 
 // Branch API Functions
 export const branchApi = {
-  // Get all branches
+  // Get all branches from view
   async getAllBranches(): Promise<Array<{ id: string; name: string; address: string; city: string; phone: string; manager_name: string; is_active: boolean }>> {
     const { data, error } = await supabase
-      .from('branches')
+      .from('view_branches')
       .select('*')
-      .eq('is_active', true)
       .order('name', { ascending: true });
+    
+    if (error) throw error;
+    return data || [];
+  }
+};
+
+// Roles API Functions
+export const rolesApi = {
+  // Get all roles from view
+  async getAllRoles(): Promise<Array<{ id: string; name: string; display_name: string; description?: string; is_active: boolean }>> {
+    const { data, error } = await supabase
+      .from('view_roles')
+      .select('*')
+      .order('display_name', { ascending: true });
     
     if (error) throw error;
     return data || [];
@@ -728,46 +891,68 @@ export const enhancedStaffApi = {
     let workflow: AccountCreationWorkflow | undefined;
     
     if (createUserAccount && accountDetails) {
-      // Create workflow record
-      const { data: workflowData, error: workflowError } = await supabase
-        .from('account_creation_workflow')
-        .insert({
-          staff_id: staff.id,
-          workflow_status: 'in_progress',
-          account_creation_method: accountDetails.sendEmailInvite ? 'email_invite' : 'manual'
-        })
-        .select()
-        .single();
-      
-      if (workflowError) throw workflowError;
-      workflow = workflowData;
-      
-      if (accountDetails.sendEmailInvite) {
-        // Create email invitation
-        await emailInvitationApi.sendAccountInvitation(staff.id, staff.email);
-      } else {
-        // Create user account immediately
-        const userData: CreateUserData = {
-          email: staff.email,
-          first_name: staff.first_name,
-          last_name: staff.last_name,
-          role: accountDetails.role,
-          is_active: staff.is_active,
-          phone: staff.phone,
-          password: accountDetails.password
-        };
-        
-        const result = await staffUserApi.createUserForStaff(staff.id, userData);
-        user = result.user;
-        
-        // Update workflow status
-        await supabase
+      try {
+        // Create workflow record
+        const { data: workflowData, error: workflowError } = await supabase
           .from('account_creation_workflow')
-          .update({
-            workflow_status: 'completed',
-            account_created_at: new Date().toISOString()
+          .insert({
+            staff_id: staff.id,
+            workflow_status: 'in_progress',
+            account_creation_method: accountDetails.sendEmailInvite ? 'email_invite' : 'manual',
+            created_by: customAuth.getCurrentUser()?.id || null
           })
-          .eq('id', workflow.id);
+          .select()
+          .single();
+        
+        if (workflowError) {
+          console.error('Error creating workflow:', workflowError);
+          // Continue without workflow if it fails
+        } else {
+          workflow = workflowData;
+        }
+        
+        if (accountDetails.sendEmailInvite) {
+          // Create email invitation
+          try {
+            await emailInvitationApi.sendAccountInvitation(staff.id, staff.email);
+          } catch (error) {
+            console.error('Error sending email invitation:', error);
+            // Continue without email invitation
+          }
+        } else {
+          // Create user account immediately
+          try {
+            const userData: CreateUserData = {
+              email: staff.email,
+              first_name: staff.first_name,
+              last_name: staff.last_name,
+              role: accountDetails.role,
+              is_active: staff.is_active ?? true,
+              phone: staff.phone,
+              password: accountDetails.password
+            };
+            
+            const result = await staffUserApi.createUserForStaff(staff.id, userData);
+            user = result.user;
+            
+            // Update workflow status if workflow was created
+            if (workflow) {
+              await supabase
+                .from('account_creation_workflow')
+                .update({
+                  workflow_status: 'completed',
+                  account_created_at: new Date().toISOString()
+                })
+                .eq('id', workflow.id);
+            }
+          } catch (error) {
+            console.error('Error creating user account:', error);
+            // Continue without user account creation
+          }
+        }
+      } catch (error) {
+        console.error('Error in account creation process:', error);
+        // Continue without account creation
       }
     }
     
@@ -951,6 +1136,7 @@ export const staffManagementApi = {
   attendance: attendanceApi,
   leaveRequests: leaveRequestApi,
   branches: branchApi,
+  roles: rolesApi,
   staffUser: staffUserApi,
   enhancedStaff: enhancedStaffApi,
   emailInvitations: emailInvitationApi,

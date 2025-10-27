@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
 import LoginPage from './Login/components/LoginPage';
-import { simplifiedAuth, SimplifiedUser } from './lib/simplifiedAuth';
-import { supabase } from './lib/supabase';
+import AccountActivation from './components/auth/AccountActivation';
+import { customAuth, CustomUser } from './lib/customAuth';
 import { getDashboardForRole } from './lib/rolePages';
 
 function App() {
-  const [user, setUser] = useState<SimplifiedUser | null>(null);
+  const [user, setUser] = useState<CustomUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [loginForm, setLoginForm] = useState({
@@ -14,21 +14,46 @@ function App() {
     showPassword: false
   });
 
+  // Check if we're on the activation page
+  const isActivationPage = () => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const isActivation = window.location.pathname === '/activate' && urlParams.has('token');
+    console.log('🔍 Activation page check:', {
+      pathname: window.location.pathname,
+      hasToken: urlParams.has('token'),
+      token: urlParams.get('token'),
+      isActivation
+    });
+    return isActivation;
+  };
+
   // Check authentication status
   useEffect(() => {
+    // Skip auth check if we're on activation page
+    if (isActivationPage()) {
+      setIsLoading(false);
+      return;
+    }
     checkAuthStatus();
   }, []);
 
   const checkAuthStatus = async () => {
     try {
       setIsLoading(true);
-      const { data: { session } } = await supabase.auth.getSession();
       
-      if (session?.user) {
-        // Get user with role information
-        const userData = await simplifiedAuth.getUserWithRole(session.user.email!);
+      // Check if user is already authenticated in memory
+      const currentUser = customAuth.getCurrentUser();
+      if (currentUser) {
+        setUser(currentUser);
+        setIsLoading(false);
+        return;
+      }
+
+      // Check for stored session
+      const userData = await customAuth.checkAuthStatus();
+      if (userData) {
         setUser(userData);
-        simplifiedAuth.setCurrentUser(userData);
+        customAuth.setCurrentUser(userData);
       }
     } catch (err: any) {
       console.error('Auth check error:', err);
@@ -41,7 +66,7 @@ function App() {
   const handleLogin = async (credentials: { username: string; password: string }) => {
     try {
       setError('');
-      const userData = await simplifiedAuth.signInWithPassword(
+      const userData = await customAuth.signInWithPassword(
         credentials.username,
         credentials.password
       );
@@ -54,7 +79,7 @@ function App() {
 
   const handleLogout = async () => {
     try {
-      await simplifiedAuth.signOut();
+      await customAuth.signOut();
       setUser(null);
       setError('');
     } catch (err: any) {
@@ -78,7 +103,7 @@ function App() {
   // Get dashboard component for user's role
   const getDashboardComponent = () => {
     if (!user) return null;
-    return getDashboardForRole(user.role_name);
+    return getDashboardForRole(user.role_name || user.role);
   };
 
   // Show loading spinner
@@ -90,6 +115,19 @@ function App() {
           <p className="text-gray-600">Loading...</p>
         </div>
       </div>
+    );
+  }
+
+  // Show activation page if on /activate route
+  if (isActivationPage()) {
+    console.log('🎯 Rendering AccountActivation component');
+    return (
+      <AccountActivation
+        onNavigate={(path) => {
+          console.log('🔄 Navigating to:', path);
+          window.location.href = path;
+        }}
+      />
     );
   }
 

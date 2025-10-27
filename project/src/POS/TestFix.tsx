@@ -30,7 +30,7 @@ const TestPOSFix: React.FC = () => {
     role_is_active: true,
     role_is_system_role: true,
     sidebar_config: {
-      sections: ['overview', 'sales-pos', 'sales-records', 'sales-dashboard', 'daily-sales', 'product-sales', 'sales-value']
+      sections: ['overview', 'sales-pos', 'sales-records', 'sales-dashboard', 'daily-sales', 'product-sales']
     }
   };
 
@@ -57,6 +57,10 @@ const TestPOSFix: React.FC = () => {
 };
 
 export default TestPOSFix;
+
+
+
+
 
 
 

@@ -364,7 +364,8 @@ export const taxRatesApi = {
       .from('tax_rates')
       .select('*')
       .eq('is_active', true)
-      .order('tax_type, effective_date');
+      .order('tax_type', { ascending: true })
+      .order('effective_date', { ascending: true });
     
     if (error) throw error;
     return data || [];
@@ -427,7 +428,8 @@ export const payrollBenefitsApi = {
       .from('payroll_benefits')
       .select('*')
       .eq('is_active', true)
-      .order('benefit_type, benefit_name');
+      .order('benefit_type', { ascending: true })
+      .order('benefit_name', { ascending: true });
     
     if (error) throw error;
     return data || [];
@@ -607,7 +609,8 @@ export const payrollComponentsApi = {
       .from('payroll_components')
       .select('*')
       .eq('is_active', true)
-      .order('component_type, component_name');
+      .order('component_type', { ascending: true })
+      .order('component_name', { ascending: true });
     
     if (error) throw error;
     return data || [];

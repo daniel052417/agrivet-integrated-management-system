@@ -1,0 +1,89 @@
+import React, { useState } from 'react';
+import SimplifiedSidebar from '../shared/layout/SimplifiedSidebar';
+import Header from '../shared/layout/Header';
+import { CustomUser } from '../../lib/customAuth';
+
+// HR-specific components
+import HRDashboardContent from '../hr/HRDashboard';
+import StaffList from '../hr/StaffList';
+import AttendanceDashboard from '../hr/AttendanceDashboard';
+import LeaveManagement from '../hr/LeaveManagement';
+import HRAnalytics from '../hr/HRAnalytics';
+import PayrollCompensation from '../hr/PayrollCompensation';
+import UserAccounts from '../users/UserAccounts';
+import AddStaff from '../hr/AddStaff';
+import RolesPermissions from '../staff/RolesPermissions';
+import UserActivity from '../users/UserActivity';
+import SessionHistory from '../users/SessionHistory';
+import UserRolesOverview from '../users/UserRolesOverview';
+import UserPermissions from '../users/UserPermissions';
+
+interface HRDashboardProps {
+  user: CustomUser;
+  onLogout: () => void;
+}
+
+const HRDashboardComponent: React.FC<HRDashboardProps> = ({ user, onLogout }) => {
+  const [activeSection, setActiveSection] = useState('hr-dashboard');
+
+  const renderContent = () => {
+    switch (activeSection) {
+      case 'hr-dashboard':
+        return <HRDashboardContent />;
+      case 'staff':
+        return <StaffList />;
+      case 'attendance-dashboard':
+        return <AttendanceDashboard />;
+      case 'leave-management':
+        return <LeaveManagement />;
+      case 'hr-analytics':
+        return <HRAnalytics />;
+      case 'payroll':
+        return <PayrollCompensation />;
+      case 'user-accounts':
+        return <UserAccounts />;
+      case 'add-staff':
+        return <AddStaff onBack={() => setActiveSection('staff')} />;
+      case 'roles-permissions':
+        return <RolesPermissions />;
+      case 'activity-logs':
+        return <UserActivity />;
+      case 'session-history':
+        return <SessionHistory />;
+      case 'user-roles-overview':
+        return <UserRolesOverview />;
+      case 'user-permissions':
+        return <UserPermissions />;
+      default:
+        return (
+          <div className="p-6">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
+              <h2 className="text-2xl font-bold text-gray-800 mb-4">
+                {activeSection.replace('-', ' ').toUpperCase()}
+              </h2>
+              <p className="text-gray-600">This section is under development.</p>
+            </div>
+          </div>
+        );
+    }
+  };
+
+  return (
+    <div className="flex h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+      <SimplifiedSidebar 
+        user={user} 
+        onLogout={onLogout}
+        activeSection={activeSection}
+        onSectionChange={setActiveSection}
+      />
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <Header onMenuToggle={() => {}} />
+        <main className="flex-1 overflow-y-auto bg-gradient-to-br from-gray-50 to-gray-100">
+          {renderContent()}
+        </main>
+      </div>
+    </div>
+  );
+};
+
+export default HRDashboardComponent;

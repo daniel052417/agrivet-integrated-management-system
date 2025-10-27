@@ -1,45 +1,47 @@
 import React, { useState } from 'react';
 import SimplifiedSidebar from '../shared/layout/SimplifiedSidebar';
 import Header from '../shared/layout/Header';
-import { SimplifiedUser } from '../../lib/simplifiedAuth';
+import { CustomUser } from '../../lib/customAuth';
 
 // Import all admin components for super admin access
 import Overview from '../dashboard/Overview';
-import SalesValue from '../sales/SalesValue';
 import AllSalesRecords from '../sales/AllSalesRecords';
 import SalesDashboard from '../sales/SalesDashboard';
 import DailySalesSummary from '../sales/DailySalesSummary';
 import ProductSalesReport from '../sales/ProductSalesReport';
-import InventorySummaryPage from '../inventory/InventorySummaryPage';
 import InventoryManagement from '../inventory/InventoryManagement';
-import AttendanceTimesheet from '../staff/AttendanceTimesheet';
-import RolesPermissions from '../staff/RolesPermissions';
-import LeaveRequest from '../staff/LeaveRequest';
+// import AttendanceTimesheet from '../staff/AttendanceTimesheet';
+// import RolesPermissions from '../staff/RolesPermissions';
+// import LeaveRequest from '../staff/LeaveRequest';
+  // Import the refactored marketing components
 import MarketingDashboard from '../marketing/MarketingDashboard';
-import CampaignManagement from '../marketing/CampaignManagement';
-import TemplateManagement from '../marketing/TemplateManagement';
-import CampaignAnalytics from '../marketing/CampaignAnalytics';
+import PromotionsManagement from '../marketing/PromotionsManagement';
+// import CampaignManagement from '../marketing/CampaignManagement';
+import InsightsAnalytics from '../marketing/InsightsAnalytics';
+// import TemplateManagement from '../marketing/TemplateManagement';
 import ClientNotifications from '../marketing/ClientNotifications';
+import FacebookIntegration from '../marketing/FacebookIntegration';
 import EventCenter from '../reports/EventCenter';
 import ReportsAnalytics from '../reports/ReportsAnalytics';
 import SettingsPage from '../settings/SettingsPage';
 import LowStockAlerts from '../inventory/LowStockAlerts';
 import Categories from '../inventory/Categories';
-import ActiveUsers from '../users/ActiveUsers';
+// import ActiveUsers from '../users/ActiveUsers';
 import UserAccounts from '../users/UserAccounts';
 import UserActivity from '../users/UserActivity';
 import SessionHistory from '../users/SessionHistory';
-import UserRolesOverview from '../users/UserRolesOverview';
+// import UserRolesOverview from '../users/UserRolesOverview';
 import AddStaff from '../hr/AddStaff';
-import UserPermissions from '../users/UserPermissions';
-import HRDashboard from '../hr/HRDashboard';
+import StaffList from '../hr/StaffList';
+// import UserPermissions from '../users/UserPermissions';
+// import HRDashboard from '../hr/HRDashboard';
 import AttendanceDashboard from '../hr/AttendanceDashboard';
 import LeaveManagement from '../hr/LeaveManagement';
-import HRAnalytics from '../hr/HRAnalytics';
+// import HRAnalytics from '../hr/HRAnalytics';
 import PayrollCompensation from '../hr/PayrollCompensation';
-
+import HRDashboard from '../hr/HRDashboard';
 interface SuperAdminDashboardProps {
-  user: SimplifiedUser;
+  user: CustomUser;
   onLogout: () => void;
 }
 
@@ -50,8 +52,6 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, onLogou
     switch (activeSection) {
       case 'overview':
         return <Overview />;
-      case 'sales-value':
-        return <SalesValue />;
       case 'sales-records':
         return <AllSalesRecords />;
       case 'sales-dashboard':
@@ -60,8 +60,6 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, onLogou
         return <DailySalesSummary />;
       case 'product-sales':
         return <ProductSalesReport />;
-      case 'inventory-summary':
-        return <InventorySummaryPage />;
       case 'inventory-management':
       case 'all-products':
         return <InventoryManagement />;
@@ -82,34 +80,41 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, onLogou
         return <UserAccounts />;
       case 'add-staff':
         return <AddStaff onBack={() => setActiveSection('user-accounts')} />;
-      case 'roles-permissions':
-        return <RolesPermissions />;
+      // case 'roles-permissions':
+      //   return <RolesPermissions />;
       case 'activity-logs':
         return <UserActivity />;
       case 'session-history':
         return <SessionHistory />;
-      case 'user-roles-overview':
-        return <UserRolesOverview />;
+      // case 'user-roles-overview':
+      //   return <UserRolesOverview />;
       
       // Legacy staff management routes (for backward compatibility)
       case 'staff':
       case 'staff-management':
-        return <UserAccounts />;
-      case 'attendance':
-        return <AttendanceTimesheet />;
-      case 'leave':
-        return <LeaveRequest />;
+        return <StaffList />;
+      // // case 'attendance':
+      // //   return <AttendanceTimesheet />;
+      // case 'leave':
+      //   return <LeaveRequest />;
+        
+      // Marketing Section Routes
       case 'marketing':
-      case 'marketing-dashboard':
-        return <MarketingDashboard />;
-      case 'campaigns':
-        return <CampaignManagement />;
-      case 'templates':
-        return <TemplateManagement />;
-      case 'analytics':
-        return <CampaignAnalytics />;
-      case 'notifications':
-        return <ClientNotifications />;
+        case 'marketing-overview':
+          return <MarketingDashboard />;
+        case 'promotions-announcements':
+          return <PromotionsManagement />;
+        // case 'event-campaigns':
+        //   return <CampaignManagement />;
+        case 'insights-analytics':
+          return <InsightsAnalytics />;
+          // case 'template-management':
+          //   return <TemplateManagement />;
+        case 'client-notifications':
+          return <ClientNotifications />;
+        case 'facebook-integration':
+          return <FacebookIntegration />;
+
       case 'reports':
         return <ReportsAnalytics />;
       case 'event-center':
@@ -118,16 +123,16 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, onLogou
         return <SettingsPage />;
       
       // HR Section (Simplified)
-      case 'hr':
-        return <HRDashboard />;
+      // case 'hr':
+      //   return <HRDashboard />;
       case 'hr-dashboard':
         return <HRDashboard />;
       case 'attendance-dashboard':
         return <AttendanceDashboard />;
       case 'leave-management':
         return <LeaveManagement />;
-      case 'hr-analytics':
-        return <HRAnalytics />;
+      // case 'hr-analytics':
+      //   return <HRAnalytics />;
       case 'attendance-leave':
         return <AttendanceDashboard />;
       case 'payroll':
@@ -136,34 +141,34 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, onLogou
       // Legacy HR routes (for backward compatibility)
       case 'employees':
         return <UserAccounts />;
-      case 'performance':
-        return (
-          <div className="p-6">
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
-              <h2 className="text-2xl font-bold text-gray-800 mb-4">Performance Management</h2>
-              <p className="text-gray-600">Coming soon - Performance tracking and reviews</p>
-              <div className="mt-4 inline-flex items-center px-4 py-2 bg-yellow-100 text-yellow-800 rounded-lg">
-                <span className="text-sm">🚧 Under Development</span>
-              </div>
-            </div>
-          </div>
-        );
-      case 'training':
-        return (
-          <div className="p-6">
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
-              <h2 className="text-2xl font-bold text-gray-800 mb-4">Training & Development</h2>
-              <p className="text-gray-600">Coming soon - Learning management system</p>
-              <div className="mt-4 inline-flex items-center px-4 py-2 bg-yellow-100 text-yellow-800 rounded-lg">
-                <span className="text-sm">🚧 Under Development</span>
-              </div>
-            </div>
-          </div>
-        );
-      case 'active-users':
-        return <ActiveUsers />;
-      case 'user-permissions':
-        return <UserPermissions />;
+      // case 'performance':
+      //   return (
+      //     <div className="p-6">
+      //       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
+      //         <h2 className="text-2xl font-bold text-gray-800 mb-4">Performance Management</h2>
+      //         <p className="text-gray-600">Coming soon - Performance tracking and reviews</p>
+      //         <div className="mt-4 inline-flex items-center px-4 py-2 bg-yellow-100 text-yellow-800 rounded-lg">
+      //           <span className="text-sm">🚧 Under Development</span>
+      //         </div>
+      //       </div>
+      //     </div>
+      //   );
+      // case 'training':
+      //   return (
+      //     <div className="p-6">
+      //       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
+      //         <h2 className="text-2xl font-bold text-gray-800 mb-4">Training & Development</h2>
+      //         <p className="text-gray-600">Coming soon - Learning management system</p>
+      //         <div className="mt-4 inline-flex items-center px-4 py-2 bg-yellow-100 text-yellow-800 rounded-lg">
+      //           <span className="text-sm">🚧 Under Development</span>
+      //         </div>
+      //       </div>
+      //     </div>
+      //   );
+      // case 'active-users':
+      //   return <ActiveUsers />;
+      // case 'user-permissions':
+      //   return <UserPermissions />;
       
       // New menu items from the updated sidebar
       case 'sales-pos':

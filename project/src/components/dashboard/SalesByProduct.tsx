@@ -26,7 +26,7 @@ function formatCurrencyPHP(value: number): string {
 const SalesByProduct: React.FC = () => {
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [categories, setCategories] = useState<CategoryRow[]>([]);
-  const [items, setItems] = useState<ItemRow[]>([]);
+  const [transactionItems, setTransactionItems] = useState<ItemRow[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -39,19 +39,15 @@ const SalesByProduct: React.FC = () => {
       setLoading(true);
       setError(null);
 
-      // Load products with variants
+      // Get date range for last 30 days
+      const endDate = new Date();
+      const startDate = new Date();
+      startDate.setDate(endDate.getDate() - 30);
+
+      // Load products
       const { data: productsData, error: productsError } = await supabase
         .from('products')
-        .select(`
-          id, 
-          name, 
-          category_id,
-          product_variants!inner(
-            id,
-            name,
-            price
-          )
-        `)
+        .select('id, name, category_id')
         .eq('is_active', true);
 
       if (productsError) throw productsError;
@@ -64,38 +60,107 @@ const SalesByProduct: React.FC = () => {
 
       if (categoriesError) throw categoriesError;
 
-      // Since sales_transaction_items doesn't exist, we'll use sales_transactions
-      // and simulate product sales data
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      // Load transaction items for the last 30 days with fallback logic
+      let itemsData = null;
+      let itemsError = null;
 
-      const { data: transactionsData, error: transactionsError } = await supabase
-        .from('sales_transactions')
-        .select('id, total_amount, transaction_date')
-        .gte('transaction_date', thirtyDaysAgo.toISOString());
+      // Try strict filters first
+      const { data: strictData, error: strictError } = await supabase
+        .from('pos_transaction_items')
+        .select(`
+          product_id,
+          quantity,
+          unit_price,
+          discount_amount,
+          line_total,
+          created_at,
+          pos_transactions!inner(
+            transaction_date,
+            transaction_type,
+            payment_status,
+            status
+          )
+        `)
+        .eq('pos_transactions.transaction_type', 'sale')
+        .eq('pos_transactions.payment_status', 'completed')
+        .eq('pos_transactions.status', 'active')
+        .gte('pos_transactions.transaction_date', startDate.toISOString())
+        .lte('pos_transactions.transaction_date', endDate.toISOString());
 
-      if (transactionsError) throw transactionsError;
+      if (strictError) {
+        console.error('SalesByProduct - Strict filter error:', strictError);
+        itemsError = strictError;
+      } else if (strictData && strictData.length > 0) {
+        itemsData = strictData;
+        console.log('SalesByProduct - Using strict filters, found:', strictData.length, 'transaction items');
+      } else {
+        console.log('SalesByProduct - No data with strict filters, trying fallback...');
+        
+        // Fallback 1: Remove status filter
+        const { data: fallbackData, error: fallbackError } = await supabase
+          .from('pos_transaction_items')
+          .select(`
+            product_id,
+            quantity,
+            unit_price,
+            discount_amount,
+            line_total,
+            created_at,
+            pos_transactions!inner(
+              transaction_date,
+              transaction_type,
+              payment_status,
+              status
+            )
+          `)
+          .eq('pos_transactions.transaction_type', 'sale')
+          .eq('pos_transactions.payment_status', 'completed')
+          .gte('pos_transactions.transaction_date', startDate.toISOString())
+          .lte('pos_transactions.transaction_date', endDate.toISOString());
 
-      // Transform data to match expected format
-      const transformedProducts = productsData?.map(product => ({
-        id: product.id,
-        name: product.name,
-        category_id: product.category_id
-      })) || [];
+        if (fallbackError) {
+          console.error('SalesByProduct - Fallback filter error:', fallbackError);
+          itemsError = fallbackError;
+        } else if (fallbackData && fallbackData.length > 0) {
+          itemsData = fallbackData;
+          console.log('SalesByProduct - Using fallback filters, found:', fallbackData.length, 'transaction items');
+        } else {
+          console.log('SalesByProduct - No data with fallback filters, trying final fallback...');
+          
+          // Final fallback: Only transaction_type filter
+          const { data: finalData, error: finalError } = await supabase
+            .from('pos_transaction_items')
+            .select(`
+              product_id,
+              quantity,
+              unit_price,
+              discount_amount,
+              line_total,
+              created_at,
+              pos_transactions!inner(
+                transaction_date,
+                transaction_type,
+                payment_status,
+                status
+              )
+            `)
+            .eq('pos_transactions.transaction_type', 'sale')
+            .gte('pos_transactions.transaction_date', startDate.toISOString())
+            .lte('pos_transactions.transaction_date', endDate.toISOString());
 
-      // Create mock transaction items based on transactions
-      const mockItems = transactionsData?.map((tx, index) => ({
-        product_id: productsData?.[index % productsData.length]?.id || '',
-        quantity: Math.floor(Math.random() * 5) + 1,
-        unit_price: productsData?.[index % productsData.length]?.product_variants?.[0]?.price || 0,
-        discount_amount: 0,
-        line_total: (Math.floor(Math.random() * 5) + 1) * (productsData?.[index % productsData.length]?.product_variants?.[0]?.price || 0),
-        created_at: tx.transaction_date
-      })) || [];
+          if (finalError) {
+            console.error('SalesByProduct - Final filter error:', finalError);
+            itemsError = finalError;
+          } else {
+            itemsData = finalData;
+            console.log('SalesByProduct - Using final fallback, found:', finalData?.length || 0, 'transaction items');
+          }
+        }
+      }
 
-      setProducts(transformedProducts);
+      setProducts(productsData || []);
       setCategories(categoriesData || []);
-      setItems(mockItems);
+      setTransactionItems(itemsData || []);
     } catch (err: any) {
       console.error('Error loading sales data:', err);
       setError(err.message || 'Failed to load sales data');
@@ -105,11 +170,12 @@ const SalesByProduct: React.FC = () => {
   };
 
   const productMetrics = useMemo(() => {
-    const metrics = new Map<string, ProductMetric>();
+    const productMap = new Map<string, ProductMetric>();
     
-    products.forEach(product => {
+    // Initialize products
+    products.forEach((product, index) => {
       const category = categories.find(c => c.id === product.category_id);
-      metrics.set(product.id, {
+      productMap.set(product.id, {
         id: product.id,
         name: product.name,
         category: category?.name || 'Uncategorized',
@@ -117,23 +183,24 @@ const SalesByProduct: React.FC = () => {
         units: 0,
         growthPct: 0,
         isPositive: true,
-        color: COLORS[metrics.size % COLORS.length]
+        color: COLORS[index % COLORS.length]
       });
     });
 
-    items.forEach(item => {
-      const metric = metrics.get(item.product_id);
-      if (metric) {
-        metric.sales += item.line_total || (item.unit_price * item.quantity);
-        metric.units += item.quantity;
+    // Calculate metrics from transaction items
+    transactionItems.forEach(item => {
+      const product = productMap.get(item.product_id);
+      if (product) {
+        product.sales += item.line_total || 0;
+        product.units += item.quantity || 0;
       }
     });
 
-    return Array.from(metrics.values())
-      .filter(metric => metric.sales > 0)
+    return Array.from(productMap.values())
+      .filter(p => p.sales > 0)
       .sort((a, b) => b.sales - a.sales)
       .slice(0, 10);
-  }, [products, categories, items]);
+  }, [products, categories, transactionItems]);
 
   const totalSales = useMemo(() => 
     productMetrics.reduce((sum, product) => sum + product.sales, 0), 
@@ -177,7 +244,7 @@ const SalesByProduct: React.FC = () => {
           <h3 className="text-lg font-semibold text-gray-900">Top Products</h3>
           <div className="flex items-center space-x-1 text-sm text-gray-600">
             <TrendingUp className="w-4 h-4" />
-            <span>Last 30 days</span>
+            <span>{productMetrics.length} products</span>
           </div>
         </div>
 

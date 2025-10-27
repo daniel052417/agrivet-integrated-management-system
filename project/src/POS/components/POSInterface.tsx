@@ -126,14 +126,8 @@ const POSInterface: React.FC<POSInterfaceProps> = ({ user, onLogout }) => {
     return cart.reduce((sum, item) => sum + item.lineTotal, 0);
   };
 
-  const calculateTax = (): number => {
-    // Get tax rate from settings
-    const taxRate = 0.12; // Default 12% VAT
-    return calculateSubtotal() * taxRate;
-  };
-
   const calculateTotal = (): number => {
-    return calculateSubtotal() + calculateTax();
+    return calculateSubtotal();
   };
 
   const handleTransactionComplete = () => {
@@ -243,7 +237,7 @@ const POSInterface: React.FC<POSInterfaceProps> = ({ user, onLogout }) => {
                   onRemoveItem={removeFromCart}
                   onClearCart={clearCart}
                   subtotal={calculateSubtotal()}
-                  tax={calculateTax()}
+                  tax={0}
                   total={calculateTotal()}
                   onProceedToPayment={() => setActiveTab('payment')}
                 />
@@ -265,7 +259,7 @@ const POSInterface: React.FC<POSInterfaceProps> = ({ user, onLogout }) => {
                   cart={cart}
                   selectedCustomer={selectedCustomer}
                   subtotal={calculateSubtotal()}
-                  tax={calculateTax()}
+                  tax={0}
                   total={calculateTotal()}
                   session={currentSession}
                   onTransactionComplete={handleTransactionComplete}

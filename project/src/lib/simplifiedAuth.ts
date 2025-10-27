@@ -46,47 +46,47 @@ export type SystemRole = typeof SYSTEM_ROLES[keyof typeof SYSTEM_ROLES];
 export const ROLE_SIDEBAR_CONFIG = {
   [SYSTEM_ROLES.SUPER_ADMIN]: {
     sections: [
-      'overview', 'sales-value', 'inventory-summary',
+      'overview',
       'inventory-management', 'all-products', 'categories', 'low-stock',
       'sales-pos', 'sales-records', 'sales-dashboard', 'daily-sales', 'product-sales',
-      'staff-user-management', 'user-accounts', 'session-history', 'user-roles-overview', 'add-staff', 'roles-permissions', 'activity-logs',
-      'hr', 'hr-dashboard', 'attendance-dashboard', 'leave-management', 'hr-analytics', 'payroll',
-      'marketing', 'marketing-dashboard', 'campaigns', 'templates', 'analytics', 'notifications',
+      'staff-user-management', 'user-accounts', 'session-history', 'user-roles-overview', 'roles-permissions', 'activity-logs',
+      'hr', 'hr-dashboard', 'staff', 'attendance-dashboard', 'leave-management', 'hr-analytics', 'payroll',
+      'marketing', 'marketing-overview', 'promotions-announcements', 'insights-analytics', 'client-notifications', 'facebook-integration',
       'reports', 'exports', 'claims', 'settings'
     ]
   },
   [SYSTEM_ROLES.HR_ADMIN]: {
     sections: [
-      'overview', 'hr', 'hr-dashboard', 'attendance-dashboard', 'leave-management', 'hr-analytics', 'payroll',
-      'staff-user-management', 'user-accounts', 'add-staff', 'roles-permissions', 'activity-logs'
+      'overview', 'hr', 'hr-dashboard', 'staff', 'attendance-dashboard', 'leave-management', 'hr-analytics', 'payroll',
+      'staff-user-management', 'user-accounts', 'roles-permissions', 'activity-logs'
     ]
   },
   [SYSTEM_ROLES.HR_STAFF]: {
     sections: [
-      'overview', 'hr', 'hr-dashboard', 'attendance-dashboard', 'leave-management', 'hr-analytics'
+      'overview', 'hr', 'hr-dashboard', 'staff', 'attendance-dashboard', 'leave-management', 'hr-analytics'
     ]
   },
   [SYSTEM_ROLES.MARKETING_ADMIN]: {
     sections: [
-      'overview', 'marketing', 'marketing-dashboard', 'campaigns', 'templates', 'analytics', 'notifications', 'reports'
+      'overview', 'marketing', 'marketing-overview', 'promotions-announcements', 'event-campaigns', 'insights-analytics', 'template-management', 'client-notifications', 'facebook-integration', 'reports'
     ]
   },
   [SYSTEM_ROLES.MARKETING_STAFF]: {
     sections: [
-      'overview', 'marketing', 'marketing-dashboard', 'campaigns', 'analytics', 'notifications'
+      'overview', 'marketing', 'marketing-overview', 'promotions-announcements', 'event-campaigns', 'insights-analytics', 'template-management', 'client-notifications'
     ]
   },
   [SYSTEM_ROLES.CASHIER]: {
     sections: [
-      'overview', 'sales-pos', 'sales-records', 'sales-dashboard', 'daily-sales', 'product-sales', 'sales-value'
+      'overview', 'sales-pos', 'sales-records', 'sales-dashboard', 'daily-sales', 'product-sales'
     ]
   },
   [SYSTEM_ROLES.INVENTORY_CLERK]: {
     sections: [
-      'overview', 'inventory-summary', 'inventory-management', 'all-products', 'categories', 'low-stock'
+      'overview', 'inventory-management', 'all-products', 'categories', 'low-stock'
     ]
   },
-} as const;
+};
 
 class SimplifiedAuthService {
   private static instance: SimplifiedAuthService;

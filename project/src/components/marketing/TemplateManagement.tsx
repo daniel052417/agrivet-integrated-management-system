@@ -1,503 +1,707 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { 
   Plus, 
+  Search, 
+  Filter, 
   Edit, 
   Trash2, 
+  Copy, 
   Eye, 
-  Save, 
-  X, 
-  Palette, 
-  Code, 
-  Settings,
-  AlertCircle,
-  CheckCircle
+  Mail, 
+  MessageSquare, 
+  FileText,
+  Image as ImageIcon,
+  Calendar,
+  User,
+  MoreHorizontal,
+  X,
+  Save,
+  Upload
 } from 'lucide-react';
 
-interface CampaignTemplate {
-  id: string;
+// Mock data for email templates
+const mockTemplates = [
+  {
+    id: 1,
+    name: "Welcome Email",
+    subject: "Welcome to Tiongson Agrivet!",
+    type: "email",
+    category: "onboarding",
+    status: "active",
+    lastModified: "2025-01-20",
+    modifiedBy: "John Doe",
+    usageCount: 45,
+    description: "Welcome new customers to our platform"
+  },
+  {
+    id: 2,
+    name: "Promotion Alert",
+    subject: "Special Offer - Up to 30% Off!",
+    type: "email",
+    category: "promotion",
+    status: "active",
+    lastModified: "2025-01-18",
+    modifiedBy: "Jane Smith",
+    usageCount: 23,
+    description: "Notify customers about special promotions"
+  },
+  {
+    id: 3,
+    name: "Order Confirmation",
+    subject: "Your Order Has Been Confirmed",
+    type: "email",
+    category: "transaction",
+    status: "active",
+    lastModified: "2025-01-15",
+    modifiedBy: "Mike Johnson",
+    usageCount: 156,
+    description: "Confirm customer orders"
+  },
+  {
+    id: 4,
+    name: "SMS Promotion",
+    subject: "SMS: 20% off this weekend!",
+    type: "sms",
+    category: "promotion",
+    status: "draft",
+    lastModified: "2025-01-22",
+    modifiedBy: "Sarah Wilson",
+    usageCount: 0,
+    description: "SMS promotion for weekend sales"
+  },
+  {
+    id: 5,
+    name: "Newsletter Template",
+    subject: "Monthly Newsletter - January 2025",
+    type: "email",
+    category: "newsletter",
+    status: "active",
+    lastModified: "2025-01-10",
+    modifiedBy: "John Doe",
+    usageCount: 12,
+    description: "Monthly newsletter for customers"
+  }
+];
+
+interface TemplateFormData {
   name: string;
-  type: 'email' | 'sms' | 'push' | 'social';
+  subject: string;
+  type: 'email' | 'sms' | 'notification';
+  category: 'onboarding' | 'promotion' | 'transaction' | 'newsletter';
+  status: 'active' | 'draft' | 'archived';
+  description: string;
   content: string;
-  preview_image?: string;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
 }
 
 const TemplateManagement: React.FC = () => {
-  const [templates, setTemplates] = useState<CampaignTemplate[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
-  const [editingTemplate, setEditingTemplate] = useState<CampaignTemplate | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedType, setSelectedType] = useState('all');
-  const [formData, setFormData] = useState({
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingTemplate, setEditingTemplate] = useState<any>(null);
+  const [formData, setFormData] = useState<TemplateFormData>({
     name: '',
-    type: 'email' as 'email' | 'sms' | 'push' | 'social',
-    content: '',
-    preview_image: '',
-    is_active: true
+    subject: '',
+    type: 'email',
+    category: 'onboarding',
+    status: 'draft',
+    description: '',
+    content: ''
   });
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  useEffect(() => {
-    loadTemplates();
-  }, []);
-
-  const loadTemplates = async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
-
-      // Mock data - replace with actual API call
-      const mockTemplates: CampaignTemplate[] = [
-        {
-          id: '1',
-          name: 'Welcome Email Template',
-          type: 'email',
-          content: '<h1>Welcome to Agrivet!</h1><p>Thank you for joining us. We\'re excited to have you on board.</p>',
-          preview_image: 'https://via.placeholder.com/400x200',
-          is_active: true,
-          created_at: '2024-01-01T00:00:00Z',
-          updated_at: '2024-01-01T00:00:00Z'
-        },
-        {
-          id: '2',
-          name: 'Order Confirmation SMS',
-          type: 'sms',
-          content: 'Your order #{{order_number}} has been confirmed. Total: ₱{{total_amount}}. Thank you!',
-          is_active: true,
-          created_at: '2024-01-01T00:00:00Z',
-          updated_at: '2024-01-01T00:00:00Z'
-        },
-        {
-          id: '3',
-          name: 'Product Launch Push',
-          type: 'push',
-          content: 'New product available! Check out our latest agricultural supplies.',
-          is_active: true,
-          created_at: '2024-01-01T00:00:00Z',
-          updated_at: '2024-01-01T00:00:00Z'
-        },
-        {
-          id: '4',
-          name: 'Social Media Post',
-          type: 'social',
-          content: '🌱 Exciting news! Our new line of organic fertilizers is now available. Boost your crop yield naturally! #Agriculture #Organic #Farming',
-          preview_image: 'https://via.placeholder.com/400x200',
-          is_active: false,
-          created_at: '2024-01-01T00:00:00Z',
-          updated_at: '2024-01-01T00:00:00Z'
-        }
-      ];
-
-      setTemplates(mockTemplates);
-    } catch (err: any) {
-      console.error('Error loading templates:', err);
-      setError(err.message || 'Failed to load templates');
-    } finally {
-      setIsLoading(false);
+  const getTypeIcon = (type: string) => {
+    switch (type) {
+      case 'email': return <Mail className="w-4 h-4" />;
+      case 'sms': return <MessageSquare className="w-4 h-4" />;
+      case 'notification': return <FileText className="w-4 h-4" />;
+      default: return <FileText className="w-4 h-4" />;
     }
+  };
+
+  const getTypeColor = (type: string) => {
+    switch (type) {
+      case 'email': return 'bg-blue-100 text-blue-800';
+      case 'sms': return 'bg-green-100 text-green-800';
+      case 'notification': return 'bg-purple-100 text-purple-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const getCategoryColor = (category: string) => {
+    switch (category) {
+      case 'onboarding': return 'bg-emerald-100 text-emerald-800';
+      case 'promotion': return 'bg-orange-100 text-orange-800';
+      case 'transaction': return 'bg-blue-100 text-blue-800';
+      case 'newsletter': return 'bg-purple-100 text-purple-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'active': return 'bg-green-100 text-green-800';
+      case 'draft': return 'bg-yellow-100 text-yellow-800';
+      case 'archived': return 'bg-gray-100 text-gray-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('en-PH', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    });
+  };
+
+  // Form handling functions
+  const openCreateModal = () => {
+    setShowCreateModal(true);
+    setFormData({
+      name: '',
+      subject: '',
+      type: 'email',
+      category: 'onboarding',
+      status: 'draft',
+      description: '',
+      content: ''
+    });
+    setFormErrors({});
+  };
+
+  const closeCreateModal = () => {
+    setShowCreateModal(false);
+    setFormData({
+      name: '',
+      subject: '',
+      type: 'email',
+      category: 'onboarding',
+      status: 'draft',
+      description: '',
+      content: ''
+    });
+    setFormErrors({});
+  };
+
+  const openEditModal = (template: any) => {
+    setEditingTemplate(template);
+    setShowEditModal(true);
+    setFormData({
+      name: template.name,
+      subject: template.subject,
+      type: template.type,
+      category: template.category,
+      status: template.status,
+      description: template.description,
+      content: `This is a sample content for ${template.name}. Replace this with your actual template content.`
+    });
+    setFormErrors({});
+  };
+
+  const closeEditModal = () => {
+    setShowEditModal(false);
+    setEditingTemplate(null);
+    setFormData({
+      name: '',
+      subject: '',
+      type: 'email',
+      category: 'onboarding',
+      status: 'draft',
+      description: '',
+      content: ''
+    });
+    setFormErrors({});
+  };
+
+  const handleInputChange = (field: keyof TemplateFormData, value: any) => {
+    setFormData(prev => ({
+      ...prev,
+      [field]: value
+    }));
+    
+    if (formErrors[field]) {
+      setFormErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors[field];
+        return newErrors;
+      });
+    }
+  };
+
+  const validateForm = (): boolean => {
+    const errors: Record<string, string> = {};
+
+    if (!formData.name.trim()) {
+      errors.name = 'Template name is required';
+    }
+    if (!formData.subject.trim()) {
+      errors.subject = 'Subject is required';
+    }
+    if (!formData.description.trim()) {
+      errors.description = 'Description is required';
+    }
+    if (!formData.content.trim()) {
+      errors.content = 'Content is required';
+    }
+
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    if (!validateForm()) {
+      return;
+    }
+
+    setIsSubmitting(true);
+    
     try {
-      if (modalMode === 'add') {
-        // Add new template
-        const newTemplate: CampaignTemplate = {
-          id: Date.now().toString(),
-          ...formData,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        };
-        setTemplates(prev => [...prev, newTemplate]);
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      const newTemplate = {
+        id: editingTemplate ? editingTemplate.id : Date.now(),
+        name: formData.name,
+        subject: formData.subject,
+        type: formData.type,
+        category: formData.category,
+        status: formData.status,
+        lastModified: new Date().toISOString().split('T')[0],
+        modifiedBy: 'Current User',
+        usageCount: editingTemplate ? editingTemplate.usageCount : 0,
+        description: formData.description
+      };
+
+      console.log('Template created/updated:', newTemplate);
+      
+      if (showCreateModal) {
+        closeCreateModal();
       } else {
-        // Update existing template
-        setTemplates(prev => prev.map(template => 
-          template.id === editingTemplate?.id 
-            ? { ...template, ...formData, updated_at: new Date().toISOString() }
-            : template
-        ));
+        closeEditModal();
       }
       
-      handleCloseModal();
-    } catch (err: any) {
+    } catch (err) {
       console.error('Error saving template:', err);
-      setError(err.message || 'Failed to save template');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  const handleEdit = (template: CampaignTemplate) => {
-    setModalMode('edit');
-    setEditingTemplate(template);
+  const handleCopyTemplate = (template: any) => {
     setFormData({
-      name: template.name,
+      name: `${template.name} (Copy)`,
+      subject: template.subject,
       type: template.type,
-      content: template.content,
-      preview_image: template.preview_image || '',
-      is_active: template.is_active
+      category: template.category,
+      status: 'draft',
+      description: template.description,
+      content: `This is a copy of ${template.name}. Modify as needed.`
     });
-    setIsModalOpen(true);
+    setShowCreateModal(true);
   };
 
-  const handleDelete = async (id: string) => {
-    if (!window.confirm('Are you sure you want to delete this template?')) return;
-
-    try {
-      setTemplates(prev => prev.filter(template => template.id !== id));
-    } catch (err: any) {
-      console.error('Error deleting template:', err);
-      setError(err.message || 'Failed to delete template');
+  const handleDeleteTemplate = (templateId: number) => {
+    if (window.confirm('Are you sure you want to delete this template?')) {
+      console.log('Template deleted:', templateId);
     }
   };
 
-  const handleCloseModal = () => {
-    setIsModalOpen(false);
-    setModalMode('add');
-    setEditingTemplate(null);
-    setFormData({
-      name: '',
-      type: 'email',
-      content: '',
-      preview_image: '',
-      is_active: true
-    });
-    setError(null);
-  };
-
-  const filteredTemplates = templates.filter(template => {
+  const filteredTemplates = mockTemplates.filter(template => {
     const matchesSearch = template.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         template.content.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesType = selectedType === 'all' || template.type === selectedType;
-    return matchesSearch && matchesType;
+                         template.subject.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         template.description.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesType = typeFilter === 'all' || template.type === typeFilter;
+    const matchesCategory = categoryFilter === 'all' || template.category === categoryFilter;
+    const matchesStatus = statusFilter === 'all' || template.status === statusFilter;
+    return matchesSearch && matchesType && matchesCategory && matchesStatus;
   });
 
-  const getTypeColor = (type: string) => {
-    switch (type) {
-      case 'email':
-        return 'bg-blue-100 text-blue-800';
-      case 'sms':
-        return 'bg-green-100 text-green-800';
-      case 'push':
-        return 'bg-purple-100 text-purple-800';
-      case 'social':
-        return 'bg-pink-100 text-pink-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
-  };
-
-  const getTypeIcon = (type: string) => {
-    switch (type) {
-      case 'email':
-        return '📧';
-      case 'sms':
-        return '📱';
-      case 'push':
-        return '🔔';
-      case 'social':
-        return '📢';
-      default:
-        return '📄';
-    }
-  };
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="text-center py-12">
-        <div className="text-red-600 text-4xl mb-4">⚠️</div>
-        <h3 className="text-lg font-medium text-red-900 mb-2">Error Loading Templates</h3>
-        <p className="text-red-700 mb-4">{error}</p>
-        <button
-          onClick={loadTemplates}
-          className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Template Management</h2>
+          <p className="text-gray-600">Create and manage email, SMS, and notification templates</p>
+        </div>
+        <button 
+          onClick={openCreateModal}
+          className="flex items-center space-x-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700"
         >
-          Retry
+          <Plus className="w-4 h-4" />
+          <span>Create Template</span>
         </button>
       </div>
-    );
-  }
 
-  return (
-    <div className="template-management">
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Template Management</h1>
-          <p className="text-gray-600">Create and manage marketing campaign templates</p>
-        </div>
-
-        {/* Controls */}
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 mb-6">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between space-y-4 md:space-y-0">
-            <div className="flex items-center space-x-4">
-              <div className="relative">
-                <input
-                  type="text"
-                  placeholder="Search templates..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 w-full md:w-80"
-                />
-                <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">
-                  🔍
-                </div>
-              </div>
-              
-              <select
-                value={selectedType}
-                onChange={(e) => setSelectedType(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="all">All Types</option>
-                <option value="email">Email</option>
-                <option value="sms">SMS</option>
-                <option value="push">Push</option>
-                <option value="social">Social</option>
-              </select>
+      {/* Filters and Search */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="md:col-span-2">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+              <input
+                type="text"
+                placeholder="Search templates..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+              />
             </div>
+          </div>
+          <select
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value)}
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+          >
+            <option value="all">All Types</option>
+            <option value="email">Email</option>
+            <option value="sms">SMS</option>
+            <option value="notification">Notification</option>
+          </select>
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+          >
+            <option value="all">All Categories</option>
+            <option value="onboarding">Onboarding</option>
+            <option value="promotion">Promotion</option>
+            <option value="transaction">Transaction</option>
+            <option value="newsletter">Newsletter</option>
+          </select>
+        </div>
+      </div>
 
-            <button
-              onClick={() => setIsModalOpen(true)}
-              className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-            >
-              <Plus className="w-4 h-4" />
-              <span>New Template</span>
-            </button>
+      {/* Template Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Total Templates</p>
+              <p className="text-3xl font-bold text-gray-900">{mockTemplates.length}</p>
+            </div>
+            <div className="p-3 bg-blue-100 rounded-lg">
+              <FileText className="w-6 h-6 text-blue-600" />
+            </div>
           </div>
         </div>
 
-        {/* Templates Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredTemplates.map((template) => (
-            <div key={template.id} className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex items-center space-x-3">
-                  <div className="text-2xl">{getTypeIcon(template.type)}</div>
-                  <div>
-                    <h3 className="text-lg font-semibold text-gray-900">{template.name}</h3>
-                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getTypeColor(template.type)}`}>
-                      {template.type.toUpperCase()}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Active Templates</p>
+              <p className="text-3xl font-bold text-gray-900">{mockTemplates.filter(t => t.status === 'active').length}</p>
+            </div>
+            <div className="p-3 bg-green-100 rounded-lg">
+              <Eye className="w-6 h-6 text-green-600" />
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Email Templates</p>
+              <p className="text-3xl font-bold text-gray-900">{mockTemplates.filter(t => t.type === 'email').length}</p>
+            </div>
+            <div className="p-3 bg-blue-100 rounded-lg">
+              <Mail className="w-6 h-6 text-blue-600" />
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Total Usage</p>
+              <p className="text-3xl font-bold text-gray-900">{mockTemplates.reduce((sum, t) => sum + t.usageCount, 0)}</p>
+            </div>
+            <div className="p-3 bg-purple-100 rounded-lg">
+              <MessageSquare className="w-6 h-6 text-purple-600" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Templates List */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200">
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Template</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Usage</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Modified</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {filteredTemplates.map((template) => (
+                <tr key={template.id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div>
+                      <div className="text-sm font-medium text-gray-900">{template.name}</div>
+                      <div className="text-sm text-gray-500 line-clamp-1">{template.subject}</div>
+                      <div className="text-xs text-gray-400 mt-1">{template.description}</div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center space-x-2">
+                      {getTypeIcon(template.type)}
+                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${getTypeColor(template.type)}`}>
+                        {template.type}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${getCategoryColor(template.category)}`}>
+                      {template.category}
                     </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(template.status)}`}>
+                      {template.status}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm text-gray-900">{template.usageCount}</div>
+                    <div className="text-xs text-gray-500">times used</div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm text-gray-900">{formatDate(template.lastModified)}</div>
+                    <div className="text-xs text-gray-500">by {template.modifiedBy}</div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                    <div className="flex items-center space-x-2">
+                      <button className="text-emerald-600 hover:text-emerald-900" title="Preview">
+                        <Eye className="w-4 h-4" />
+                      </button>
+                      <button 
+                        onClick={() => openEditModal(template)}
+                        className="text-blue-600 hover:text-blue-900" 
+                        title="Edit"
+                      >
+                        <Edit className="w-4 h-4" />
+                      </button>
+                      <button 
+                        onClick={() => handleCopyTemplate(template)}
+                        className="text-gray-600 hover:text-gray-900" 
+                        title="Copy"
+                      >
+                        <Copy className="w-4 h-4" />
+                      </button>
+                      <button 
+                        onClick={() => handleDeleteTemplate(template.id)}
+                        className="text-red-600 hover:text-red-900" 
+                        title="Delete"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Empty State */}
+      {filteredTemplates.length === 0 && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
+          <FileText className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-gray-900 mb-2">No templates found</h3>
+          <p className="text-gray-600 mb-6">Try adjusting your search criteria or create a new template.</p>
+          <button 
+            onClick={openCreateModal}
+            className="flex items-center space-x-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 mx-auto"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Create Template</span>
+          </button>
+        </div>
+      )}
+
+      {/* Create/Edit Template Modal */}
+      {(showCreateModal || showEditModal) && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <h2 className="text-xl font-semibold text-gray-900">
+                {showCreateModal ? 'Create New Template' : 'Edit Template'}
+              </h2>
+              <button
+                onClick={showCreateModal ? closeCreateModal : closeEditModal}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmit} className="p-6">
+              <div className="space-y-6">
+                {/* Template Name */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Template Name *
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.name}
+                    onChange={(e) => handleInputChange('name', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    placeholder="Enter template name"
+                  />
+                  {formErrors.name && (
+                    <p className="mt-1 text-sm text-red-600">{formErrors.name}</p>
+                  )}
+                </div>
+
+                {/* Subject */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Subject *
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.subject}
+                    onChange={(e) => handleInputChange('subject', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    placeholder="Enter email subject or SMS title"
+                  />
+                  {formErrors.subject && (
+                    <p className="mt-1 text-sm text-red-600">{formErrors.subject}</p>
+                  )}
+                </div>
+
+                {/* Type and Category */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Type *
+                    </label>
+                    <select
+                      value={formData.type}
+                      onChange={(e) => handleInputChange('type', e.target.value as any)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    >
+                      <option value="email">Email</option>
+                      <option value="sms">SMS</option>
+                      <option value="notification">Notification</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Category *
+                    </label>
+                    <select
+                      value={formData.category}
+                      onChange={(e) => handleInputChange('category', e.target.value as any)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    >
+                      <option value="onboarding">Onboarding</option>
+                      <option value="promotion">Promotion</option>
+                      <option value="transaction">Transaction</option>
+                      <option value="newsletter">Newsletter</option>
+                    </select>
                   </div>
                 </div>
-                
-                <div className="flex space-x-2">
-                  <button
-                    onClick={() => handleEdit(template)}
-                    className="text-blue-600 hover:text-blue-800 p-1"
-                    title="Edit template"
-                  >
-                    <Edit className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => handleDelete(template.id)}
-                    className="text-red-600 hover:text-red-800 p-1"
-                    title="Delete template"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-              
-              {template.preview_image && (
-                <div className="mb-4">
-                  <img
-                    src={template.preview_image}
-                    alt={template.name}
-                    className="w-full h-32 object-cover rounded-lg"
+
+                {/* Description */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Description *
+                  </label>
+                  <textarea
+                    value={formData.description}
+                    onChange={(e) => handleInputChange('description', e.target.value)}
+                    rows={2}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    placeholder="Enter template description"
                   />
-                </div>
-              )}
-              
-              <div className="mb-4">
-                <p className="text-sm text-gray-600 line-clamp-3">
-                  {template.content.replace(/<[^>]*>/g, '')}
-                </p>
-              </div>
-              
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  {template.is_active ? (
-                    <CheckCircle className="w-4 h-4 text-green-600" />
-                  ) : (
-                    <AlertCircle className="w-4 h-4 text-gray-400" />
+                  {formErrors.description && (
+                    <p className="mt-1 text-sm text-red-600">{formErrors.description}</p>
                   )}
-                  <span className={`text-sm ${template.is_active ? 'text-green-600' : 'text-gray-500'}`}>
-                    {template.is_active ? 'Active' : 'Inactive'}
-                  </span>
                 </div>
-                
-                <div className="text-xs text-gray-500">
-                  {new Date(template.updated_at).toLocaleDateString()}
+
+                {/* Content */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Content *
+                  </label>
+                  <textarea
+                    value={formData.content}
+                    onChange={(e) => handleInputChange('content', e.target.value)}
+                    rows={8}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono text-sm"
+                    placeholder="Enter template content..."
+                  />
+                  {formErrors.content && (
+                    <p className="mt-1 text-sm text-red-600">{formErrors.content}</p>
+                  )}
+                  <p className="mt-1 text-xs text-gray-500">
+                    Use variables like {'{customer_name}'}, {'{order_id}'}, {'{amount}'} for dynamic content
+                  </p>
+                </div>
+
+                {/* Status */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Status
+                  </label>
+                  <select
+                    value={formData.status}
+                    onChange={(e) => handleInputChange('status', e.target.value as any)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  >
+                    <option value="draft">Draft</option>
+                    <option value="active">Active</option>
+                    <option value="archived">Archived</option>
+                  </select>
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
 
-        {filteredTemplates.length === 0 && (
-          <div className="text-center py-12">
-            <div className="text-6xl mb-4">📄</div>
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No Templates Found</h3>
-            <p className="text-gray-500 mb-4">
-              {searchTerm || selectedType !== 'all'
-                ? 'No templates match your search criteria.'
-                : 'Get started by creating your first template.'
-              }
-            </p>
-            {!searchTerm && selectedType === 'all' && (
-              <button
-                onClick={() => setIsModalOpen(true)}
-                className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors mx-auto"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Create Template</span>
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* Add/Edit Modal */}
-        {isModalOpen && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-              <div className="flex items-center justify-between p-6 border-b border-gray-200">
-                <h2 className="text-xl font-semibold text-gray-900">
-                  {modalMode === 'add' ? 'Create New Template' : 'Edit Template'}
-                </h2>
+              {/* Modal Actions */}
+              <div className="flex items-center justify-end space-x-3 mt-6 pt-6 border-t border-gray-200">
                 <button
-                  onClick={handleCloseModal}
-                  className="text-gray-400 hover:text-gray-600"
+                  type="button"
+                  onClick={showCreateModal ? closeCreateModal : closeEditModal}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 >
-                  <X className="w-6 h-6" />
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 border border-transparent rounded-md hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                      <span>Saving...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-4 h-4" />
+                      <span>{showCreateModal ? 'Create Template' : 'Update Template'}</span>
+                    </>
+                  )}
                 </button>
               </div>
-              
-              <form onSubmit={handleSubmit} className="p-6">
-                <div className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Template Name *
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={formData.name}
-                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="Enter template name"
-                      />
-                    </div>
-                    
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Template Type *
-                      </label>
-                      <select
-                        value={formData.type}
-                        onChange={(e) => setFormData({ ...formData, type: e.target.value as any })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      >
-                        <option value="email">Email</option>
-                        <option value="sms">SMS</option>
-                        <option value="push">Push Notification</option>
-                        <option value="social">Social Media</option>
-                      </select>
-                    </div>
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Preview Image URL
-                    </label>
-                    <input
-                      type="url"
-                      value={formData.preview_image}
-                      onChange={(e) => setFormData({ ...formData, preview_image: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="Enter preview image URL"
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Template Content *
-                    </label>
-                    <textarea
-                      required
-                      value={formData.content}
-                      onChange={(e) => setFormData({ ...formData, content: e.target.value })}
-                      rows={8}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="Enter template content"
-                    />
-                  </div>
-                  
-                  <div className="flex items-center">
-                    <input
-                      type="checkbox"
-                      id="is_active"
-                      checked={formData.is_active}
-                      onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
-                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                    />
-                    <label htmlFor="is_active" className="ml-2 text-sm text-gray-700">
-                      Active template
-                    </label>
-                  </div>
-                </div>
-                
-                <div className="flex justify-end space-x-3 mt-6">
-                  <button
-                    type="button"
-                    onClick={handleCloseModal}
-                    className="px-4 py-2 text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-                  >
-                    <Save className="w-4 h-4" />
-                    <span>{modalMode === 'add' ? 'Create Template' : 'Update Template'}</span>
-                  </button>
-                </div>
-              </form>
-            </div>
+            </form>
           </div>
-        )}
-      </div>
+        </div>
+      )}
+    </div>
   );
 };
 
 export default TemplateManagement;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

@@ -261,3 +261,15 @@ const SupabaseConnectionTest: React.FC = () => {
 }
 
 export default SupabaseConnectionTest
+
+
+
+
+
+
+
+
+
+
+
+

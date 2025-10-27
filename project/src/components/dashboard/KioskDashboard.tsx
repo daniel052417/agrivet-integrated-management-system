@@ -1,14 +1,13 @@
 import React, { useState } from 'react';
 import SimplifiedSidebar from '../shared/layout/SimplifiedSidebar';
 import Header from '../shared/layout/Header';
-import { SimplifiedUser } from '../../lib/simplifiedAuth';
+import { CustomUser } from '../../lib/customAuth';
 
 // Kiosk-specific components (simplified interface for public use)
 import POSInterface from '../pos/POSInterface';
-import InventorySummaryPage from '../inventory/InventorySummaryPage';
 
 interface KioskDashboardProps {
-  user: SimplifiedUser;
+  user: CustomUser;
   onLogout: () => void;
 }
 
@@ -19,8 +18,6 @@ const KioskDashboard: React.FC<KioskDashboardProps> = ({ user, onLogout }) => {
     switch (activeSection) {
       case 'pos-interface':
         return <POSInterface user={user} onLogout={onLogout} />;
-      case 'inventory-summary':
-        return <InventorySummaryPage />;
       default:
         return (
           <div className="p-6">

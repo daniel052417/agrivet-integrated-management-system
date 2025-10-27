@@ -1,17 +1,17 @@
 import React, { useState } from 'react';
 import SimplifiedSidebar from '../shared/layout/SimplifiedSidebar';
 import Header from '../shared/layout/Header';
-import { SimplifiedUser } from '../../lib/simplifiedAuth';
+import { CustomUser } from '../../lib/customAuth';
 
 // Marketing-specific components
-import MarketingDashboard from '../marketing/MarketingDashboard';
+import MarketingDashboardMain from '../marketing/MarketingDashboard';
 import CampaignManagement from '../marketing/CampaignManagement';
 import TemplateManagement from '../marketing/TemplateManagement';
-import CampaignAnalytics from '../marketing/CampaignAnalytics';
+// import CampaignAnalytics from '../marketing/CampaignAnalytics';
 import ClientNotifications from '../marketing/ClientNotifications';
 
 interface MarketingDashboardProps {
-  user: SimplifiedUser;
+  user: CustomUser;
   onLogout: () => void;
 }
 
@@ -21,13 +21,13 @@ const MarketingDashboardComponent: React.FC<MarketingDashboardProps> = ({ user, 
   const renderContent = () => {
     switch (activeSection) {
       case 'marketing-dashboard':
-        return <MarketingDashboard />;
+        return <MarketingDashboardMain />;
       case 'campaigns':
         return <CampaignManagement />;
       case 'templates':
         return <TemplateManagement />;
-      case 'analytics':
-        return <CampaignAnalytics />;
+      // case 'analytics':
+      //   return <CampaignAnalytics />;
       case 'notifications':
         return <ClientNotifications />;
       default:

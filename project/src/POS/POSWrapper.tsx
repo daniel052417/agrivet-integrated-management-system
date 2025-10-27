@@ -1,10 +1,10 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import POSApp from './App';
 import FallbackPOS from './FallbackPOS';
-import { SimplifiedUser } from '../lib/simplifiedAuth';
+import { CustomUser } from '../lib/customAuth';
 
 interface Props {
-  user?: SimplifiedUser;
+  user: CustomUser;
   onLogout?: () => void;
   children?: ReactNode;
 }
@@ -40,6 +40,9 @@ class POSWrapper extends Component<Props, State> {
 }
 
 export default POSWrapper;
+
+
+
 
 
 

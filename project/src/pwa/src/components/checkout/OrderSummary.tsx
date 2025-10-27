@@ -23,7 +23,14 @@ interface OrderSummaryProps {
   branch: Branch | null
   customerInfo: CustomerInfo
   paymentInfo: PaymentInfo
-  currentStep: 'customer' | 'payment' | 'confirmation'
+  currentStep: 'customer' | 'delivery' | 'payment' | 'confirmation'
+  deliveryInfo?: {
+    method: 'pickup' | 'delivery'
+    deliveryMethod?: 'maxim' | 'other'
+    address?: string
+    contactNumber?: string
+    landmark?: string
+  }
 }
 
 const OrderSummary: React.FC<OrderSummaryProps> = ({
@@ -31,7 +38,8 @@ const OrderSummary: React.FC<OrderSummaryProps> = ({
   branch,
   customerInfo,
   paymentInfo,
-  currentStep
+  currentStep,
+  deliveryInfo
 }) => {
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat('en-PH', {
@@ -109,21 +117,39 @@ const OrderSummary: React.FC<OrderSummaryProps> = ({
         </div>
       ) : null}
 
-      {/* Branch Information */}
-      {branch && (
+      {/* Branch Information for Pickup or Delivery Information */}
+      {deliveryInfo?.method === 'delivery' ? (
         <div className="mb-6 p-4 bg-gray-50 rounded-lg">
           <div className="flex items-center space-x-2 mb-3">
             <MapPin className="w-4 h-4 text-gray-500" />
-            <h3 className="font-medium text-gray-900">Pickup Location</h3>
+            <h3 className="font-medium text-gray-900">Delivery Information</h3>
           </div>
           <div className="space-y-1 text-sm">
-            <p className="text-gray-900">{branch.branch_name}</p>
-            <p className="text-gray-600">{branch.address}</p>
-            {branch.phone && (
-              <p className="text-gray-600">{branch.phone}</p>
+            <p className="text-gray-900 font-medium">Delivery Address</p>
+            <p className="text-gray-600">{deliveryInfo.address}</p>
+            {deliveryInfo.landmark && (
+              <p className="text-gray-500 text-xs">Landmark: {deliveryInfo.landmark}</p>
             )}
+            <p className="text-gray-600">Contact: {deliveryInfo.contactNumber}</p>
+            <p className="text-gray-600">Service: {deliveryInfo.deliveryMethod === 'maxim' ? 'Maxim Delivery' : 'Other'}</p>
           </div>
         </div>
+      ) : (
+        branch && (
+          <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+            <div className="flex items-center space-x-2 mb-3">
+              <MapPin className="w-4 h-4 text-gray-500" />
+              <h3 className="font-medium text-gray-900">Pickup Location</h3>
+            </div>
+            <div className="space-y-1 text-sm">
+              <p className="text-gray-900">{branch.name}</p>
+              <p className="text-gray-600">{branch.address}</p>
+              {branch.phone && (
+                <p className="text-gray-600">{branch.phone}</p>
+              )}
+            </div>
+          </div>
+        )
       )}
 
       {/* Payment Information */}

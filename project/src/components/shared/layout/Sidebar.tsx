@@ -43,24 +43,6 @@ const Sidebar: React.FC<SidebarProps> = ({ activeSection, onSectionChange, onLog
       resource: 'dashboard',
       action: 'read'
     },
-    { 
-      id: 'sales-value', 
-      label: 'Sales Value', 
-      icon: DollarSign, 
-      category: 'Dashboard',
-      component: 'sales/value',
-      resource: 'sales',
-      action: 'read'
-    },
-    { 
-      id: 'inventory-summary', 
-      label: 'Inventory Summary', 
-      icon: Package, 
-      category: 'Dashboard',
-      component: 'inventory/summary',
-      resource: 'inventory',
-      action: 'read'
-    },
     
     // Inventory Management
     { 

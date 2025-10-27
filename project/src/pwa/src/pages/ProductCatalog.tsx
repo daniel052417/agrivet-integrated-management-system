@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Search, Filter, ShoppingCart, ArrowLeft, Grid, List, Star, Package, Clock, TrendingUp, User } from 'lucide-react'
 import { useBranch } from '../contexts/BranchContext'
@@ -24,7 +24,7 @@ const ProductCatalog: React.FC = () => {
   const { getItemCount } = useCart()
   const { isAuthenticated } = useAuth()
   // const { isConnected: isRealtimeConnected } = useRealtime()
-  
+  const isLoadingPromotionsRef = useRef(false)
   const [products, setProducts] = useState<ProductWithUnits[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -55,219 +55,21 @@ const ProductCatalog: React.FC = () => {
     }
     loadProducts()
     loadCategories()
+    // Only load promotions once on mount
     loadPromotions()
-  }, [selectedBranch, filters, currentPage])
-
+  }, [selectedBranch]) 
   // Load promotional data
-  useEffect(() => {
-    if (selectedBranch) {
-      loadPromotions()
-    }
-  }, [selectedBranch])
-
+ 
   // Check for modal display
   useEffect(() => {
-    if (modalPromotions.length > 0 && promotionService.shouldShowModal()) {
-      setCurrentModalIndex(0)
-      setShowModal(true)
-      promotionService.markModalAsShown(modalPromotions[0].id)
-    }
+    console.log('🔄 Modal promotions changed:', modalPromotions.length)
+    
+    // Don't do anything here - let loadPromotions handle showing the modal
+    // This prevents the race condition where the modal gets shown then immediately hidden
   }, [modalPromotions])
 
-  // Set up real-time subscriptions for products and inventory
-  // Temporarily disabled to debug 500 error
-  // useEffect(() => {
-  //   if (!selectedBranch) return
 
-  //   console.log('🔄 ProductCatalog: Setting up real-time subscriptions...')
-    
-  //   // Add a small delay to ensure the app is fully initialized
-  //   const setupSubscriptions = async () => {
-  //     try {
-  //       // Wait a bit for the app to stabilize
-  //       await new Promise(resolve => setTimeout(resolve, 1000))
-        
-  //       // Set up callbacks for real-time updates
-  //       realtimeService.setCallbacks({
-  //         onInventoryUpdate: (payload) => {
-  //           console.log('📦 ProductCatalog: Real-time inventory update received:', payload)
-  //           handleRealtimeInventoryUpdate(payload)
-  //         },
-  //         onProductUpdate: (payload) => {
-  //           console.log('🛍️ ProductCatalog: Real-time product update received:', payload)
-  //           handleRealtimeProductUpdate(payload)
-  //         },
-  //         onCategoryUpdate: (payload) => {
-  //           console.log('📂 ProductCatalog: Real-time category update received:', payload)
-  //           handleRealtimeCategoryUpdate(payload)
-  //         },
-  //         onPromotionUpdate: (payload) => {
-  //           console.log('🎉 ProductCatalog: Real-time promotion update received:', payload)
-  //           handleRealtimePromotionUpdate(payload)
-  //         }
-  //       })
-
-  //       // Subscribe to inventory changes for the selected branch
-  //       const inventorySubscription = realtimeService.subscribeToInventory(selectedBranch.id)
-  //       const productSubscription = realtimeService.subscribeToProducts()
-  //       const categorySubscription = realtimeService.subscribeToCategories()
-  //       const promotionSubscription = realtimeService.subscribeToPromotions()
-        
-  //       return () => {
-  //         console.log('🔌 ProductCatalog: Cleaning up real-time subscriptions...')
-  //         if (inventorySubscription) inventorySubscription.unsubscribe()
-  //         if (productSubscription) productSubscription.unsubscribe()
-  //         if (categorySubscription) categorySubscription.unsubscribe()
-  //         if (promotionSubscription) promotionSubscription.unsubscribe()
-  //       }
-  //     } catch (error) {
-  //       console.error('❌ ProductCatalog: Error setting up real-time subscriptions:', error)
-  //       return () => {} // Return empty cleanup function
-  //     }
-  //   }
-
-  //   let cleanup: (() => void) | undefined
-  //   setupSubscriptions().then(cleanupFn => {
-  //     cleanup = cleanupFn
-  //   })
-
-  //   return () => {
-  //     if (cleanup) {
-  //       cleanup()
-  //     }
-  //   }
-  // }, [selectedBranch])
-
-  // Handle real-time inventory updates - temporarily disabled
-  // const handleRealtimeInventoryUpdate = (payload: any) => {
-  //   try {
-  //     const { eventType, new: newData } = payload
-      
-  //     if (eventType === 'UPDATE' && newData) {
-  //       // Update product inventory in the products list
-  //       setProducts(prevProducts => {
-  //         return prevProducts.map(product => {
-  //           if (product.inventory && product.inventory.some(inv => inv.id === newData.id)) {
-  //             // Update the inventory for this product
-  //             const updatedInventory = product.inventory.map(inv => 
-  //               inv.id === newData.id ? { ...inv, ...newData } : inv
-  //             )
-  //             return { ...product, inventory: updatedInventory }
-  //           }
-  //           return product
-  //         })
-  //       })
-  //       console.log('✅ ProductCatalog: Updated inventory in real-time:', newData.id)
-  //     }
-  //   } catch (error) {
-  //     console.error('❌ ProductCatalog: Error handling real-time inventory update:', error)
-  //   }
-  // }
-
-  // Handle real-time product updates - temporarily disabled
-  // const handleRealtimeProductUpdate = (payload: any) => {
-  //   try {
-  //     const { eventType, new: newData, old: oldData } = payload
-      
-  //     if (eventType === 'UPDATE' && newData) {
-  //       // Update product in the products list
-  //       setProducts(prevProducts => {
-  //         return prevProducts.map(product => 
-  //           product.id === newData.id ? { ...product, ...newData } : product
-  //         )
-  //       })
-  //       console.log('✅ ProductCatalog: Updated product in real-time:', newData.name)
-  //     } else if (eventType === 'INSERT' && newData) {
-  //       // Add new product to the list (if it's active and matches current filters)
-  //       if (newData.is_active) {
-  //         // Note: We might want to reload products to ensure proper filtering
-  //         loadProducts()
-  //       }
-  //       console.log('✅ ProductCatalog: Added new product in real-time:', newData.name)
-  //     } else if (eventType === 'DELETE' && oldData) {
-  //       // Remove product from the list
-  //       setProducts(prevProducts => 
-  //         prevProducts.filter(product => product.id !== oldData.id)
-  //       )
-  //       console.log('✅ ProductCatalog: Removed product in real-time:', oldData.name)
-  //     }
-  //   } catch (error) {
-  //     console.error('❌ ProductCatalog: Error handling real-time product update:', error)
-  //   }
-  // }
-
-  // Handle real-time category updates - temporarily disabled
-  // const handleRealtimeCategoryUpdate = (payload: any) => {
-  //   try {
-  //     const { eventType, new: newData, old: oldData } = payload
-      
-  //     if (eventType === 'UPDATE' && newData) {
-  //       // Update category in the categories list
-  //       setCategories(prevCategories => {
-  //         return prevCategories.map(category => 
-  //           category.id === newData.id ? { ...category, ...newData } : category
-  //         )
-  //       })
-  //       console.log('✅ ProductCatalog: Updated category in real-time:', newData.name)
-  //     } else if (eventType === 'INSERT' && newData) {
-  //       // Add new category to the list
-  //       if (newData.is_active) {
-  //         setCategories(prevCategories => [...prevCategories, newData])
-  //       }
-  //       console.log('✅ ProductCatalog: Added new category in real-time:', newData.name)
-  //     } else if (eventType === 'DELETE' && oldData) {
-  //       // Remove category from the list
-  //       setCategories(prevCategories => 
-  //         prevCategories.filter(category => category.id !== oldData.id)
-  //       )
-  //       console.log('✅ ProductCatalog: Removed category in real-time:', oldData.name)
-  //     }
-  //   } catch (error) {
-  //     console.error('❌ ProductCatalog: Error handling real-time category update:', error)
-  //   }
-  // }
-
-  // Handle real-time promotion updates - temporarily disabled
-  // const handleRealtimePromotionUpdate = (payload: any) => {
-  //   try {
-  //     const { eventType, new: newData, old: oldData } = payload
-      
-  //     if (eventType === 'UPDATE' && newData) {
-  //       // Update promotion in the promotions list
-  //       setBannerPromotions(prevPromotions => {
-  //         return prevPromotions.map(promo => 
-  //           promo.id === newData.id ? { ...promo, ...newData } : promo
-  //         )
-  //       })
-  //       setModalPromotions(prevPromotions => {
-  //         return prevPromotions.map(promo => 
-  //           promo.id === newData.id ? { ...promo, ...newData } : promo
-  //         )
-  //       })
-  //       console.log('✅ ProductCatalog: Updated promotion in real-time:', newData.title)
-  //     } else if (eventType === 'INSERT' && newData) {
-  //       // Add new promotion to the appropriate list
-  //       if (newData.is_active) {
-  //         // Determine if it's a banner or modal promotion based on display settings
-  //         const displaySettings = newData.display_settings || {}
-  //         if (displaySettings.showAsBanner) {
-  //           setBannerPromotions(prev => [...prev, newData])
-  //         }
-  //         if (displaySettings.showAsModal) {
-  //           setModalPromotions(prev => [...prev, newData])
-  //         }
-  //       }
-  //       console.log('✅ ProductCatalog: Added new promotion in real-time:', newData.title)
-  //     } else if (eventType === 'DELETE' && oldData) {
-  //       // Remove promotion from both lists
-  //       setBannerPromotions(prev => prev.filter(promo => promo.id !== oldData.id))
-  //       setModalPromotions(prev => prev.filter(promo => promo.id !== oldData.id))
-  //       console.log('✅ ProductCatalog: Removed promotion in real-time:', oldData.title)
-  //     }
-  //   } catch (error) {
-  //     console.error('❌ ProductCatalog: Error handling real-time promotion update:', error)
-  //   }
-  // }
+ 
 
   const loadProducts = async () => {
     if (!selectedBranch) return
@@ -430,19 +232,90 @@ const ProductCatalog: React.FC = () => {
   }
 
   const loadPromotions = async () => {
-    try {
-      const [bannerPromos, modalPromos] = await Promise.all([
-        promotionService.getBannerPromotions(),
-        promotionService.getModalPromotions()
-      ])
-      
-      setBannerPromotions(bannerPromos)
-      setModalPromotions(modalPromos)
-    } catch (err) {
-      console.error('Error loading promotions:', err)
-    }
+  // Prevent multiple simultaneous loads
+  if (isLoadingPromotionsRef.current) {
+    console.log('⏭️ Skipping promotion load - already in progress')
+    return
   }
 
+  try {
+    isLoadingPromotionsRef.current = true
+    console.log('🎉 Loading promotions...')
+    
+    // Fetch modal promotions with carousel detection
+    const carouselData = await promotionService.getModalPromotionsForCarousel({
+      branchId: selectedBranch?.id
+    })
+
+    console.log('📋 Loaded promotions:', {
+      count: carouselData.promotions.length,
+      useCarousel: carouselData.useCarousel,
+      autoplayInterval: carouselData.autoplayInterval,
+      promotionIds: carouselData.promotions.map(p => p.id)
+    })
+    
+    setBannerPromotions([])
+    setModalPromotions(carouselData.promotions)
+    
+    // If we have modal promotions and should show modal, display it
+    if (carouselData.promotions.length > 0) {
+      console.log('✅ Found modal promotions, checking if should show...')
+      
+      // Pass the promotion IDs to check if there are NEW promotions to show
+      const promotionIds = carouselData.promotions.map(p => p.id)
+      const shouldShow = promotionService.shouldShowModal(promotionIds)
+      
+      console.log('🎯 Should show modal:', shouldShow)
+      
+      if (shouldShow) {
+        console.log('🎊 Displaying modal with carousel!')
+        
+        // Set modal to show FIRST, before marking as shown
+        setShowModal(true)
+        setCurrentModalIndex(0)
+        
+        // Small delay before marking as shown to prevent race condition
+        setTimeout(() => {
+          if (carouselData.useCarousel) {
+            // Mark all promotions in carousel as shown
+            promotionService.markCarouselAsShown(promotionIds)
+            
+            // Track carousel view
+            promotionService.trackCarouselView(
+              carouselData.promotions,
+              selectedBranch?.id
+            ).catch(err => console.error('Error tracking carousel view:', err))
+            
+            console.log('✅ Marked all carousel promotions as shown:', promotionIds)
+          } else {
+            // Single promotion - mark only first one as shown
+            promotionService.markModalAsShown(carouselData.promotions[0].id)
+            
+            // Track single view
+            promotionService.trackPromotionEvent({
+              promotionId: carouselData.promotions[0].id,
+              eventType: 'view',
+              sessionId: promotionService['getSessionId'](),
+              branchId: selectedBranch?.id,
+              eventData: { displayMode: 'modal' }
+            }).catch(err => console.error('Error tracking view:', err))
+            
+            console.log('✅ Marked single promotion as shown:', carouselData.promotions[0].id)
+          }
+        }, 100) // Small delay to ensure modal state is set first
+        
+      } else {
+        console.log('⏭️ Skipping modal - already shown in this session')
+      }
+    } else {
+      console.log('⚠️ No modal promotions found')
+    }
+  } catch (err) {
+    console.error('❌ Error loading promotions:', err)
+  } finally {
+    isLoadingPromotionsRef.current = false
+  }
+}
   const handleSearch = (query: string) => {
     setFilters(prev => ({ ...prev, searchQuery: query }))
     setCurrentPage(1)
@@ -477,18 +350,69 @@ const ProductCatalog: React.FC = () => {
     document.querySelector('.product-grid')?.scrollIntoView({ behavior: 'smooth' })
   }
 
-  const handleModalClose = () => {
+  const handleModalClose = async () => {
+    console.log('❌ Closing modal')
+    
+    // Track dismissal for current promotion
+    if (modalPromotions[currentModalIndex]) {
+      await promotionService.trackPromotionDismissal(
+        modalPromotions[currentModalIndex].id,
+        undefined,
+        selectedBranch?.id,
+        'user_action'
+      ).catch(err => console.error('Error tracking dismissal:', err))
+    }
+    
     setShowModal(false)
     setCurrentModalIndex(0)
   }
-
-  const handleModalAction = (promotion: Promotion) => {
+  const handleModalAction = async (promotion: Promotion) => {
+    console.log('👆 Modal action clicked for:', promotion.title)
+    
+    // Track click event with carousel context
+    if (modalPromotions.length > 1) {
+      await promotionService.trackCarouselAction(
+        promotion,
+        currentModalIndex,
+        modalPromotions.length,
+        selectedBranch?.id
+      ).catch(err => console.error('Error tracking action:', err))
+    } else {
+      await promotionService.trackPromotionEvent({
+        promotionId: promotion.id,
+        eventType: 'click',
+        sessionId: promotionService['getSessionId'](),
+        branchId: selectedBranch?.id,
+        eventData: { 
+          displayMode: 'modal',
+          buttonText: promotion.buttonText,
+          buttonLink: promotion.buttonLink
+        }
+      }).catch(err => console.error('Error tracking click:', err))
+    }
+    
     handleBannerAction(promotion)
     handleModalClose()
   }
 
-  const handleModalIndexChange = (index: number) => {
+  const handleModalIndexChange = async (index: number) => {
     setCurrentModalIndex(index)
+    
+    // Track view when user navigates to a different slide
+    if (modalPromotions[index]) {
+      await promotionService.trackPromotionEvent({
+        promotionId: modalPromotions[index].id,
+        eventType: 'view',
+        sessionId: promotionService['getSessionId'](),
+        branchId: selectedBranch?.id,
+        eventData: {
+          displayMode: 'carousel',
+          carouselIndex: index,
+          carouselSize: modalPromotions.length,
+          navigationType: 'user_navigation'
+        }
+      }).catch(err => console.error('Error tracking navigation:', err))
+    }
   }
 
   
@@ -499,17 +423,7 @@ const ProductCatalog: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 to-blue-50">
-      {/* Promotional Banners */}
-      {bannerPromotions
-        .filter(promo => !dismissedBanners.has(promo.id))
-        .map((promotion) => (
-          <PromoBanner
-            key={promotion.id}
-            promotion={promotion}
-            onDismiss={() => handleBannerDismiss(promotion.id)}
-            onAction={() => handleBannerAction(promotion)}
-          />
-        ))}
+      {/* Promotional banners disabled: using modal-only display */}
 
       {/* Header */}
       <div className="bg-white shadow-lg border-b sticky top-0 z-40">

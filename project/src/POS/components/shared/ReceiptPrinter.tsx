@@ -89,15 +89,7 @@ const ReceiptPrinter: React.FC<ReceiptPrinterProps> = ({
 
       {/* Totals */}
       <div className="border-t border-gray-200 pt-4 space-y-2">
-        <div className="flex justify-between text-sm">
-          <span>Subtotal:</span>
-          <span>{formatCurrency(receiptData.subtotal)}</span>
-        </div>
-        <div className="flex justify-between text-sm">
-          <span>VAT (12%):</span>
-          <span>{formatCurrency(receiptData.tax)}</span>
-        </div>
-        <div className="flex justify-between text-lg font-bold text-green-600 border-t border-gray-200 pt-2">
+        <div className="flex justify-between text-lg font-bold text-green-600">
           <span>Total:</span>
           <span>{formatCurrency(receiptData.total)}</span>
         </div>
@@ -163,6 +155,10 @@ const ReceiptPrinter: React.FC<ReceiptPrinterProps> = ({
 };
 
 export default ReceiptPrinter;
+
+
+
+
 
 
 

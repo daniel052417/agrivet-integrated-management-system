@@ -290,7 +290,6 @@ const ShoppingCart: React.FC<ShoppingCartProps> = ({
               <span className="text-xl font-bold text-gray-900">Total</span>
               <span className="text-2xl font-bold text-emerald-600">{formatPrice(total)}</span>
             </div>
-            <p className="text-xs text-gray-500 mt-1">Including 12% VAT</p>
           </div>
         </div>
 

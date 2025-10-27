@@ -110,10 +110,10 @@ const SalesDashboard: React.FC = () => {
 
       // Load transactions for current period
       const { data: transactions, error: txError } = await supabase
-        .from('sales_transactions')
+        .from('pos_transactions')
         .select(`
           id, total_amount, transaction_date, customer_id, subtotal, tax_amount, 
-          payment_status, created_by_user_id, branch_id
+          payment_status, cashier_id, branch_id
         `)
         .gte('transaction_date', start.toISOString())
         .lt('transaction_date', end.toISOString())
@@ -123,20 +123,20 @@ const SalesDashboard: React.FC = () => {
 
       // Load previous period transactions for comparison
       const { data: prevTransactions, error: prevTxError } = await supabase
-        .from('sales_transactions')
+        .from('pos_transactions')
         .select(`
           id, total_amount, transaction_date, customer_id, subtotal, tax_amount, 
-          payment_status, created_by_user_id, branch_id
+          payment_status, cashier_id, branch_id
         `)
         .gte('transaction_date', prevStart.toISOString())
         .lt('transaction_date', prevEnd.toISOString());
 
       if (prevTxError) throw prevTxError;
 
-      // Load transaction items for product analysis (using correct table name)
+      // Load transaction items for product analysis (using pos_transaction_items table)
       const { data: items, error: itemsError } = await supabase
-        .from('transaction_items')
-        .select('product_id, quantity, unit_price, total_price, created_at')
+        .from('pos_transaction_items')
+        .select('product_id, quantity, unit_price, line_total, created_at')
         .gte('created_at', start.toISOString())
         .lt('created_at', end.toISOString());
 
@@ -161,10 +161,10 @@ const SalesDashboard: React.FC = () => {
       if (customersError) throw customersError;
 
       // Load staff for better transaction details
-      const staffIds = [...new Set(transactions?.map(tx => tx.created_by_user_id) || [])];
+      const staffIds = [...new Set(transactions?.map(tx => tx.cashier_id) || [])];
       const { data: staff, error: staffError } = await supabase
         .from('staff')
-        .select('id, first_name, last_name, department')
+        .select('id, first_name, last_name, department, email')
         .in('id', staffIds)
         .eq('is_active', true);
 
@@ -263,7 +263,7 @@ const SalesDashboard: React.FC = () => {
         const product = products?.find(p => p.id === item.product_id);
         if (product) {
           const current = productSales.get(item.product_id) || { name: product.name, sales: 0, units: 0 };
-          current.sales += item.total_price || (item.unit_price * item.quantity);
+          current.sales += item.line_total || (item.unit_price * item.quantity);
           current.units += item.quantity;
           productSales.set(item.product_id, current);
         }
@@ -290,7 +290,7 @@ const SalesDashboard: React.FC = () => {
 
       // Recent transactions with better details
       const recentTxs = transactions?.slice(0, 5).map(tx => {
-        const staffMember = staff?.find(s => s.id === tx.created_by_user_id);
+        const staffMember = staff?.find(s => s.id === tx.cashier_id);
         const branch = branches?.find(b => b.id === tx.branch_id);
         const customer = customers?.find(c => c.id === tx.customer_id);
         
