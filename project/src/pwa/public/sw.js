@@ -88,6 +88,11 @@ self.addEventListener('fetch', (event) => {
   const { request } = event
   const url = new URL(request.url)
 
+  if (event.request.url.includes('/auth/callback')) {
+    console.log('⚠️ Service Worker: Ignoring Supabase auth callback URL');
+    return;
+  }
+
   // ✅ STRATEGY 1: Network-only for authentication
   if (url.pathname.includes('/auth/')) {
     event.respondWith(fetch(request))

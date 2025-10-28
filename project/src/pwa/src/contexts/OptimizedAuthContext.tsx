@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react'
 import { authService, AuthUser } from '../services/authService'
 import { supabase } from '../services/supabase'
+import type { AuthChangeEvent, Session } from '@supabase/supabase-js'
 
 interface AuthContextType {
   user: AuthUser | null
@@ -117,7 +118,7 @@ export const OptimizedAuthProvider: React.FC<AuthProviderProps> = ({ children })
 
     // Set up auth state change listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+      async (event: AuthChangeEvent, session: Session | null) => {
         console.log('🔄 AuthContext: Auth state changed:', { event, hasSession: !!session })
         
         if (event === 'SIGNED_IN' && session?.user) {

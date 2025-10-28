@@ -3,14 +3,14 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { PWAProvider } from './contexts/PWAContext'
 import { CartProvider } from './contexts/CartContext'
 import { BranchProvider } from './contexts/BranchContext'
-import { AuthProvider } from './contexts/AuthContext'
+import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { RealtimeProvider } from './contexts/RealtimeContext'
 import SmartRouter from './components/routing/SmartRouter'
 import ErrorBoundary from './components/common/ErrorBoundary'
-import AuthCallback from './pages/AuthCallback'  // ✅ Keep this one (eager import)
+import AuthCallback from './pages/AuthCallback'
 
-// ✅ LAZY LOAD ALL PAGES - Only load when needed
-// Core Pages
+
+// ✅ LAZY LOAD PAGES
 const BranchSelection = lazy(() => import('./pages/BranchSelection'))
 const AuthSelection = lazy(() => import('./pages/AuthSelection'))
 const ProductCatalog = lazy(() => import('./pages/ProductCatalog'))
@@ -20,9 +20,9 @@ const OrderConfirmation = lazy(() => import('./pages/OrderConfirmation'))
 const Orders = lazy(() => import('./pages/Orders'))
 const UserSettings = lazy(() => import('./pages/UserSettings'))
 const NotFound = lazy(() => import('./pages/NotFound'))
-// ❌ REMOVED: const AuthCallback = lazy(() => import('./pages/AuthCallback'))  // This was a duplicate!
+const ProfileCompletion = lazy(() => import('./pages/ProfileCompletion'))
 
-// Demo Components - Lazy load (users rarely visit these)
+// Demo Components
 const PromoDemo = lazy(() => import('./components/promotions/PromoDemo'))
 const CarouselDemo = lazy(() => import('./components/promotions/CarouselDemo'))
 const CartPersistenceTest = lazy(() => import('./components/cart/CartPersistenceTest'))
@@ -35,11 +35,11 @@ const ImagePreviewDemo = lazy(() => import('./components/catalog/ImagePreviewDem
 const ImagePreviewTest = lazy(() => import('./components/catalog/ImagePreviewTest'))
 const SupabaseConnectionTest = lazy(() => import('./components/debug/SupabaseConnectionTest'))
 
-// Layouts - Keep these eagerly loaded as they're used everywhere
+// Layouts
 import MainLayout from './layouts/MainLayout'
 import KioskLayout from './layouts/KioskLayout'
 
-// ✅ Loading Component - Shows while lazy components load
+// ✅ Page loader component
 const PageLoader = () => (
   <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-50 to-blue-50">
     <div className="text-center">
@@ -51,8 +51,8 @@ const PageLoader = () => (
 
 function App() {
   const [isInitializing, setIsInitializing] = useState(true)
+
   const [sessionId] = useState(() => {
-    // Generate or retrieve session ID
     let sessionId = localStorage.getItem('pwa-session-id')
     if (!sessionId) {
       sessionId = `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
@@ -63,16 +63,8 @@ function App() {
 
   useEffect(() => {
     const initializeApp = async () => {
-      console.log('🚀 App: Starting parallel initialization...')
-      
-      // Load both contexts in parallel instead of sequential
-      await Promise.all([
-        // Auth will initialize on its own via AuthContext
-        // Branches will initialize on their own via BranchContext
-        // Just wait a moment for both contexts to mount
-        new Promise(resolve => setTimeout(resolve, 100))
-      ])
-      
+      console.log('🚀 App: Starting initialization...')
+      await new Promise(resolve => setTimeout(resolve, 100))
       console.log('✅ App: Initialization complete')
       setIsInitializing(false)
     }
@@ -100,133 +92,8 @@ function App() {
             <BranchProvider>
               <CartProvider sessionId={sessionId}>
                 <SmartRouter>
-                  {/* ✅ Wrap all routes in Suspense with fallback */}
                   <Suspense fallback={<PageLoader />}>
-                    <div className="min-h-screen bg-gray-50">
-                      <Routes>
-                        {/* Public routes */}
-                        <Route path="/" element={<Navigate to="/branch-selection" replace />} />
-                        <Route path="/auth/callback" element={<AuthCallback />} />
-                        
-                        <Route path="/branch-selection" element={
-                          <KioskLayout>
-                            <BranchSelection />
-                          </KioskLayout>
-                        } />
-                        
-                        <Route path="/auth-selection" element={
-                          <KioskLayout>
-                            <AuthSelection />
-                          </KioskLayout>
-                        } />
-                        
-                        <Route path="/catalog" element={
-                          <MainLayout>
-                            <ProductCatalog />
-                          </MainLayout>
-                        } />
-                        
-                        <Route path="/cart" element={
-                          <MainLayout>
-                            <ShoppingCart />
-                          </MainLayout>
-                        } />
-                        
-                        <Route path="/checkout" element={
-                          <MainLayout>
-                            <Checkout />
-                          </MainLayout>
-                        } />
-                        
-                        <Route path="/order-confirmation/:orderId" element={
-                          <MainLayout>
-                            <OrderConfirmation />
-                          </MainLayout>
-                        } />
-                        
-                        <Route path="/orders" element={
-                          <MainLayout>
-                            <Orders />
-                          </MainLayout>
-                        } />
-                        
-                        <Route path="/settings" element={
-                          <MainLayout>
-                            <UserSettings />
-                          </MainLayout>
-                        } />
-                        
-                        {/* Demo Routes */}
-                        <Route path="/demo/promotions" element={
-                          <MainLayout>
-                            <PromoDemo />
-                          </MainLayout>
-                        } />
-                        
-                        <Route path="/demo/carousel" element={
-                          <MainLayout>
-                            <CarouselDemo />
-                          </MainLayout>
-                        } />
-                        
-                        <Route path="/demo/cart-test" element={
-                          <MainLayout>
-                            <CartPersistenceTest />
-                          </MainLayout>
-                        } />
-                        
-                        <Route path="/demo/promotion-test" element={
-                          <MainLayout>
-                            <PromotionTestSuite />
-                          </MainLayout>
-                        } />
-                        
-                        <Route path="/demo/promotion-quick" element={
-                          <MainLayout>
-                            <PromotionQuickTest />
-                          </MainLayout>
-                        } />
-                        
-                        <Route path="/demo/display-modes" element={
-                          <MainLayout>
-                            <DisplayModeTestSuite />
-                          </MainLayout>
-                        } />
-                        
-                        <Route path="/demo/multi-unit" element={
-                          <MainLayout>
-                            <MultiUnitTestSuite />
-                          </MainLayout>
-                        } />
-                        
-                        <Route path="/demo/multi-unit-demo" element={
-                          <MainLayout>
-                            <MultiUnitDemo />
-                          </MainLayout>
-                        } />
-                        
-                        <Route path="/demo/image-preview" element={
-                          <MainLayout>
-                            <ImagePreviewDemo />
-                          </MainLayout>
-                        } />
-                        
-                        <Route path="/demo/image-preview-test" element={
-                          <MainLayout>
-                            <ImagePreviewTest />
-                          </MainLayout>
-                        } />
-                        
-                        <Route path="/debug/supabase" element={
-                          <MainLayout>
-                            <SupabaseConnectionTest />
-                          </MainLayout>
-                        } />
-                        
-                        {/* 404 */}
-                        <Route path="*" element={<NotFound />} />
-                      </Routes>
-                    </div>
+                    <AppRoutes />
                   </Suspense>
                 </SmartRouter>
               </CartProvider>
@@ -235,6 +102,225 @@ function App() {
         </RealtimeProvider>
       </PWAProvider>
     </ErrorBoundary>
+  )
+}
+
+// ✅ Separate component for routes — allows safe use of useAuth()
+function AppRoutes() {
+  const { user, needsProfile, markProfileComplete } = useAuth()
+ if (needsProfile) {
+    return (
+      <KioskLayout>
+        <ProfileCompletion
+          userId={user?.id || ''}
+          email={user?.email || ''}
+          firstName={user?.first_name || ''}
+          lastName={user?.last_name || ''}
+          onComplete={markProfileComplete}
+        />
+      </KioskLayout>
+    )
+  }
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <Routes>
+        {/* Public routes */}
+        <Route path="/" element={<Navigate to="/branch-selection" replace />} />
+        <Route path="/auth/callback" element={<AuthCallback />} />
+        
+        <Route
+          path="/complete-profile"
+          element={
+            <KioskLayout>
+              
+              <ProfileCompletion
+                userId={user?.id || ''}
+                email={user?.email || ''}
+                firstName={user?.first_name || ''}
+                lastName={user?.last_name || ''}
+                onComplete={() => console.log('Profile completed')}
+              />
+              
+            </KioskLayout>
+          }
+        />
+
+        <Route
+          path="/branch-selection"
+          element={
+            <KioskLayout>
+              <BranchSelection />
+            </KioskLayout>
+          }
+        />
+
+        <Route
+          path="/auth-selection"
+          element={
+            <KioskLayout>
+              <AuthSelection />
+            </KioskLayout>
+          }
+        />
+
+        <Route
+          path="/catalog"
+          element={
+            <MainLayout>
+              <ProductCatalog />
+            </MainLayout>
+          }
+        />
+
+        <Route
+          path="/cart"
+          element={
+            <MainLayout>
+              <ShoppingCart />
+            </MainLayout>
+          }
+        />
+
+        <Route
+          path="/checkout"
+          element={
+            <MainLayout>
+              <Checkout />
+            </MainLayout>
+          }
+        />
+
+        <Route
+          path="/order-confirmation/:orderId"
+          element={
+            <MainLayout>
+              <OrderConfirmation />
+            </MainLayout>
+          }
+        />
+
+        <Route
+          path="/orders"
+          element={
+            <MainLayout>
+              <Orders />
+            </MainLayout>
+          }
+        />
+
+        <Route
+          path="/settings"
+          element={
+            <MainLayout>
+              <UserSettings />
+            </MainLayout>
+          }
+        />
+
+        {/* Demo / Debug routes */}
+        <Route
+          path="/demo/promotions"
+          element={
+            <MainLayout>
+              <PromoDemo />
+            </MainLayout>
+          }
+        />
+
+        <Route
+          path="/demo/carousel"
+          element={
+            <MainLayout>
+              <CarouselDemo />
+            </MainLayout>
+          }
+        />
+
+        <Route
+          path="/demo/cart-test"
+          element={
+            <MainLayout>
+              <CartPersistenceTest />
+            </MainLayout>
+          }
+        />
+
+        <Route
+          path="/demo/promotion-test"
+          element={
+            <MainLayout>
+              <PromotionTestSuite />
+            </MainLayout>
+          }
+        />
+
+        <Route
+          path="/demo/promotion-quick"
+          element={
+            <MainLayout>
+              <PromotionQuickTest />
+            </MainLayout>
+          }
+        />
+
+        <Route
+          path="/demo/display-modes"
+          element={
+            <MainLayout>
+              <DisplayModeTestSuite />
+            </MainLayout>
+          }
+        />
+
+        <Route
+          path="/demo/multi-unit"
+          element={
+            <MainLayout>
+              <MultiUnitTestSuite />
+            </MainLayout>
+          }
+        />
+
+        <Route
+          path="/demo/multi-unit-demo"
+          element={
+            <MainLayout>
+              <MultiUnitDemo />
+            </MainLayout>
+          }
+        />
+
+        <Route
+          path="/demo/image-preview"
+          element={
+            <MainLayout>
+              <ImagePreviewDemo />
+            </MainLayout>
+          }
+        />
+
+        <Route
+          path="/demo/image-preview-test"
+          element={
+            <MainLayout>
+              <ImagePreviewTest />
+            </MainLayout>
+          }
+        />
+
+        <Route
+          path="/debug/supabase"
+          element={
+            <MainLayout>
+              <SupabaseConnectionTest />
+            </MainLayout>
+          }
+        />
+
+        {/* 404 */}
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+    </div>
   )
 }
 

@@ -11,7 +11,9 @@ import {
   CheckCircle,
   Shield,
   Clock,
-  Truck
+  Truck,
+  AlertCircle,
+  XCircle
 } from 'lucide-react'
 import { useBranch } from '../contexts/BranchContext'
 import { useCart } from '../contexts/CartContext'
@@ -19,20 +21,22 @@ import { useAuth } from '../contexts/AuthContext'
 import { useGuestSession } from '../hooks/useAnonymousSession'
 import LoadingSpinner from '../components/common/LoadingSpinner'
 import ErrorMessage from '../components/common/ErrorMessage'
-// import facebookLogo from '../assets/facebook.png'
 import googleLogo from '../assets/google.png'
+import { authService } from '../services/authService'
 
 const AuthSelection: React.FC = () => {
   const navigate = useNavigate()
   const { selectedBranch } = useBranch()
   const { clearCart } = useCart()
-  const { login, register, upgradeGuestAccount, socialLogin, isLoading } = useAuth()
-  const { startSession, isLoading: isGuestLoading } = useGuestSession()
+  const { login, register, upgradeGuestAccount, socialLogin, isLoading, sendEmailVerification } = useAuth()
+  // const { startSession, isLoading: isGuestLoading } = useGuestSession()
   
   const [authMethod, setAuthMethod] = useState<'login' | 'register' | 'guest' | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [showVerificationPrompt, setShowVerificationPrompt] = useState(false)
   const [registeredEmail, setRegisteredEmail] = useState('')
+  const [resendingEmail, setResendingEmail] = useState(false)
+  const [resendSuccess, setResendSuccess] = useState(false)
   
   // Login form state
   const [loginForm, setLoginForm] = useState({
@@ -55,26 +59,6 @@ const AuthSelection: React.FC = () => {
     acceptTerms: false
   })
 
-  // const handleGuestContinue = async () => {
-  //   try {
-  //     setError(null)
-      
-  //     // Start guest session first
-  //     // const success = await startSession()
-      
-  //     if (success) {
-  //       // Clear any existing cart for fresh guest session
-  //       clearCart()
-  //       navigate('/catalog')
-  //     } else {
-  //       setError('Failed to start guest session. Please try again.')
-  //     }
-  //   } catch (error) {
-  //     setError('Failed to start guest session. Please try again.')
-  //     console.error('Guest session error:', error)
-  //   }
-  // }
-
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
@@ -91,10 +75,15 @@ const AuthSelection: React.FC = () => {
       console.log('🔐 AuthSelection: Login result received:', {
         success: result.success,
         error: result.error,
-        fullResult: result
+        requiresVerification: result.requiresVerification
       })
       
-      if (result.success) {
+      if (result.requiresVerification) {
+        // Show verification needed message
+        setError('Please verify your email before logging in. Check your inbox for the verification link.')
+        setShowVerificationPrompt(true)
+        setRegisteredEmail(loginForm.email)
+      } else if (result.success) {
         console.log('✅ AuthSelection: Login successful, navigating to catalog')
         navigate('/catalog')
       } else {
@@ -110,14 +99,25 @@ const AuthSelection: React.FC = () => {
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
+  
+    // Validate passwords match
+    if (registerForm.password !== registerForm.confirmPassword) {
+      setError('Passwords do not match')
+      return
+    }
 
+    // Validate password strength
+    if (registerForm.password.length < 6) {
+      setError('Password must be at least 6 characters long')
+      return
+    }
+  
     // Check if current user is a guest FIRST (before any auth changes)
     const { guestUpgradeService } = await import('../services/guestUpgradeService')
     const isGuest = await guestUpgradeService.isCurrentUserGuest()
     
     if (isGuest) {
       console.log('🔄 Upgrading existing guest account')
-      // Upgrade existing guest account using context
       const result = await upgradeGuestAccount({
         email: registerForm.email,
         password: registerForm.password,
@@ -127,14 +127,16 @@ const AuthSelection: React.FC = () => {
       })
       
       if (result.success) {
+        // Show email verification prompt
         setShowVerificationPrompt(true)
         setRegisteredEmail(registerForm.email)
+        // Clear the form
+        resetRegisterForm()
       } else {
         setError(result.error || 'Account upgrade failed')
       }
     } else {
       console.log('🆕 Creating new account')
-      // Create new account (existing flow)
       const result = await register({
         email: registerForm.email,
         password: registerForm.password,
@@ -144,52 +146,79 @@ const AuthSelection: React.FC = () => {
       })
       
       if (result.success) {
+        // Show email verification prompt
         setShowVerificationPrompt(true)
         setRegisteredEmail(registerForm.email)
+        // Clear the form
+        resetRegisterForm()
       } else {
         setError(result.error || 'Registration failed')
       }
     }
   }
 
-  // FIXED: handleSocialLogin function
-// Replace lines 155-179 in your AuthSelection.tsx with this:
-
-const handleSocialLogin = async (provider: 'google' | 'facebook') => {
-  setError(null)
-  
-  try {
-    console.log(`🔐 Starting ${provider} OAuth flow...`)
+  const handleSocialLogin = async (provider: 'google' | 'facebook') => {
+    console.log(`🔐 AuthSelection: handleSocialLogin called with provider:`, provider)
+    setError(null)
     
-    // ❌ REMOVED: Don't start guest session before OAuth!
-    // const guestSuccess = await startSession()
-    
-    // ✅ FIXED: Call OAuth directly
-    const result = await socialLogin(provider)
-    
-    if (result.error) {
-      console.error(`❌ ${provider} OAuth error:`, result.error)
-      setError(result.error)
-    } else {
-      // For OAuth, the user will be redirected to the provider
-      // The actual login happens in the callback
-      console.log(`✅ Redirecting to ${provider} OAuth provider...`)
+    try {
+      console.log(`🔐 AuthSelection: Starting ${provider} OAuth flow...`)
+      
+      // Call OAuth directly - the service will handle checking for existing customer
+      const result = await socialLogin(provider)
+      
+      if (result.error) {
+        console.error(`❌ AuthSelection: ${provider} OAuth error:`, result.error)
+        setError(result.error)
+      } else {
+        // For OAuth, the user will be redirected to the provider
+        // The actual login/profile completion happens in the callback
+        console.log(`✅ AuthSelection: Redirecting to ${provider} OAuth provider...`)
+      }
+    } catch (error) {
+      console.error(`❌ AuthSelection: ${provider} login failed:`, error)
+      setError(`${provider} login failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
-  } catch (error) {
-    console.error(`❌ ${provider} login failed:`, error)
-    setError(`${provider} login failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
   }
-}
+
+  const handleResendVerification = async () => {
+    setResendingEmail(true)
+    setResendSuccess(false)
+    
+    try {
+      const result = await sendEmailVerification(registeredEmail)
+      if (result.success) {
+        setResendSuccess(true)
+        setTimeout(() => setResendSuccess(false), 5000)
+      } else {
+        setError('Failed to resend verification email. Please try again.')
+      }
+    } catch (error) {
+      setError('Failed to resend verification email. Please try again.')
+    } finally {
+      setResendingEmail(false)
+    }
+  }
 
   const resetForm = () => {
     setAuthMethod(null)
     setError(null)
+    setShowVerificationPrompt(false)
+    setRegisteredEmail('')
+    resetLoginForm()
+    resetRegisterForm()
+  }
+
+  const resetLoginForm = () => {
     setLoginForm({
       email: '',
       password: '',
       showPassword: false,
       rememberMe: false
     })
+  }
+
+  const resetRegisterForm = () => {
     setRegisterForm({
       firstName: '',
       lastName: '',
@@ -203,550 +232,529 @@ const handleSocialLogin = async (provider: 'google' | 'facebook') => {
     })
   }
 
-  if (!selectedBranch) {
-    navigate('/branch-selection')
-    return null
-  }
-
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 to-blue-50">
-      {/* Header */}
-      <div className="bg-white shadow-lg border-b">
-        <div className="max-w-4xl mx-auto px-4 py-6">
-          <div className="flex items-center space-x-4">
-            <button
-              onClick={() => navigate('/branch-selection')}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">
-                Welcome to {selectedBranch.name}
-              </h1>
-              <p className="text-gray-600">
-                Choose how you'd like to continue
-              </p>
+  // Email Verification Prompt Component
+  const EmailVerificationPrompt = () => (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl p-8 max-w-md w-full">
+        <div className="text-center">
+          {/* Success Icon */}
+          <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Mail className="w-10 h-10 text-green-600" />
+          </div>
+          
+          {/* Title */}
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">
+            Check Your Email!
+          </h2>
+          
+          {/* Description */}
+          <p className="text-gray-600 mb-4">
+            We've sent a verification link to:
+          </p>
+          
+          {/* Email Address */}
+          <div className="bg-gray-50 rounded-lg px-4 py-3 mb-6">
+            <p className="text-lg font-semibold text-gray-900">
+              {registeredEmail}
+            </p>
+          </div>
+          
+          {/* Instructions */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6 text-left">
+            <div className="flex items-start space-x-2">
+              <AlertCircle className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+              <div className="text-sm">
+                <p className="text-blue-800 font-medium mb-2">
+                  To complete your registration:
+                </p>
+                <ol className="text-blue-700 space-y-1 list-decimal list-inside">
+                  <li>Check your email inbox</li>
+                  <li>Click the verification link in the email</li>
+                  <li>Return here to log in with your credentials</li>
+                </ol>
+                <p className="text-blue-600 text-xs mt-2">
+                  Note: Check your spam folder if you don't see the email
+                </p>
+              </div>
             </div>
+          </div>
+
+          {/* Resend Success Message */}
+          {resendSuccess && (
+            <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4 flex items-center justify-center space-x-2">
+              <CheckCircle className="w-4 h-4 text-green-600" />
+              <span className="text-sm text-green-800">Verification email sent successfully!</span>
+            </div>
+          )}
+          
+          {/* Action Buttons */}
+          <div className="space-y-3">
+            {/* Open Email Button */}
+            <button
+              onClick={() => window.open('https://mail.google.com', '_blank')}
+              className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-4 rounded-lg transition-colors flex items-center justify-center space-x-2"
+            >
+              <Mail className="w-4 h-4" />
+              <span>Open Gmail</span>
+            </button>
+            
+            {/* Resend Email Button */}
+            <button
+              onClick={handleResendVerification}
+              disabled={resendingEmail}
+              className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-2.5 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {resendingEmail ? (
+                <div className="flex items-center justify-center space-x-2">
+                  <div className="w-4 h-4 border-2 border-gray-600 border-t-transparent rounded-full animate-spin" />
+                  <span>Resending...</span>
+                </div>
+              ) : (
+                'Resend Verification Email'
+              )}
+            </button>
+            
+            {/* Continue to Login Button */}
+            <button
+              onClick={() => {
+                setShowVerificationPrompt(false)
+                setAuthMethod('login')
+                // Pre-fill the login email
+                setLoginForm(prev => ({ ...prev, email: registeredEmail }))
+              }}
+              className="w-full text-sm text-gray-600 hover:text-gray-800 py-2"
+            >
+              I've verified, let me log in
+            </button>
+            
+            {/* Back to Options */}
+            <button
+              onClick={resetForm}
+              className="w-full text-sm text-gray-500 hover:text-gray-700 py-2"
+            >
+              ← Back to options
+            </button>
           </div>
         </div>
       </div>
+    </div>
+  )
 
-      <div className="max-w-4xl mx-auto px-4 py-8">
-        {!authMethod ? (
-          /* Auth Method Selection */
-          <div className="space-y-8">
-            {/* Branch Info Card */}
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
-              <div className="flex items-start space-x-4">
-                <div className="w-12 h-12 bg-agrivet-green rounded-full flex items-center justify-center flex-shrink-0">
-                  <Truck className="w-6 h-6 text-white" />
-                </div>
-                <div className="flex-1">
-                  <h2 className="text-xl font-bold text-gray-900 mb-2">
-                    {selectedBranch.name}
-                  </h2>
-                  <p className="text-gray-600 mb-3">{selectedBranch.address}</p>
-                  <div className="flex items-center space-x-4 text-sm text-gray-500">
-                    <div className="flex items-center space-x-1">
-                      <Clock className="w-4 h-4" />
-                      <span>Ready in 30 min</span>
-                    </div>
-                    <div className="flex items-center space-x-1">
-                      <Shield className="w-4 h-4" />
-                      <span>Secure Checkout</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-green-50 to-blue-50">
+      <div className="flex items-center justify-center p-4" style={{ minHeight: 'calc(100vh - 80px)' }}>
+        
+        {/* Initial Selection */}
+        {!authMethod && !showVerificationPrompt && (
+          <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-8 max-w-md w-full">
+            <div className="text-center mb-8">
+              <h1 className="text-3xl font-bold text-gray-900 mb-2">
+                Welcome to Tiongson Agrivet
+              </h1>
+              <p className="text-gray-600">
+                {selectedBranch?.name} Branch
+              </p>
             </div>
 
-            {/* Auth Options */}
-            <div className="grid gap-6 md:grid-cols-3">
-              {/* Guest Checkout */}
-              <div
-                onClick={() => setAuthMethod('guest')}
-                className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6 hover:shadow-xl hover:border-agrivet-green transition-all duration-300 cursor-pointer group"
-              >
-                <div className="text-center">
-                  <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4 group-hover:bg-agrivet-green/10 transition-colors">
-                    <User className="w-8 h-8 text-gray-600 group-hover:text-agrivet-green" />
-                  </div>
-                  <h3 className="text-xl font-bold text-gray-900 mb-2 group-hover:text-agrivet-green transition-colors">
-                    Continue as Guest
-                  </h3>
-                  <p className="text-gray-600 text-sm mb-4">
-                    Quick checkout without creating an account
-                  </p>
-                  <div className="space-y-2 text-xs text-gray-500">
-                    <div className="flex items-center justify-center space-x-1">
-                      <CheckCircle className="w-3 h-3" />
-                      <span>No registration required</span>
-                    </div>
-                    <div className="flex items-center justify-center space-x-1">
-                      <CheckCircle className="w-3 h-3" />
-                      <span>Fast checkout process</span>
-                    </div>
-                    <div className="flex items-center justify-center space-x-1">
-                      <CheckCircle className="w-3 h-3" />
-                      <span>Order tracking via SMS</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
+            {error && <ErrorMessage message={error} />}
 
-              {/* Login */}
-              <div
+            <div className="space-y-4">
+              {/* Existing Customer Login */}
+              <button
                 onClick={() => setAuthMethod('login')}
-                className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6 hover:shadow-xl hover:border-agrivet-green transition-all duration-300 cursor-pointer group"
+                className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-4 px-6 rounded-lg transition-colors flex items-center justify-center space-x-3"
               >
-                <div className="text-center">
-                  <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4 group-hover:bg-agrivet-green/10 transition-colors">
-                    <Lock className="w-8 h-8 text-blue-600 group-hover:text-agrivet-green" />
-                  </div>
-                  <h3 className="text-xl font-bold text-gray-900 mb-2 group-hover:text-agrivet-green transition-colors">
-                    Sign In
-                  </h3>
-                  <p className="text-gray-600 text-sm mb-4">
-                    Access your account and order history
-                  </p>
-                  <div className="space-y-2 text-xs text-gray-500">
-                    <div className="flex items-center justify-center space-x-1">
-                      <CheckCircle className="w-3 h-3" />
-                      <span>Order history</span>
-                    </div>
-                    <div className="flex items-center justify-center space-x-1">
-                      <CheckCircle className="w-3 h-3" />
-                      <span>Faster checkout</span>
-                    </div>
-                    <div className="flex items-center justify-center space-x-1">
-                      <CheckCircle className="w-3 h-3" />
-                      <span>Loyalty points</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
+                <User className="w-5 h-5" />
+                <span>I have an account</span>
+              </button>
 
-              {/* Register */}
-              <div
+              {/* New Customer Register */}
+              <button
                 onClick={() => setAuthMethod('register')}
-                className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6 hover:shadow-xl hover:border-agrivet-green transition-all duration-300 cursor-pointer group"
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-4 px-6 rounded-lg transition-colors flex items-center justify-center space-x-3"
               >
-                <div className="text-center">
-                  <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4 group-hover:bg-agrivet-green/10 transition-colors">
-                    <User className="w-8 h-8 text-green-600 group-hover:text-agrivet-green" />
-                  </div>
-                  <h3 className="text-xl font-bold text-gray-900 mb-2 group-hover:text-agrivet-green transition-colors">
-                    Create Account
-                  </h3>
-                  <p className="text-gray-600 text-sm mb-4">
-                    Join AgriVet for exclusive benefits
-                  </p>
-                  <div className="space-y-2 text-xs text-gray-500">
-                    <div className="flex items-center justify-center space-x-1">
-                      <CheckCircle className="w-3 h-3" />
-                      <span>Exclusive discounts</span>
-                    </div>
-                    <div className="flex items-center justify-center space-x-1">
-                      <CheckCircle className="w-3 h-3" />
-                      <span>Order tracking</span>
-                    </div>
-                    <div className="flex items-center justify-center space-x-1">
-                      <CheckCircle className="w-3 h-3" />
-                      <span>Loyalty rewards</span>
-                    </div>
-                  </div>
+                <User className="w-5 h-5" />
+                <span>Create new account</span>
+              </button>
+
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-gray-300"></div>
+                </div>
+                <div className="relative flex justify-center text-sm">
+                  <span className="px-4 bg-white text-gray-500">Or continue with</span>
                 </div>
               </div>
-            </div>
 
-            {/* Social Login Options */}
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4 text-center">
-                Or continue with
-              </h3>
-              <div className="grid gap-4 md:grid-cols-1">
+              {/* Social Login Options */}
+              <div className="grid grid-cols-1 gap-3">
                 <button
                   onClick={() => handleSocialLogin('google')}
-                  className="flex items-center justify-center space-x-3 py-3 px-4 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                  className="w-full bg-white hover:bg-gray-50 text-gray-700 font-medium py-3 px-4 rounded-lg border border-gray-300 transition-colors flex items-center justify-center space-x-3"
                 >
-                  <img 
-                    src={googleLogo} 
-                    alt="Google" 
-                    className="w-5 h-5"
-                  />
-                  <span className="font-medium text-gray-700">Google</span>
+                  <img src={googleLogo} alt="Google" className="w-5 h-5" />
+                  <span>Continue with Google</span>
                 </button>
-                {/* <button
-                  onClick={() => handleSocialLogin('facebook')}
-                  className="flex items-center justify-center space-x-3 py-3 px-4 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-                >
-                  <img 
-                    src={facebookLogo} 
-                    alt="Facebook" 
-                    className="w-5 h-5"
-                  />
-                  <span className="font-medium text-gray-700">Facebook</span>
-                </button> */}
               </div>
+
+              {/* Back to Branch Selection */}
+              <button
+                onClick={() => navigate('/branch-selection')}
+                className="w-full text-gray-600 hover:text-gray-800 font-medium py-2 px-4 rounded-lg transition-colors flex items-center justify-center space-x-2"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>Change branch</span>
+              </button>
             </div>
-          </div>
-        ) : authMethod === 'guest' ? (
-          /* Guest Confirmation */
-          <div className="max-w-2xl mx-auto">
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-8 text-center">
-              <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                <User className="w-10 h-10 text-gray-600" />
-              </div>
-              <h2 className="text-2xl font-bold text-gray-900 mb-4">
-                Continue as Guest
-              </h2>
-              <p className="text-gray-600 mb-8">
-                You can browse products and place orders without creating an account. 
-                We'll send order updates via SMS.
-              </p>
-              
-              <div className="space-y-4 mb-8">
-                <div className="flex items-center justify-center space-x-2 text-sm text-gray-600">
-                  <CheckCircle className="w-4 h-4 text-green-600" />
-                  <span>No account required</span>
+
+            {/* Benefits */}
+            <div className="mt-8 pt-6 border-t border-gray-200">
+              <div className="grid grid-cols-3 gap-4 text-center">
+                <div>
+                  <Shield className="w-6 h-6 text-green-600 mx-auto mb-2" />
+                  <p className="text-xs text-gray-600">Secure Checkout</p>
                 </div>
-                <div className="flex items-center justify-center space-x-2 text-sm text-gray-600">
-                  <CheckCircle className="w-4 h-4 text-green-600" />
-                  <span>Order tracking via SMS</span>
+                <div>
+                  <Clock className="w-6 h-6 text-green-600 mx-auto mb-2" />
+                  <p className="text-xs text-gray-600">Quick Orders</p>
                 </div>
-                <div className="flex items-center justify-center space-x-2 text-sm text-gray-600">
-                  <CheckCircle className="w-4 h-4 text-green-600" />
-                  <span>Secure payment processing</span>
+                <div>
+                  <Truck className="w-6 h-6 text-green-600 mx-auto mb-2" />
+                  <p className="text-xs text-gray-600">Fast Delivery</p>
                 </div>
-              </div>
-
-              <div className="flex space-x-4">
-                <button
-                  onClick={resetForm}
-                  className="flex-1 btn-outline"
-                >
-                  Go Back
-                </button>
-                <button
-                  // onClick={handleGuestContinue}
-                  disabled={isGuestLoading}
-                  className="flex-1 btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isGuestLoading ? (
-                    <div className="flex items-center justify-center">
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                      Starting Session...
-                    </div>
-                  ) : (
-                    'Continue Shopping'
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-        ) : (
-          /* Login/Register Forms */
-          <div className="max-w-2xl mx-auto">
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-8">
-              <div className="text-center mb-8">
-                <h2 className="text-2xl font-bold text-gray-900 mb-2">
-                  {authMethod === 'login' ? 'Sign In' : 'Create Account'}
-                </h2>
-                <p className="text-gray-600">
-                  {authMethod === 'login' 
-                    ? 'Welcome back! Sign in to your account' 
-                    : 'Join AgriVet for exclusive benefits'
-                  }
-                </p>
-              </div>
-
-              {error && (
-                <div className="mb-6">
-                  <ErrorMessage message={error} />
-                </div>
-              )}
-
-              {authMethod === 'login' ? (
-                /* Login Form */
-                <form onSubmit={handleLogin} className="space-y-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Email Address
-                    </label>
-                    <div className="relative">
-                      <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                      <input
-                        type="email"
-                        value={loginForm.email}
-                        onChange={(e) => setLoginForm(prev => ({ ...prev, email: e.target.value }))}
-                        className="input-field pl-10"
-                        placeholder="your.email@example.com"
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Password
-                    </label>
-                    <div className="relative">
-                      <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                      <input
-                        type={loginForm.showPassword ? 'text' : 'password'}
-                        value={loginForm.password}
-                        onChange={(e) => setLoginForm(prev => ({ ...prev, password: e.target.value }))}
-                        className="input-field pl-10 pr-10"
-                        placeholder="Enter your password"
-                        required
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setLoginForm(prev => ({ ...prev, showPassword: !prev.showPassword }))}
-                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                      >
-                        {loginForm.showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <label className="flex items-center">
-                      <input
-                        type="checkbox"
-                        checked={loginForm.rememberMe}
-                        onChange={(e) => setLoginForm(prev => ({ ...prev, rememberMe: e.target.checked }))}
-                        className="mr-2"
-                      />
-                      <span className="text-sm text-gray-600">Remember me</span>
-                    </label>
-                    <a href="#" className="text-sm text-agrivet-green hover:underline">
-                      Forgot password?
-                    </a>
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={isLoading}
-                    className="w-full btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {isLoading ? (
-                      <div className="flex items-center justify-center space-x-2">
-                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                        <span>Signing In...</span>
-                      </div>
-                    ) : (
-                      'Sign In'
-                    )}
-                  </button>
-                </form>
-              ) : (
-                /* Register Form */
-                <form onSubmit={handleRegister} className="space-y-6">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        First Name
-                      </label>
-                      <div className="relative">
-                        <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                        <input
-                          type="text"
-                          value={registerForm.firstName}
-                          onChange={(e) => setRegisterForm(prev => ({ ...prev, firstName: e.target.value }))}
-                          className="input-field pl-10"
-                          placeholder="First name"
-                          required
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Last Name
-                      </label>
-                      <div className="relative">
-                        <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                        <input
-                          type="text"
-                          value={registerForm.lastName}
-                          onChange={(e) => setRegisterForm(prev => ({ ...prev, lastName: e.target.value }))}
-                          className="input-field pl-10"
-                          placeholder="Last name"
-                          required
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Email Address
-                    </label>
-                    <div className="relative">
-                      <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                      <input
-                        type="email"
-                        value={registerForm.email}
-                        onChange={(e) => setRegisterForm(prev => ({ ...prev, email: e.target.value }))}
-                        className="input-field pl-10"
-                        placeholder="your.email@example.com"
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Phone Number
-                    </label>
-                    <div className="relative">
-                      <Smartphone className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                      <input
-                        type="tel"
-                        value={registerForm.phone}
-                        onChange={(e) => setRegisterForm(prev => ({ ...prev, phone: e.target.value }))}
-                        className="input-field pl-10"
-                        placeholder="+63 912 345 6789"
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Password
-                    </label>
-                    <div className="relative">
-                      <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                      <input
-                        type={registerForm.showPassword ? 'text' : 'password'}
-                        value={registerForm.password}
-                        onChange={(e) => setRegisterForm(prev => ({ ...prev, password: e.target.value }))}
-                        className="input-field pl-10 pr-10"
-                        placeholder="Create a password"
-                        required
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setRegisterForm(prev => ({ ...prev, showPassword: !prev.showPassword }))}
-                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                      >
-                        {registerForm.showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Confirm Password
-                    </label>
-                    <div className="relative">
-                      <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                      <input
-                        type={registerForm.showConfirmPassword ? 'text' : 'password'}
-                        value={registerForm.confirmPassword}
-                        onChange={(e) => setRegisterForm(prev => ({ ...prev, confirmPassword: e.target.value }))}
-                        className="input-field pl-10 pr-10"
-                        placeholder="Confirm your password"
-                        required
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setRegisterForm(prev => ({ ...prev, showConfirmPassword: !prev.showConfirmPassword }))}
-                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                      >
-                        {registerForm.showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="flex items-start">
-                      <input
-                        type="checkbox"
-                        checked={registerForm.acceptTerms}
-                        onChange={(e) => setRegisterForm(prev => ({ ...prev, acceptTerms: e.target.checked }))}
-                        className="mr-3 mt-1"
-                        required
-                      />
-                      <span className="text-sm text-gray-600">
-                        I agree to the{' '}
-                        <a href="#" className="text-agrivet-green hover:underline">
-                          Terms of Service
-                        </a>{' '}
-                        and{' '}
-                        <a href="#" className="text-agrivet-green hover:underline">
-                          Privacy Policy
-                        </a>
-                      </span>
-                    </label>
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={isLoading || !registerForm.acceptTerms}
-                    className="w-full btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {isLoading ? (
-                      <div className="flex items-center justify-center space-x-2">
-                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                        <span>Creating Account...</span>
-                      </div>
-                    ) : (
-                      'Create Account'
-                    )}
-                  </button>
-                </form>
-              )}
-
-              <div className="mt-6 text-center">
-                <button
-                  onClick={resetForm}
-                  className="text-sm text-gray-600 hover:text-agrivet-green transition-colors"
-                >
-                  ← Back to options
-                </button>
               </div>
             </div>
           </div>
         )}
 
+        {/* Login Form */}
+        {authMethod === 'login' && !showVerificationPrompt && (
+          <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-8 max-w-md w-full">
+            <div className="text-center mb-6">
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                Welcome Back!
+              </h2>
+              <p className="text-gray-600">
+                Sign in to your account
+              </p>
+            </div>
+
+            {error && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-start space-x-2">
+                <XCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
+                <div className="text-sm text-red-800">{error}</div>
+              </div>
+            )}
+
+            <form onSubmit={handleLogin} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Email Address
+                </label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    type="email"
+                    value={loginForm.email}
+                    onChange={(e) => setLoginForm(prev => ({ ...prev, email: e.target.value }))}
+                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    placeholder="your.email@example.com"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Password
+                </label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    type={loginForm.showPassword ? 'text' : 'password'}
+                    value={loginForm.password}
+                    onChange={(e) => setLoginForm(prev => ({ ...prev, password: e.target.value }))}
+                    className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    placeholder="Enter your password"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setLoginForm(prev => ({ ...prev, showPassword: !prev.showPassword }))}
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    {loginForm.showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <label className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={loginForm.rememberMe}
+                    onChange={(e) => setLoginForm(prev => ({ ...prev, rememberMe: e.target.checked }))}
+                    className="mr-2"
+                  />
+                  <span className="text-sm text-gray-600">Remember me</span>
+                </label>
+                <a href="#" className="text-sm text-green-600 hover:underline">
+                  Forgot password?
+                </a>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isLoading ? (
+                  <div className="flex items-center justify-center space-x-2">
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Signing in...</span>
+                  </div>
+                ) : (
+                  'Sign In'
+                )}
+              </button>
+            </form>
+
+            <div className="mt-6 text-center">
+              <p className="text-sm text-gray-600">
+                Don't have an account?{' '}
+                <button
+                  onClick={() => {
+                    setAuthMethod('register')
+                    setError(null)
+                  }}
+                  className="text-green-600 hover:underline font-medium"
+                >
+                  Register here
+                </button>
+              </p>
+            </div>
+
+            <div className="mt-4 text-center">
+              <button
+                onClick={resetForm}
+                className="text-sm text-gray-500 hover:text-gray-700"
+              >
+                ← Back to options
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Register Form */}
+        {authMethod === 'register' && !showVerificationPrompt && (
+          <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-8 max-w-2xl w-full">
+            <div className="text-center mb-6">
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                Create Your Account
+              </h2>
+              <p className="text-gray-600">
+                Join Tiongson Agrivet family
+              </p>
+            </div>
+
+            {error && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-start space-x-2">
+                <XCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
+                <div className="text-sm text-red-800">{error}</div>
+              </div>
+            )}
+
+            <form onSubmit={handleRegister} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    First Name
+                  </label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                      type="text"
+                      value={registerForm.firstName}
+                      onChange={(e) => setRegisterForm(prev => ({ ...prev, firstName: e.target.value }))}
+                      className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      placeholder="First name"
+                      required
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Last Name
+                  </label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                      type="text"
+                      value={registerForm.lastName}
+                      onChange={(e) => setRegisterForm(prev => ({ ...prev, lastName: e.target.value }))}
+                      className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      placeholder="Last name"
+                      required
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Email Address
+                </label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    type="email"
+                    value={registerForm.email}
+                    onChange={(e) => setRegisterForm(prev => ({ ...prev, email: e.target.value }))}
+                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    placeholder="your.email@example.com"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Phone Number
+                </label>
+                <div className="relative">
+                  <Smartphone className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    type="tel"
+                    value={registerForm.phone}
+                    onChange={(e) => setRegisterForm(prev => ({ ...prev, phone: e.target.value }))}
+                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    placeholder="+63 912 345 6789"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Password
+                </label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    type={registerForm.showPassword ? 'text' : 'password'}
+                    value={registerForm.password}
+                    onChange={(e) => setRegisterForm(prev => ({ ...prev, password: e.target.value }))}
+                    className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    placeholder="Create a password (min 6 characters)"
+                    required
+                    minLength={6}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setRegisterForm(prev => ({ ...prev, showPassword: !prev.showPassword }))}
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    {registerForm.showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Confirm Password
+                </label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    type={registerForm.showConfirmPassword ? 'text' : 'password'}
+                    value={registerForm.confirmPassword}
+                    onChange={(e) => setRegisterForm(prev => ({ ...prev, confirmPassword: e.target.value }))}
+                    className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    placeholder="Confirm your password"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setRegisterForm(prev => ({ ...prev, showConfirmPassword: !prev.showConfirmPassword }))}
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    {registerForm.showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="flex items-start">
+                  <input
+                    type="checkbox"
+                    checked={registerForm.acceptTerms}
+                    onChange={(e) => setRegisterForm(prev => ({ ...prev, acceptTerms: e.target.checked }))}
+                    className="mr-3 mt-1"
+                    required
+                  />
+                  <span className="text-sm text-gray-600">
+                    I agree to the{' '}
+                    <a href="#" className="text-green-600 hover:underline">
+                      Terms of Service
+                    </a>{' '}
+                    and{' '}
+                    <a href="#" className="text-green-600 hover:underline">
+                      Privacy Policy
+                    </a>
+                  </span>
+                </label>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isLoading || !registerForm.acceptTerms}
+                className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isLoading ? (
+                  <div className="flex items-center justify-center space-x-2">
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Creating Account...</span>
+                  </div>
+                ) : (
+                  'Create Account'
+                )}
+              </button>
+            </form>
+
+            <div className="mt-6 text-center">
+              <p className="text-sm text-gray-600">
+                Already have an account?{' '}
+                <button
+                  onClick={() => {
+                    setAuthMethod('login')
+                    setError(null)
+                  }}
+                  className="text-green-600 hover:underline font-medium"
+                >
+                  Sign in here
+                </button>
+              </p>
+            </div>
+
+            <div className="mt-4 text-center">
+              <button
+                onClick={resetForm}
+                className="text-sm text-gray-500 hover:text-gray-700"
+              >
+                ← Back to options
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Show Email Verification Prompt */}
+        {showVerificationPrompt && <EmailVerificationPrompt />}
+
+        {/* Loading Overlay */}
         {isLoading && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white rounded-2xl p-8 text-center">
               <LoadingSpinner message={authMethod === 'login' ? 'Signing you in...' : 'Creating your account...'} />
-            </div>
-          </div>
-        )}
-
-        {showVerificationPrompt && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-2xl p-8 max-w-md mx-4 text-center">
-              <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Mail className="w-8 h-8 text-green-600" />
-              </div>
-              <h2 className="text-2xl font-bold mb-2">Check Your Email</h2>
-              <p className="text-gray-600 mb-6">
-                We've sent a verification link to <strong>{registeredEmail}</strong>
-              </p>
-              <p className="text-sm text-gray-500 mb-6">
-                Click the link in the email to verify your account.
-              </p>
-              <div className="space-y-3">
-                <button
-                  onClick={() => window.open('https://mail.google.com', '_blank')}
-                  className="w-full btn-primary"
-                >
-                  Open Gmail
-                </button>
-                <button
-                  onClick={() => setShowVerificationPrompt(false)}
-                  className="w-full btn-outline"
-                >
-                  I'll verify later
-                </button>
-              </div>
             </div>
           </div>
         )}
