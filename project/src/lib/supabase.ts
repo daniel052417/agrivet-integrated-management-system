@@ -2,12 +2,14 @@ import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supabaseServiceRole = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
 
 if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing Supabase environment variables');
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabaseService = createClient(supabaseUrl, supabaseServiceRole);
 
 export type UserRole = 'admin' | 'hr' | 'marketing' | 'cashier' | 'user'
 
@@ -611,22 +613,6 @@ export interface Database {
           updated_at: string;
         };
       };
-      expenses: {
-        Row: {
-          id: string; // UUID
-          account_id: string | null; // UUID
-          amount: number;
-          description: string;
-          expense_date: string;
-          category: string;
-          status: string;
-          recorded_by_user_id: string; // UUID
-          approved_by_user_id: string | null; // UUID
-          approved_at: string | null;
-          created_at: string;
-          updated_at: string;
-        };
-      };
       benefits: {
         Row: {
           id: string; // UUID
@@ -742,6 +728,151 @@ export interface Database {
           updated_at: string;
         };
       };
+      // Add below users and roles in your Database interface
+
+      expenses: {
+        Row: {
+          id: string; // UUID
+          date: string; // DATE
+          category_id: string | null; // FK -> expense_categories.id
+          description: string | null;
+          amount: number;
+          reference: string | null;
+          status: 'Paid' | 'Pending';
+          branch_id: string | null; // FK -> branches.id
+          payment_method: string | null;
+          created_at: string;
+          updated_at: string;
+          created_by: string | null; // FK -> users.id
+        };
+      };
+
+      expense_requests: {
+        Row: {
+          id: string; // UUID
+          date: string; // DATE
+          source: 'POS' | 'HR' | 'Inventory' | 'Manual';
+          source_details: string | null;
+          category_id: string | null; // FK -> expense_categories.id
+          description: string | null;
+          amount: number;
+          reference: string | null;
+          requested_by: string | null; // FK -> users.id
+          priority: 'Low' | 'Medium' | 'High';
+          status: 'Pending' | 'Under Review' | 'Approved' | 'Rejected';
+          submitted_at: string;
+          notes: string | null;
+          branch_id: string | null; // FK -> branches.id
+          created_at: string;
+          updated_at: string;
+        };
+      };
+
+      expense_request_attachments: {
+        Row: {
+          id: string; // UUID
+          request_id: string; // FK -> expense_requests.id
+          file_name: string;
+          file_url: string;
+          uploaded_at: string;
+          uploaded_by: string | null; // FK -> users.id
+        };
+      };
+
+      expense_categories: {
+        Row: {
+          id: string; // UUID
+          name: string;
+          is_active: boolean;
+        };
+      };
+
+      approvals: {
+        Row: {
+          id: string; // UUID
+          request_id: string; // FK -> expense_requests.id
+          approver_id: string | null; // FK -> users.id
+          action: 'approved' | 'rejected';
+          reason: string | null;
+          acted_at: string;
+        };
+      };
+
+      expense_activities: {
+        Row: {
+          id: string; // UUID
+          entity_type: 'expense' | 'expense_request';
+          entity_id: string;
+          action: 'created' | 'approved' | 'rejected' | 'updated';
+          performed_by: string | null; // FK -> users.id
+          details: any | null; // JSONB
+          created_at: string;
+        };
+      };
+
     };
   };
 }
+export type Expense = Database['public']['Tables']['expenses']['Row'];
+export type ExpenseRequest = Database['public']['Tables']['expense_requests']['Row'];
+export type ExpenseCategory = Database['public']['Tables']['expense_categories']['Row'];
+export type Branch = Database['public']['Tables']['branches']['Row'];
+export type Period = 'day' | 'week' | 'month' | 'year';
+export type ActiveTab = 'expenses' | 'requests';
+export type ExpenseStatus = 'Paid' | 'Pending';
+export type ExpenseRequestStatus = 'Pending' | 'Under Review' | 'Approved' | 'Rejected';
+export type ApprovalAction = 'approved' | 'rejected';
+export type ActivityAction = 'created' | 'approved' | 'rejected' | 'updated';
+export type ExpensePaymentMethod = 'Cash' | 'Bank Transfer' | 'Other';
+export type Notification = {
+  count: number;
+  hasUrgent: boolean;
+};
+export type ExpenseSummary = {
+  today: number;
+  week: number;
+  month: number;
+  year?: number;
+  pending: number;
+};
+export type ExpenseRequestSource = 'POS' | 'HR' | 'Inventory' | 'Manual';
+export type ExpensePriority = 'Low' | 'Medium' | 'High';
+
+export interface CategoryTotal {
+  category: string;
+  amount: number;
+  percentage: number;
+  color: string;
+}
+
+export interface ExpenseWithRelations extends Expense {
+  expense_categories?: ExpenseCategory;
+  branches?: Branch;
+  users?: { id: string; full_name?: string; email?: string };
+}
+
+export interface ExpenseRequestWithRelations extends ExpenseRequest {
+  expense_categories?: ExpenseCategory;
+  branches?: Branch;
+  users?: { id: string; full_name?: string; email?: string };
+  expense_request_attachments?: {
+    id: string;
+    request_id: string;
+    file_name: string;
+    file_url: string;
+    uploaded_at: string;
+    uploaded_by: string;
+  }[];
+  approvals?: {
+    id: string;
+    approver_id: string;
+    action: 'approved' | 'rejected';
+    reason?: string;
+    acted_at: string;
+    users?: { id: string; full_name?: string; email?: string }; // 👈 Add this
+  }[];
+}
+
+
+
+

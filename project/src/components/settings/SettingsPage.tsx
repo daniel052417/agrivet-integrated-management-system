@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { settingsService } from '../../lib/settingsService';
+
 const SettingsPage: React.FC = () => {
   const [selectedTheme, setSelectedTheme] = useState('light');
   const [selectedLanguage, setSelectedLanguage] = useState('en');
@@ -177,412 +178,272 @@ const SettingsPage: React.FC = () => {
       title: 'General Settings',
       icon: Settings2,
       description: 'Business info, branding, and system preferences',
-      color: 'text-blue-600',
-      bgColor: 'bg-blue-50'
+      bgColor: 'bg-blue-50',
+      color: 'text-blue-600'
     },
     {
       id: 'security',
-      title: 'Security Settings',
-      icon: ShieldCheck,
-      description: 'Authentication, access control, and audit logging',
-      color: 'text-red-600',
-      bgColor: 'bg-red-50'
+      title: 'Security & Access',
+      icon: Shield,
+      description: 'Authentication, permissions, and access control',
+      bgColor: 'bg-red-50',
+      color: 'text-red-600'
     },
     {
       id: 'notifications',
-      title: 'Notification Settings',
+      title: 'Notifications',
       icon: Bell,
-      description: 'Alerts, communication channels, and preferences',
-      color: 'text-yellow-600',
-      bgColor: 'bg-yellow-50'
+      description: 'Email, SMS, and push notification preferences',
+      bgColor: 'bg-yellow-50',
+      color: 'text-yellow-600'
     },
     {
       id: 'hr',
       title: 'HR Management',
       icon: Users,
-      description: 'Control HR features such as attendance tracking, payroll computation, and leave management',
-      color: 'text-purple-600',
-      bgColor: 'bg-purple-50'
+      description: 'Attendance, payroll, and employee settings',
+      bgColor: 'bg-purple-50',
+      color: 'text-purple-600'
     },
     {
       id: 'pwa',
       title: 'PWA Settings',
       icon: Smartphone,
-      description: 'Progressive Web App configuration and branding',
-      color: 'text-indigo-600',
-      bgColor: 'bg-indigo-50'
+      description: 'Progressive web app and kiosk configurations',
+      bgColor: 'bg-indigo-50',
+      color: 'text-indigo-600'
     },
     {
       id: 'data',
-      title: 'Data Management',
+      title: 'Data & Backup',
       icon: HardDrive,
-      description: 'Backup, export/import, and data protection',
-      color: 'text-green-600',
-      bgColor: 'bg-green-50'
+      description: 'Database, backup, and data retention policies',
+      bgColor: 'bg-green-50',
+      color: 'text-green-600'
     },
     {
       id: 'branches',
       title: 'Branch Management',
       icon: Building,
-      description: 'Branch locations, settings, and configurations',
-      color: 'text-orange-600',
-      bgColor: 'bg-orange-50'
+      description: 'Multi-location settings and permissions',
+      bgColor: 'bg-orange-50',
+      color: 'text-orange-600'
     },
     {
       id: 'pos',
-      title: 'POS Terminal Management',
+      title: 'POS Terminal',
       icon: Monitor,
-      description: 'POS terminals, accounts, and terminal configurations',
-      color: 'text-teal-600',
-      bgColor: 'bg-teal-50'
+      description: 'Point of sale terminal configurations',
+      bgColor: 'bg-teal-50',
+      color: 'text-teal-600'
     }
   ];
 
   const [activeSection, setActiveSection] = useState('general');
 
+  // Fetch settings on component mount
   useEffect(() => {
-    testDatabaseConnection();
-    loadAuditLogs();
-    loadBranches();
-    loadUsers();
-    loadSettings();
-    loadPosTerminals();
-    loadPosAccounts();
+    fetchSettings();
   }, []);
 
-  const testDatabaseConnection = async () => {
-    console.log('🔍 [DEBUG] Testing database connection...');
+  const fetchSettings = async () => {
     try {
-      const { error } = await supabase
-        .from('branches')
-        .select('count')
-        .limit(1);
+      const s = await settingsService.getAllSettings();
 
-      if (error) {
-        console.error('❌ [DEBUG] Database connection test failed:', error);
-        setError('Database connection failed: ' + error.message);
-      } else {
-        console.log('✅ [DEBUG] Database connection test successful!');
-      }
-    } catch (err: any) {
-      console.error('❌ [DEBUG] Critical error in database connection test:', err);
-      setError('Database connection test failed: ' + err.message);
-    }
-  };
+      // Support both sectioned and flat settings
+      const g = s.general || {};
+      const sec = s.security || {};
+      const notif = s.notifications || {};
+      const hr = s.hr || {};
+      const data = s.data || {};
+      const pwa = s.pwa || {};
 
-  const loadAuditLogs = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('audit_logs')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(10);
+      // General
+      setAppName(g.appName ?? s.app_name ?? appName);
+      setCompanyName(g.companyName ?? s.company_name ?? companyName);
+      setContactEmail(g.contactEmail ?? s.contact_email ?? contactEmail);
+      setSupportPhone(g.supportPhone ?? s.support_phone ?? supportPhone);
+      setCompanyAddress(g.companyAddress ?? s.company_address ?? companyAddress);
+      setBrandColor(g.brandColor ?? s.brand_color ?? brandColor);
+      setCurrency(g.currency ?? s.currency ?? currency);
+      setAutoSave(g.autoSave ?? s.auto_save ?? autoSave);
+      setShowTooltips(g.showTooltips ?? s.show_tooltips ?? showTooltips);
+      setCompactView(g.compactView ?? s.compact_view ?? compactView);
+      setItemsPerPage(g.itemsPerPage ?? s.items_per_page ?? itemsPerPage);
+      setDateFormat(g.dateFormat ?? s.date_format ?? dateFormat);
+      setReceiptHeader(g.receiptHeader ?? s.receipt_header ?? receiptHeader);
+      setReceiptFooter(g.receiptFooter ?? s.receipt_footer ?? receiptFooter);
+      setDefaultBranch(g.defaultBranch ?? s.default_branch ?? defaultBranch);
 
-      if (error) throw error;
-      setAuditLogs(data || []);
-    } catch (err: any) {
-      console.error('Error loading audit logs:', err);
-    }
-  };
+      // Security
+      setSessionTimeout(sec.sessionTimeout ?? s.session_timeout ?? sessionTimeout);
+      setRequire2FA(sec.require2FA ?? s.require_2fa ?? require2FA);
+      setPasswordMinLength(sec.passwordMinLength ?? s.password_min_length ?? passwordMinLength);
+      setPasswordRequireSpecial(sec.passwordRequireSpecial ?? s.password_require_special ?? passwordRequireSpecial);
+      setPasswordExpiration(sec.passwordExpiration ?? s.password_expiration ?? passwordExpiration);
+      setLoginAttempts(sec.loginAttempts ?? s.login_attempts ?? loginAttempts);
+      setLockoutDuration(sec.lockoutDuration ?? s.lockout_duration ?? lockoutDuration);
+      setIpWhitelist(sec.ipWhitelist ?? s.ip_whitelist ?? ipWhitelist);
+      setIpBanlist(sec.ipBanlist ?? s.ip_banlist ?? ipBanlist);
+      setAuditLogVisibility(sec.auditLogVisibility ?? s.audit_log_visibility ?? auditLogVisibility);
 
-  const loadSettings = async () => {
-    try {
-      const { data, error } = await supabase.rpc('get_system_setting', {
-        setting_key: 'app_settings'
-      });
+      // Notifications
+      setEmailNotifications(notif.emailNotifications ?? s.email_notifications ?? emailNotifications);
+      setPushNotifications(notif.pushNotifications ?? s.push_notifications ?? pushNotifications);
+      setSmsNotifications(notif.smsNotifications ?? s.sms_notifications ?? smsNotifications);
+      setLowStockAlerts(notif.lowStockAlerts ?? s.low_stock_alerts ?? lowStockAlerts);
+      setSalesAlerts(notif.salesAlerts ?? s.sales_alerts ?? salesAlerts);
+      setSystemAlerts(notif.systemAlerts ?? s.system_alerts ?? systemAlerts);
+      setNewOrderAlerts(notif.newOrderAlerts ?? s.new_order_alerts ?? newOrderAlerts);
+      setStaffActivityAlerts(notif.staffActivityAlerts ?? s.staff_activity_alerts ?? staffActivityAlerts);
+      setBccManager(notif.bccManager ?? s.bcc_manager ?? bccManager);
+      setManagerEmail(notif.managerEmail ?? s.manager_email ?? managerEmail);
 
-      if (error) {
-        console.log('Settings not found, using defaults:', error.message);
-        return;
-      }
-      
-      if (data) {
-        const settings = data;
-        
-        // Load all existing settings...
-        if (settings.app_name) setAppName(settings.app_name);
-        if (settings.company_name) setCompanyName(settings.company_name);
-        // ... (other settings remain the same)
+      // HR
+      setEnableDeductionForAbsences(hr.enableDeductionForAbsences ?? s.enable_deduction_for_absences ?? enableDeductionForAbsences);
+      setEnableOvertimeTracking(hr.enableOvertimeTracking ?? s.enable_overtime_tracking ?? enableOvertimeTracking);
+      setAutoMarkLateEmployees(hr.autoMarkLateEmployees ?? s.auto_mark_late_employees ?? autoMarkLateEmployees);
+      setLateThresholdMinutes(hr.lateThresholdMinutes ?? s.late_threshold_minutes ?? lateThresholdMinutes);
+      setIncludeAllowanceInPay(hr.includeAllowanceInPay ?? s.include_allowance_in_pay ?? includeAllowanceInPay);
+      setEnableTaxComputation(hr.enableTaxComputation ?? s.enable_tax_computation ?? enableTaxComputation);
+      setIncludeSSSDeductions(hr.includeSSSDeductions ?? s.include_sss_deductions ?? includeSSSDeductions);
+      setIncludePhilHealthDeductions(hr.includePhilHealthDeductions ?? s.include_philhealth_deductions ?? includePhilHealthDeductions);
+      setIncludePagIBIGDeductions(hr.includePagIBIGDeductions ?? s.include_pagibig_deductions ?? includePagIBIGDeductions);
+      setPayrollPeriod(hr.payrollPeriod ?? s.payroll_period ?? payrollPeriod);
+      setEnableLeaveManagement(hr.enableLeaveManagement ?? s.enable_leave_management ?? enableLeaveManagement);
+      setMaxLeaveDaysPerMonth(hr.maxLeaveDaysPerMonth ?? s.max_leave_days_per_month ?? maxLeaveDaysPerMonth);
+      setRequireLeaveApproval(hr.requireLeaveApproval ?? s.require_leave_approval ?? requireLeaveApproval);
+      setEnableHRReportsDashboard(hr.enableHRReportsDashboard ?? s.enable_hr_reports_dashboard ?? enableHRReportsDashboard);
+      setIncludeAttendanceSummary(hr.includeAttendanceSummary ?? s.include_attendance_summary ?? includeAttendanceSummary);
+      setEnablePerformanceReviews(hr.enablePerformanceReviews ?? s.enable_performance_reviews ?? enablePerformanceReviews);
+      setEnableEmployeeSelfService(hr.enableEmployeeSelfService ?? s.enable_employee_self_service ?? enableEmployeeSelfService);
 
-        // Load HR settings
-        if (settings.enable_deduction_for_absences !== undefined) setEnableDeductionForAbsences(settings.enable_deduction_for_absences);
-        if (settings.enable_overtime_tracking !== undefined) setEnableOvertimeTracking(settings.enable_overtime_tracking);
-        if (settings.auto_mark_late_employees !== undefined) setAutoMarkLateEmployees(settings.auto_mark_late_employees);
-        if (settings.late_threshold_minutes) setLateThresholdMinutes(settings.late_threshold_minutes);
-        if (settings.include_allowance_in_pay !== undefined) setIncludeAllowanceInPay(settings.include_allowance_in_pay);
-        if (settings.enable_tax_computation !== undefined) setEnableTaxComputation(settings.enable_tax_computation);
-        if (settings.include_sss_deductions !== undefined) setIncludeSSSDeductions(settings.include_sss_deductions);
-        if (settings.include_philhealth_deductions !== undefined) setIncludePhilHealthDeductions(settings.include_philhealth_deductions);
-        if (settings.include_pagibig_deductions !== undefined) setIncludePagIBIGDeductions(settings.include_pagibig_deductions);
-        if (settings.payroll_period) setPayrollPeriod(settings.payroll_period);
-        if (settings.enable_leave_management !== undefined) setEnableLeaveManagement(settings.enable_leave_management);
-        if (settings.max_leave_days_per_month) setMaxLeaveDaysPerMonth(settings.max_leave_days_per_month);
-        if (settings.require_leave_approval !== undefined) setRequireLeaveApproval(settings.require_leave_approval);
-        if (settings.enable_hr_reports_dashboard !== undefined) setEnableHRReportsDashboard(settings.enable_hr_reports_dashboard);
-        if (settings.include_attendance_summary !== undefined) setIncludeAttendanceSummary(settings.include_attendance_summary);
-        if (settings.enable_performance_reviews !== undefined) setEnablePerformanceReviews(settings.enable_performance_reviews);
-        if (settings.enable_employee_self_service !== undefined) setEnableEmployeeSelfService(settings.enable_employee_self_service);
-      }
-    } catch (err: any) {
-      console.error('Error loading settings:', err);
-    }
-  };
+      // Data
+      setBackupFrequency(data.backupFrequency ?? s.backup_frequency ?? backupFrequency);
+      setRetentionPeriod(data.retentionPeriod ?? s.retention_period ?? retentionPeriod);
+      setDataEncryption(data.dataEncryption ?? s.data_encryption ?? dataEncryption);
+      setAuditLogging(data.auditLogging ?? s.audit_logging ?? auditLogging);
+      setExportFormat(data.exportFormat ?? s.export_format ?? exportFormat);
+      setAutoBackup(data.autoBackup ?? s.auto_backup ?? autoBackup);
+      setBackupLocation(data.backupLocation ?? s.backup_location ?? backupLocation);
 
-  const testNotification = async () => {
-    setShowTestNotification(true);
-    setTimeout(() => {
-      setShowTestNotification(false);
-      setSuccess('Test notification sent successfully!');
-      setTimeout(() => setSuccess(null), 3000);
-    }, 2000);
-  };
-
-  const addIpAddress = (list: 'whitelist' | 'banlist') => {
-    if (!newIpAddress.trim()) return;
-    
-    if (list === 'whitelist') {
-      setIpWhitelist([...ipWhitelist, newIpAddress.trim()]);
-    } else {
-      setIpBanlist([...ipBanlist, newIpAddress.trim()]);
-    }
-    setNewIpAddress('');
-  };
-
-  const removeIpAddress = (ip: string, list: 'whitelist' | 'banlist') => {
-    if (list === 'whitelist') {
-      setIpWhitelist(ipWhitelist.filter(addr => addr !== ip));
-    } else {
-      setIpBanlist(ipBanlist.filter(addr => addr !== ip));
-    }
-  };
-
-  const loadUsers = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('id, first_name, last_name, email, role')
-        .eq('is_active', true)
-        .in('role', ['manager', 'admin', 'super-admin'])
-        .order('first_name');
-
-      if (error) throw error;
-      setUsers(data || []);
-    } catch (err: any) {
-      console.error('Error loading users:', err);
-    }
-  };
-
-  const loadBranches = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('view_branch_cards')
-        .select('*')
-        .order('name');
-
-      if (error) throw error;
-      setBranches(data || []);
-    } catch (err: any) {
-      console.error('Error loading branches:', err);
-      setError('Failed to load branches: ' + err.message);
-    }
-  };
-
-  const loadPosTerminals = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('pos_terminals')
-        .select(`
-          id,
-          terminal_name,
-          terminal_code,
-          branch_id,
-          status,
-          assigned_user_id,
-          last_sync,
-          created_at,
-          updated_at,
-          notes,
-          branches!inner(id, name),
-          users!left(id, first_name, last_name, email)
-        `)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-
-      const transformedTerminals = data?.map(terminal => ({
-        id: terminal.id,
-        name: terminal.terminal_name,
-        terminalId: terminal.terminal_code,
-        branchId: terminal.branch_id,
-        branchName: terminal.branches?.name || 'Unknown Branch',
-        status: terminal.status,
-        assignedUserId: terminal.assigned_user_id,
-        assignedUser: terminal.users ? {
-          id: terminal.users.id,
-          name: `${terminal.users.first_name} ${terminal.users.last_name}`,
-          email: terminal.users.email
-        } : null,
-        lastSync: terminal.last_sync,
-        notes: terminal.notes,
-        created_at: terminal.created_at,
-        updated_at: terminal.updated_at
-      })) || [];
-
-      setPosTerminals(transformedTerminals);
-    } catch (err: any) {
-      console.error('Error loading POS terminals:', err);
-      setError('Failed to load POS terminals: ' + err.message);
-    }
-  };
-
-  const loadPosAccounts = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('id, first_name, last_name, email, role')
-        .eq('is_active', true)
-        .in('role', ['cashier', 'manager', 'admin', 'super-admin'])
-        .order('first_name');
-
-      if (error) throw error;
-      setPosAccounts(data || []);
-    } catch (err: any) {
-      console.error('Error loading POS accounts:', err);
-      setError('Failed to load POS accounts: ' + err.message);
+      // PWA
+      setPwaName(pwa.pwaName ?? s.pwa_name ?? pwaName);
+      setPwaTheme(pwa.pwaTheme ?? s.pwa_theme ?? pwaTheme);
+      setOnlineOrderingEnabled(pwa.onlineOrderingEnabled ?? s.online_ordering_enabled ?? onlineOrderingEnabled);
+      setDefaultBranchForOrders(pwa.defaultBranchForOrders ?? s.default_branch_for_orders ?? defaultBranchForOrders);
+      setDeliveryEnabled(pwa.deliveryEnabled ?? s.delivery_enabled ?? deliveryEnabled);
+      setPickupEnabled(pwa.pickupEnabled ?? s.pickup_enabled ?? pickupEnabled);
+      setMaintenanceMode(pwa.maintenanceMode ?? s.maintenance_mode ?? maintenanceMode);
+      setPushNotificationsEnabled(pwa.pushNotificationsEnabled ?? s.push_notifications_enabled ?? pushNotificationsEnabled);
+      if (s.pwa_version) setPwaVersion(s.pwa_version);
+    } catch (error) {
+      console.error('Error fetching settings:', error);
     }
   };
 
   const handleSaveSettings = async () => {
-  setLoading(true);
-  setError(null);
-  
-  try {
-    // Get a user from the users table to use as the updater
-    const { data: currentUser, error: userError } = await supabase
-      .from('users')
-      .select('id')
-      .eq('role', 'super-admin')
-      .limit(1)
-      .single();
-
-    if (userError || !currentUser) {
-      console.error('User lookup error:', userError);
-      throw new Error('Unable to identify user. Please ensure you are logged in.');
-    }
-
-    const settings = {
-      app_name: appName,
-      company_name: companyName,
-      contact_email: contactEmail,
-      support_phone: supportPhone,
-      company_address: companyAddress,
-      company_logo: companyLogo,
-      brand_color: brandColor,
-      currency,
-      auto_save: autoSave,
-      show_tooltips: showTooltips,
-      compact_view: compactView,
-      items_per_page: itemsPerPage,
-      date_format: dateFormat,
-      receipt_header: receiptHeader,
-      receipt_footer: receiptFooter,
-      default_branch: defaultBranch,
-      selected_timezone: selectedTimezone,
-      selected_theme: selectedTheme,
-      selected_language: selectedLanguage,
-      session_timeout: sessionTimeout,
-      require_2fa: require2FA,
-      password_min_length: passwordMinLength,
-      password_require_special: passwordRequireSpecial,
-      password_expiration: passwordExpiration,
-      login_attempts: loginAttempts,
-      lockout_duration: lockoutDuration,
-      ip_whitelist: ipWhitelist,
-      ip_banlist: ipBanlist,
-      audit_log_visibility: auditLogVisibility,
-      email_notifications: emailNotifications,
-      push_notifications: pushNotifications,
-      sms_notifications: smsNotifications,
-      low_stock_alerts: lowStockAlerts,
-      sales_alerts: salesAlerts,
-      system_alerts: systemAlerts,
-      new_order_alerts: newOrderAlerts,
-      staff_activity_alerts: staffActivityAlerts,
-      bcc_manager: bccManager,
-      manager_email: managerEmail,
-      backup_frequency: backupFrequency,
-      retention_period: retentionPeriod,
-      data_encryption: dataEncryption,
-      audit_logging: auditLogging,
-      export_format: exportFormat,
-      auto_backup: autoBackup,
-      backup_location: backupLocation,
-      pwa_name: pwaName,
-      pwa_theme: pwaTheme,
-      pwa_logo: pwaLogo,
-      online_ordering_enabled: onlineOrderingEnabled,
-      default_branch_for_orders: defaultBranchForOrders,
-      delivery_enabled: deliveryEnabled,
-      pickup_enabled: pickupEnabled,
-      maintenance_mode: maintenanceMode,
-      push_notifications_enabled: pushNotificationsEnabled,
-      pwa_version: pwaVersion,
-      // HR Management Settings
-      enable_deduction_for_absences: enableDeductionForAbsences,
-      enable_overtime_tracking: enableOvertimeTracking,
-      auto_mark_late_employees: autoMarkLateEmployees,
-      late_threshold_minutes: lateThresholdMinutes,
-      include_allowance_in_pay: includeAllowanceInPay,
-      enable_tax_computation: enableTaxComputation,
-      include_sss_deductions: includeSSSDeductions,
-      include_philhealth_deductions: includePhilHealthDeductions,
-      include_pagibig_deductions: includePagIBIGDeductions,
-      payroll_period: payrollPeriod,
-      enable_leave_management: enableLeaveManagement,
-      max_leave_days_per_month: maxLeaveDaysPerMonth,
-      require_leave_approval: requireLeaveApproval,
-      enable_hr_reports_dashboard: enableHRReportsDashboard,
-      include_attendance_summary: includeAttendanceSummary,
-      enable_performance_reviews: enablePerformanceReviews,
-      enable_employee_self_service: enableEmployeeSelfService
-    };
-
-    console.log('Saving settings with user ID:', currentUser.id);
-    console.log('Settings payload:', settings);
-
-    const { data, error: saveError } = await supabase.rpc('set_system_setting', {
-      setting_key: 'app_settings',
-      setting_value: settings,
-      setting_description: 'Main application settings',
-      is_public_setting: false,
-      user_id: currentUser.id
-    });
-
-    if (saveError) {
-      console.error('Save error:', saveError);
-      throw saveError;
-    }
-    
-    // ✅ ADD THESE 2 LINES - Clear the settings cache
-    settingsService.clearCache();
-    console.log('✅ Settings cache cleared - HR modules will use new settings');
-    
-    console.log('Settings saved successfully:', data);
-    
+    setLoading(true);
     setError(null);
-    setSuccess('Settings saved successfully!');
-    setTimeout(() => setSuccess(null), 3000);
-  } catch (err: any) {
-    console.error('Error saving settings:', err);
-    setError('Failed to save settings: ' + err.message);
-  } finally {
-    setLoading(false);
-  }
-};
+    setSuccess(null);
+
+    try {
+      const settings = {
+        general: {
+          appName,
+          companyName,
+          contactEmail,
+          supportPhone,
+          companyAddress,
+          brandColor,
+          currency,
+          autoSave,
+          showTooltips,
+          compactView,
+          itemsPerPage,
+          dateFormat,
+          receiptHeader,
+          receiptFooter,
+          defaultBranch
+        },
+        security: {
+          sessionTimeout,
+          require2FA,
+          passwordMinLength,
+          passwordRequireSpecial,
+          passwordExpiration,
+          loginAttempts,
+          lockoutDuration,
+          ipWhitelist,
+          ipBanlist,
+          auditLogVisibility
+        },
+        notifications: {
+          emailNotifications,
+          pushNotifications,
+          smsNotifications,
+          lowStockAlerts,
+          salesAlerts,
+          systemAlerts,
+          newOrderAlerts,
+          staffActivityAlerts,
+          bccManager,
+          managerEmail
+        },
+        hr: {
+          enableDeductionForAbsences,
+          enableOvertimeTracking,
+          autoMarkLateEmployees,
+          lateThresholdMinutes,
+          includeAllowanceInPay,
+          enableTaxComputation,
+          includeSSSDeductions,
+          includePhilHealthDeductions,
+          includePagIBIGDeductions,
+          payrollPeriod,
+          enableLeaveManagement,
+          maxLeaveDaysPerMonth,
+          requireLeaveApproval,
+          enableHRReportsDashboard,
+          includeAttendanceSummary,
+          enablePerformanceReviews,
+          enableEmployeeSelfService
+        },
+        data: {
+          backupFrequency,
+          retentionPeriod,
+          dataEncryption,
+          auditLogging,
+          exportFormat,
+          autoBackup,
+          backupLocation
+        },
+        pwa: {
+          pwaName,
+          pwaTheme,
+          onlineOrderingEnabled,
+          defaultBranchForOrders,
+          deliveryEnabled,
+          pickupEnabled,
+          maintenanceMode,
+          pushNotificationsEnabled
+        }
+      };
+
+      await settingsService.updateSettings(settings);
+      setSuccess('Settings saved successfully!');
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (error: any) {
+      setError(error.message || 'Failed to save settings');
+      setTimeout(() => setError(null), 5000);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const renderGeneralSettings = () => (
     <div className="space-y-8">
-      {/* Existing general settings content */}
+      {/* Business Information Card */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
         <div className="flex items-center space-x-3 mb-6">
           <div className="p-2 bg-blue-50 rounded-lg">
@@ -590,27 +451,422 @@ const SettingsPage: React.FC = () => {
           </div>
           <h3 className="text-lg font-semibold text-gray-900">Business Information</h3>
         </div>
-        <p className="text-sm text-gray-500 mb-4">Configure your basic business details and branding.</p>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Application Name
+            </label>
+            <input
+              type="text"
+              value={appName}
+              onChange={(e) => setAppName(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="Enter app name"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Company Name
+            </label>
+            <input
+              type="text"
+              value={companyName}
+              onChange={(e) => setCompanyName(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="Enter company name"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Contact Email
+            </label>
+            <input
+              type="email"
+              value={contactEmail}
+              onChange={(e) => setContactEmail(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="admin@example.com"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Support Phone
+            </label>
+            <input
+              type="tel"
+              value={supportPhone}
+              onChange={(e) => setSupportPhone(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="+63 2 8123 4567"
+            />
+          </div>
+
+          <div className="col-span-2">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Company Address
+            </label>
+            <textarea
+              value={companyAddress}
+              onChange={(e) => setCompanyAddress(e.target.value)}
+              rows={2}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="Enter company address"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* System Preferences Card */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+        <div className="flex items-center space-x-3 mb-6">
+          <div className="p-2 bg-gray-50 rounded-lg">
+            <Settings className="w-5 h-5 text-gray-600" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900">System Preferences</h3>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Currency
+            </label>
+            <select
+              value={currency}
+              onChange={(e) => setCurrency(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="PHP">Philippine Peso (₱)</option>
+              <option value="USD">US Dollar ($)</option>
+              <option value="EUR">Euro (€)</option>
+              <option value="JPY">Japanese Yen (¥)</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Date Format
+            </label>
+            <select
+              value={dateFormat}
+              onChange={(e) => setDateFormat(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="YYYY-MM-DD">YYYY-MM-DD</option>
+              <option value="DD/MM/YYYY">DD/MM/YYYY</option>
+              <option value="MM/DD/YYYY">MM/DD/YYYY</option>
+              <option value="DD-MM-YYYY">DD-MM-YYYY</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Items Per Page
+            </label>
+            <select
+              value={itemsPerPage}
+              onChange={(e) => setItemsPerPage(Number(e.target.value))}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value={10}>10</option>
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Theme Color
+            </label>
+            <div className="flex items-center space-x-3">
+              <input
+                type="color"
+                value={brandColor}
+                onChange={(e) => setBrandColor(e.target.value)}
+                className="h-10 w-20 border border-gray-300 rounded cursor-pointer"
+              />
+              <input
+                type="text"
+                value={brandColor}
+                onChange={(e) => setBrandColor(e.target.value)}
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                placeholder="#3B82F6"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-6 space-y-4">
+          <label className="flex items-center space-x-3">
+            <input
+              type="checkbox"
+              checked={autoSave}
+              onChange={(e) => setAutoSave(e.target.checked)}
+              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <span className="text-sm text-gray-700">Enable auto-save</span>
+          </label>
+
+          <label className="flex items-center space-x-3">
+            <input
+              type="checkbox"
+              checked={showTooltips}
+              onChange={(e) => setShowTooltips(e.target.checked)}
+              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <span className="text-sm text-gray-700">Show tooltips</span>
+          </label>
+
+          <label className="flex items-center space-x-3">
+            <input
+              type="checkbox"
+              checked={compactView}
+              onChange={(e) => setCompactView(e.target.checked)}
+              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <span className="text-sm text-gray-700">Compact view mode</span>
+          </label>
+        </div>
+      </div>
+
+      {/* Receipt Settings Card */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+        <div className="flex items-center space-x-3 mb-6">
+          <div className="p-2 bg-green-50 rounded-lg">
+            <FileText className="w-5 h-5 text-green-600" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900">Receipt Settings</h3>
+        </div>
+        
+        <div className="space-y-6">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Receipt Header Message
+            </label>
+            <input
+              type="text"
+              value={receiptHeader}
+              onChange={(e) => setReceiptHeader(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="Thank you for your business!"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Receipt Footer Message
+            </label>
+            <input
+              type="text"
+              value={receiptFooter}
+              onChange={(e) => setReceiptFooter(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="Visit us again soon!"
+            />
+          </div>
+        </div>
       </div>
     </div>
   );
 
   const renderSecuritySettings = () => (
     <div className="space-y-8">
+      {/* Session & Authentication Card */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
         <div className="flex items-center space-x-3 mb-6">
           <div className="p-2 bg-red-50 rounded-lg">
             <Lock className="w-5 h-5 text-red-600" />
           </div>
-          <h3 className="text-lg font-semibold text-gray-900">Authentication Settings</h3>
+          <h3 className="text-lg font-semibold text-gray-900">Session & Authentication</h3>
         </div>
-        <p className="text-sm text-gray-500 mb-4">Manage security and authentication preferences.</p>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Session Timeout (minutes)
+            </label>
+            <input
+              type="number"
+              value={sessionTimeout}
+              onChange={(e) => setSessionTimeout(Number(e.target.value))}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+              min="5"
+              max="120"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Max Login Attempts
+            </label>
+            <input
+              type="number"
+              value={loginAttempts}
+              onChange={(e) => setLoginAttempts(Number(e.target.value))}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+              min="3"
+              max="10"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Lockout Duration (minutes)
+            </label>
+            <input
+              type="number"
+              value={lockoutDuration}
+              onChange={(e) => setLockoutDuration(Number(e.target.value))}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+              min="5"
+              max="60"
+            />
+          </div>
+
+          <div className="flex items-center space-x-3">
+            <input
+              type="checkbox"
+              checked={require2FA}
+              onChange={(e) => setRequire2FA(e.target.checked)}
+              className="rounded border-gray-300 text-red-600 focus:ring-red-500"
+              id="require2FA"
+            />
+            <label htmlFor="require2FA" className="text-sm text-gray-700">
+              Require two-factor authentication
+            </label>
+          </div>
+        </div>
+      </div>
+
+      {/* Password Policy Card */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+        <div className="flex items-center space-x-3 mb-6">
+          <div className="p-2 bg-orange-50 rounded-lg">
+            <ShieldCheck className="w-5 h-5 text-orange-600" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900">Password Policy</h3>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Minimum Password Length
+            </label>
+            <input
+              type="number"
+              value={passwordMinLength}
+              onChange={(e) => setPasswordMinLength(Number(e.target.value))}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+              min="6"
+              max="20"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Password Expiration (days)
+            </label>
+            <input
+              type="number"
+              value={passwordExpiration}
+              onChange={(e) => setPasswordExpiration(Number(e.target.value))}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+              min="0"
+              max="365"
+              placeholder="0 for no expiration"
+            />
+          </div>
+
+          <div className="col-span-2 space-y-3">
+            <label className="flex items-center space-x-3">
+              <input
+                type="checkbox"
+                checked={passwordRequireSpecial}
+                onChange={(e) => setPasswordRequireSpecial(e.target.checked)}
+                className="rounded border-gray-300 text-red-600 focus:ring-red-500"
+              />
+              <span className="text-sm text-gray-700">Require special characters in passwords</span>
+            </label>
+
+            <label className="flex items-center space-x-3">
+              <input
+                type="checkbox"
+                checked={auditLogVisibility}
+                onChange={(e) => setAuditLogVisibility(e.target.checked)}
+                className="rounded border-gray-300 text-red-600 focus:ring-red-500"
+              />
+              <span className="text-sm text-gray-700">Enable audit log visibility</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      {/* IP Access Control Card */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+        <div className="flex items-center space-x-3 mb-6">
+          <div className="p-2 bg-yellow-50 rounded-lg">
+            <Shield className="w-5 h-5 text-yellow-600" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900">IP Access Control</h3>
+        </div>
+        
+        <div className="space-y-6">
+          {/* IP Whitelist */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              IP Whitelist
+            </label>
+            <div className="space-y-2">
+              {ipWhitelist.map((ip, index) => (
+                <div key={index} className="flex items-center space-x-2">
+                  <input
+                    type="text"
+                    value={ip}
+                    readOnly
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
+                  />
+                  <button
+                    onClick={() => setIpWhitelist(ipWhitelist.filter((_, i) => i !== index))}
+                    className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+              <div className="flex items-center space-x-2">
+                <input
+                  type="text"
+                  value={newIpAddress}
+                  onChange={(e) => setNewIpAddress(e.target.value)}
+                  placeholder="Enter IP address"
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500"
+                />
+                <button
+                  onClick={() => {
+                    if (newIpAddress && !ipWhitelist.includes(newIpAddress)) {
+                      setIpWhitelist([...ipWhitelist, newIpAddress]);
+                      setNewIpAddress('');
+                    }
+                  }}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                >
+                  Add IP
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
 
   const renderNotificationSettings = () => (
     <div className="space-y-8">
+      {/* Notification Channels Card */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
         <div className="flex items-center space-x-3 mb-6">
           <div className="p-2 bg-yellow-50 rounded-lg">
@@ -618,7 +874,153 @@ const SettingsPage: React.FC = () => {
           </div>
           <h3 className="text-lg font-semibold text-gray-900">Notification Channels</h3>
         </div>
-        <p className="text-sm text-gray-500 mb-4">Configure how you receive alerts and notifications.</p>
+        
+        <div className="space-y-4">
+          <label className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50">
+            <div className="flex items-center space-x-3">
+              <Mail className="w-5 h-5 text-gray-600" />
+              <div>
+                <div className="font-medium text-gray-900">Email Notifications</div>
+                <div className="text-sm text-gray-500">Receive updates via email</div>
+              </div>
+            </div>
+            <input
+              type="checkbox"
+              checked={emailNotifications}
+              onChange={(e) => setEmailNotifications(e.target.checked)}
+              className="rounded border-gray-300 text-yellow-600 focus:ring-yellow-500"
+            />
+          </label>
+
+          <label className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50">
+            <div className="flex items-center space-x-3">
+              <Bell className="w-5 h-5 text-gray-600" />
+              <div>
+                <div className="font-medium text-gray-900">Push Notifications</div>
+                <div className="text-sm text-gray-500">Browser and mobile push notifications</div>
+              </div>
+            </div>
+            <input
+              type="checkbox"
+              checked={pushNotifications}
+              onChange={(e) => setPushNotifications(e.target.checked)}
+              className="rounded border-gray-300 text-yellow-600 focus:ring-yellow-500"
+            />
+          </label>
+
+          <label className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50">
+            <div className="flex items-center space-x-3">
+              <Phone className="w-5 h-5 text-gray-600" />
+              <div>
+                <div className="font-medium text-gray-900">SMS Notifications</div>
+                <div className="text-sm text-gray-500">Text message alerts for critical updates</div>
+              </div>
+            </div>
+            <input
+              type="checkbox"
+              checked={smsNotifications}
+              onChange={(e) => setSmsNotifications(e.target.checked)}
+              className="rounded border-gray-300 text-yellow-600 focus:ring-yellow-500"
+            />
+          </label>
+        </div>
+      </div>
+
+      {/* Alert Types Card */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+        <div className="flex items-center space-x-3 mb-6">
+          <div className="p-2 bg-orange-50 rounded-lg">
+            <AlertTriangle className="w-5 h-5 text-orange-600" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900">Alert Types</h3>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <label className="flex items-center space-x-3">
+            <input
+              type="checkbox"
+              checked={lowStockAlerts}
+              onChange={(e) => setLowStockAlerts(e.target.checked)}
+              className="rounded border-gray-300 text-yellow-600 focus:ring-yellow-500"
+            />
+            <span className="text-sm text-gray-700">Low Stock Alerts</span>
+          </label>
+
+          <label className="flex items-center space-x-3">
+            <input
+              type="checkbox"
+              checked={salesAlerts}
+              onChange={(e) => setSalesAlerts(e.target.checked)}
+              className="rounded border-gray-300 text-yellow-600 focus:ring-yellow-500"
+            />
+            <span className="text-sm text-gray-700">Sales Alerts</span>
+          </label>
+
+          <label className="flex items-center space-x-3">
+            <input
+              type="checkbox"
+              checked={systemAlerts}
+              onChange={(e) => setSystemAlerts(e.target.checked)}
+              className="rounded border-gray-300 text-yellow-600 focus:ring-yellow-500"
+            />
+            <span className="text-sm text-gray-700">System Alerts</span>
+          </label>
+
+          <label className="flex items-center space-x-3">
+            <input
+              type="checkbox"
+              checked={newOrderAlerts}
+              onChange={(e) => setNewOrderAlerts(e.target.checked)}
+              className="rounded border-gray-300 text-yellow-600 focus:ring-yellow-500"
+            />
+            <span className="text-sm text-gray-700">New Order Alerts</span>
+          </label>
+
+          <label className="flex items-center space-x-3">
+            <input
+              type="checkbox"
+              checked={staffActivityAlerts}
+              onChange={(e) => setStaffActivityAlerts(e.target.checked)}
+              className="rounded border-gray-300 text-yellow-600 focus:ring-yellow-500"
+            />
+            <span className="text-sm text-gray-700">Staff Activity Alerts</span>
+          </label>
+        </div>
+      </div>
+
+      {/* Email Settings Card */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+        <div className="flex items-center space-x-3 mb-6">
+          <div className="p-2 bg-blue-50 rounded-lg">
+            <Mail className="w-5 h-5 text-blue-600" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900">Email Settings</h3>
+        </div>
+        
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Manager Email (CC)
+            </label>
+            <input
+              type="email"
+              value={managerEmail}
+              onChange={(e) => setManagerEmail(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
+              placeholder="manager@example.com"
+            />
+          </div>
+
+          <label className="flex items-center space-x-3">
+            <input
+              type="checkbox"
+              checked={bccManager}
+              onChange={(e) => setBccManager(e.target.checked)}
+              className="rounded border-gray-300 text-yellow-600 focus:ring-yellow-500"
+            />
+            <span className="text-sm text-gray-700">BCC manager on all notification emails</span>
+          </label>
+        </div>
       </div>
     </div>
   );
@@ -802,30 +1204,29 @@ const SettingsPage: React.FC = () => {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Payroll Period
-                <p className="text-xs text-gray-500 font-normal mt-1">How often payroll is processed</p>
               </label>
               <select
                 value={payrollPeriod}
                 onChange={(e) => setPayrollPeriod(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
               >
-                <option value="monthly">Monthly</option>
-                <option value="semi-monthly">Semi-Monthly (15th & 30th)</option>
-                <option value="bi-weekly">Bi-Weekly</option>
                 <option value="weekly">Weekly</option>
+                <option value="bi-weekly">Bi-Weekly</option>
+                <option value="semi-monthly">Semi-Monthly</option>
+                <option value="monthly">Monthly</option>
               </select>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Leave Management Settings Card */}
+      {/* Leave Management Card */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
         <div className="flex items-center space-x-3 mb-6">
-          <div className="p-2 bg-orange-50 rounded-lg">
-            <Calendar className="w-5 h-5 text-orange-600" />
+          <div className="p-2 bg-yellow-50 rounded-lg">
+            <Calendar className="w-5 h-5 text-yellow-600" />
           </div>
-          <h3 className="text-lg font-semibold text-gray-900">Leave Management Settings</h3>
+          <h3 className="text-lg font-semibold text-gray-900">Leave Management</h3>
         </div>
         
         <div className="space-y-6">
@@ -834,7 +1235,7 @@ const SettingsPage: React.FC = () => {
               <label className="flex items-center justify-between">
                 <div>
                   <span className="text-sm font-medium text-gray-700">Enable Leave Management</span>
-                  <p className="text-xs text-gray-500 mt-1">Allow employees to request leave</p>
+                  <p className="text-xs text-gray-500 mt-1">Track employee leaves and vacation days</p>
                 </div>
                 <input
                   type="checkbox"
@@ -846,47 +1247,44 @@ const SettingsPage: React.FC = () => {
             </div>
             
             <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Max Leave Days per Month
+              </label>
+              <input
+                type="number"
+                min="0"
+                max="10"
+                value={maxLeaveDaysPerMonth}
+                onChange={(e) => setMaxLeaveDaysPerMonth(Number(e.target.value))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+            </div>
+            
+            <div>
               <label className="flex items-center justify-between">
                 <div>
                   <span className="text-sm font-medium text-gray-700">Require Leave Approval</span>
-                  <p className="text-xs text-gray-500 mt-1">Manager must approve all leave requests</p>
+                  <p className="text-xs text-gray-500 mt-1">Leaves must be approved by manager</p>
                 </div>
                 <input
                   type="checkbox"
                   checked={requireLeaveApproval}
                   onChange={(e) => setRequireLeaveApproval(e.target.checked)}
                   className="rounded border-gray-300 text-purple-600 focus:ring-purple-500 ml-4"
-                  disabled={!enableLeaveManagement}
                 />
               </label>
-            </div>
-            
-            <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Maximum Leave Days Per Month
-                <p className="text-xs text-gray-500 font-normal mt-1">Maximum number of leave days an employee can take per month</p>
-              </label>
-              <input
-                type="number"
-                min="0"
-                max="31"
-                value={maxLeaveDaysPerMonth}
-                onChange={(e) => setMaxLeaveDaysPerMonth(Number(e.target.value))}
-                className="w-full md:w-1/2 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
-                disabled={!enableLeaveManagement}
-              />
             </div>
           </div>
         </div>
       </div>
 
-      {/* Reports Settings Card */}
+      {/* Reports & Analytics Card */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
         <div className="flex items-center space-x-3 mb-6">
           <div className="p-2 bg-indigo-50 rounded-lg">
             <BarChart3 className="w-5 h-5 text-indigo-600" />
           </div>
-          <h3 className="text-lg font-semibold text-gray-900">HR Reports Settings</h3>
+          <h3 className="text-lg font-semibold text-gray-900">Reports & Analytics</h3>
         </div>
         
         <div className="space-y-6">
@@ -895,7 +1293,7 @@ const SettingsPage: React.FC = () => {
               <label className="flex items-center justify-between">
                 <div>
                   <span className="text-sm font-medium text-gray-700">Enable HR Reports Dashboard</span>
-                  <p className="text-xs text-gray-500 mt-1">Show HR analytics and reports section</p>
+                  <p className="text-xs text-gray-500 mt-1">Show HR analytics on dashboard</p>
                 </div>
                 <input
                   type="checkbox"
@@ -910,37 +1308,22 @@ const SettingsPage: React.FC = () => {
               <label className="flex items-center justify-between">
                 <div>
                   <span className="text-sm font-medium text-gray-700">Include Attendance Summary</span>
-                  <p className="text-xs text-gray-500 mt-1">Include attendance data in HR reports</p>
+                  <p className="text-xs text-gray-500 mt-1">Show attendance data in reports</p>
                 </div>
                 <input
                   type="checkbox"
                   checked={includeAttendanceSummary}
                   onChange={(e) => setIncludeAttendanceSummary(e.target.checked)}
                   className="rounded border-gray-300 text-purple-600 focus:ring-purple-500 ml-4"
-                  disabled={!enableHRReportsDashboard}
                 />
               </label>
             </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Advanced HR Features Card */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-        <div className="flex items-center space-x-3 mb-6">
-          <div className="p-2 bg-purple-50 rounded-lg">
-            <Users className="w-5 h-5 text-purple-600" />
-          </div>
-          <h3 className="text-lg font-semibold text-gray-900">Advanced Features</h3>
-        </div>
-        
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            
             <div>
               <label className="flex items-center justify-between">
                 <div>
                   <span className="text-sm font-medium text-gray-700">Enable Performance Reviews</span>
-                  <p className="text-xs text-gray-500 mt-1">Allow managers to conduct employee reviews</p>
+                  <p className="text-xs text-gray-500 mt-1">Track employee performance metrics</p>
                 </div>
                 <input
                   type="checkbox"
@@ -955,7 +1338,7 @@ const SettingsPage: React.FC = () => {
               <label className="flex items-center justify-between">
                 <div>
                   <span className="text-sm font-medium text-gray-700">Enable Employee Self-Service</span>
-                  <p className="text-xs text-gray-500 mt-1">Let employees view their own records</p>
+                  <p className="text-xs text-gray-500 mt-1">Let employees view their own data</p>
                 </div>
                 <input
                   type="checkbox"
@@ -968,99 +1351,642 @@ const SettingsPage: React.FC = () => {
           </div>
         </div>
       </div>
-
-      {/* HR Settings Summary Card */}
-      <div className="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-2xl shadow-sm border border-purple-200 p-6">
-        <div className="flex items-center space-x-3 mb-4">
-          <CheckCircle className="w-5 h-5 text-purple-600" />
-          <h3 className="text-lg font-semibold text-gray-900">Current HR Configuration</h3>
-        </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-white rounded-lg p-4">
-            <div className="text-sm text-gray-500 mb-1">Attendance</div>
-            <div className="text-lg font-semibold text-gray-900">
-              {enableDeductionForAbsences && enableOvertimeTracking ? '✓ Active' : '⚠ Partial'}
-            </div>
-          </div>
-          
-          <div className="bg-white rounded-lg p-4">
-            <div className="text-sm text-gray-500 mb-1">Payroll</div>
-            <div className="text-lg font-semibold text-gray-900">
-              {payrollPeriod === 'monthly' ? 'Monthly' : payrollPeriod === 'semi-monthly' ? 'Semi-Monthly' : 'Bi-Weekly'}
-            </div>
-          </div>
-          
-          <div className="bg-white rounded-lg p-4">
-            <div className="text-sm text-gray-500 mb-1">Leave Management</div>
-            <div className="text-lg font-semibold text-gray-900">
-              {enableLeaveManagement ? '✓ Enabled' : '✗ Disabled'}
-            </div>
-          </div>
-          
-          <div className="bg-white rounded-lg p-4">
-            <div className="text-sm text-gray-500 mb-1">HR Reports</div>
-            <div className="text-lg font-semibold text-gray-900">
-              {enableHRReportsDashboard ? '✓ Active' : '✗ Inactive'}
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
   );
 
   const renderDataSettings = () => (
     <div className="space-y-8">
+      {/* Backup Settings Card */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
         <div className="flex items-center space-x-3 mb-6">
           <div className="p-2 bg-green-50 rounded-lg">
-            <HardDrive className="w-5 h-5 text-green-600" />
+            <Download className="w-5 h-5 text-green-600" />
           </div>
-          <h3 className="text-lg font-semibold text-gray-900">Backup & Restore</h3>
+          <h3 className="text-lg font-semibold text-gray-900">Backup Settings</h3>
         </div>
-        <p className="text-sm text-gray-500 mb-4">Manage your data backups and restoration options.</p>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Backup Frequency
+            </label>
+            <select
+              value={backupFrequency}
+              onChange={(e) => setBackupFrequency(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+            >
+              <option value="hourly">Hourly</option>
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Backup Location
+            </label>
+            <select
+              value={backupLocation}
+              onChange={(e) => setBackupLocation(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+            >
+              <option value="cloud">Cloud Storage</option>
+              <option value="local">Local Storage</option>
+              <option value="both">Both Cloud & Local</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Retention Period (days)
+            </label>
+            <input
+              type="number"
+              value={retentionPeriod}
+              onChange={(e) => setRetentionPeriod(Number(e.target.value))}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+              min="30"
+              max="3650"
+            />
+          </div>
+
+          <div className="flex items-center space-x-3">
+            <input
+              type="checkbox"
+              checked={autoBackup}
+              onChange={(e) => setAutoBackup(e.target.checked)}
+              className="rounded border-gray-300 text-green-600 focus:ring-green-500"
+              id="autoBackup"
+            />
+            <label htmlFor="autoBackup" className="text-sm text-gray-700">
+              Enable automatic backups
+            </label>
+          </div>
+        </div>
+
+        <div className="mt-6 flex space-x-3">
+          <button className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
+            Backup Now
+          </button>
+          <button className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">
+            View Backup History
+          </button>
+        </div>
+      </div>
+
+      {/* Data Security Card */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+        <div className="flex items-center space-x-3 mb-6">
+          <div className="p-2 bg-blue-50 rounded-lg">
+            <Shield className="w-5 h-5 text-blue-600" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900">Data Security</h3>
+        </div>
+        
+        <div className="space-y-4">
+          <label className="flex items-center space-x-3">
+            <input
+              type="checkbox"
+              checked={dataEncryption}
+              onChange={(e) => setDataEncryption(e.target.checked)}
+              className="rounded border-gray-300 text-green-600 focus:ring-green-500"
+            />
+            <span className="text-sm text-gray-700">Enable data encryption at rest</span>
+          </label>
+
+          <label className="flex items-center space-x-3">
+            <input
+              type="checkbox"
+              checked={auditLogging}
+              onChange={(e) => setAuditLogging(e.target.checked)}
+              className="rounded border-gray-300 text-green-600 focus:ring-green-500"
+            />
+            <span className="text-sm text-gray-700">Enable audit logging for all data changes</span>
+          </label>
+        </div>
+      </div>
+
+      {/* Export Settings Card */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+        <div className="flex items-center space-x-3 mb-6">
+          <div className="p-2 bg-yellow-50 rounded-lg">
+            <Upload className="w-5 h-5 text-yellow-600" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900">Export Settings</h3>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Default Export Format
+            </label>
+            <select
+              value={exportFormat}
+              onChange={(e) => setExportFormat(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+            >
+              <option value="csv">CSV</option>
+              <option value="xlsx">Excel (XLSX)</option>
+              <option value="pdf">PDF</option>
+              <option value="json">JSON</option>
+            </select>
+          </div>
+        </div>
       </div>
     </div>
   );
 
   const renderPWASettings = () => (
     <div className="space-y-8">
+      {/* PWA Configuration Card */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
         <div className="flex items-center space-x-3 mb-6">
           <div className="p-2 bg-indigo-50 rounded-lg">
             <Smartphone className="w-5 h-5 text-indigo-600" />
           </div>
-          <h3 className="text-lg font-semibold text-gray-900">PWA Branding & Identity</h3>
+          <h3 className="text-lg font-semibold text-gray-900">PWA Configuration</h3>
         </div>
-        <p className="text-sm text-gray-500 mb-4">Configure your Progressive Web App settings.</p>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              PWA Name
+            </label>
+            <input
+              type="text"
+              value={pwaName}
+              onChange={(e) => setPwaName(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              placeholder="Agrivet Kiosk"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Theme Style
+            </label>
+            <select
+              value={pwaTheme}
+              onChange={(e) => setPwaTheme(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            >
+              <option value="dark-green">Dark Green</option>
+              <option value="light-blue">Light Blue</option>
+              <option value="modern-dark">Modern Dark</option>
+              <option value="classic-light">Classic Light</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Default Branch for Orders
+            </label>
+            <select
+              value={defaultBranchForOrders}
+              onChange={(e) => setDefaultBranchForOrders(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            >
+              <option value="main">Main Branch</option>
+              <option value="branch1">Branch 1</option>
+              <option value="branch2">Branch 2</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Version
+            </label>
+            <div className="px-4 py-2 border border-gray-300 rounded-lg bg-gray-50">
+              {pwaVersion}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Online Features Card */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+        <div className="flex items-center space-x-3 mb-6">
+          <div className="p-2 bg-green-50 rounded-lg">
+            <Activity className="w-5 h-5 text-green-600" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900">Online Features</h3>
+        </div>
+        
+        <div className="space-y-4">
+          <label className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50">
+            <div>
+              <div className="font-medium text-gray-900">Online Ordering</div>
+              <div className="text-sm text-gray-500">Allow customers to place orders online</div>
+            </div>
+            <input
+              type="checkbox"
+              checked={onlineOrderingEnabled}
+              onChange={(e) => setOnlineOrderingEnabled(e.target.checked)}
+              className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+            />
+          </label>
+
+          <label className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50">
+            <div>
+              <div className="font-medium text-gray-900">Delivery Service</div>
+              <div className="text-sm text-gray-500">Enable delivery options for orders</div>
+            </div>
+            <input
+              type="checkbox"
+              checked={deliveryEnabled}
+              onChange={(e) => setDeliveryEnabled(e.target.checked)}
+              className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+            />
+          </label>
+
+          <label className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50">
+            <div>
+              <div className="font-medium text-gray-900">Pickup Orders</div>
+              <div className="text-sm text-gray-500">Allow customers to pick up orders</div>
+            </div>
+            <input
+              type="checkbox"
+              checked={pickupEnabled}
+              onChange={(e) => setPickupEnabled(e.target.checked)}
+              className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+            />
+          </label>
+
+          <label className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50">
+            <div>
+              <div className="font-medium text-gray-900">Push Notifications</div>
+              <div className="text-sm text-gray-500">Send push notifications to app users</div>
+            </div>
+            <input
+              type="checkbox"
+              checked={pushNotificationsEnabled}
+              onChange={(e) => setPushNotificationsEnabled(e.target.checked)}
+              className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+            />
+          </label>
+        </div>
+      </div>
+
+      {/* Maintenance Mode Card */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+        <div className="flex items-center space-x-3 mb-6">
+          <div className="p-2 bg-red-50 rounded-lg">
+            <AlertTriangle className="w-5 h-5 text-red-600" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900">Maintenance Mode</h3>
+        </div>
+        
+        <label className="flex items-center justify-between">
+          <div>
+            <div className="font-medium text-gray-900">Enable Maintenance Mode</div>
+            <div className="text-sm text-gray-500">Temporarily disable PWA access for updates</div>
+          </div>
+          <input
+            type="checkbox"
+            checked={maintenanceMode}
+            onChange={(e) => setMaintenanceMode(e.target.checked)}
+            className="rounded border-gray-300 text-red-600 focus:ring-red-500"
+          />
+        </label>
       </div>
     </div>
   );
 
   const renderBranchManagement = () => (
     <div className="space-y-8">
+      {/* Branch List Card */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center space-x-3">
+            <div className="p-2 bg-orange-50 rounded-lg">
+              <Building className="w-5 h-5 text-orange-600" />
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900">Branch Locations</h3>
+          </div>
+          <button
+            onClick={() => setShowAddBranchModal(true)}
+            className="flex items-center space-x-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add Branch</span>
+          </button>
+        </div>
+        
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 gap-4">
+            {/* Sample branch items */}
+            <div className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="font-medium text-gray-900">Main Branch</h4>
+                  <p className="text-sm text-gray-500">123 Business St, Manila</p>
+                  <p className="text-xs text-gray-400">Branch Code: MAIN</p>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <span className="px-2 py-1 text-xs font-medium text-green-700 bg-green-100 rounded-full">
+                    Active
+                  </span>
+                  <button className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg">
+                    <Edit3 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Branch Settings Card */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
         <div className="flex items-center space-x-3 mb-6">
-          <div className="p-2 bg-orange-50 rounded-lg">
-            <Building className="w-5 h-5 text-orange-600" />
+          <div className="p-2 bg-yellow-50 rounded-lg">
+            <Settings className="w-5 h-5 text-yellow-600" />
           </div>
-          <h3 className="text-lg font-semibold text-gray-900">Branch Management</h3>
+          <h3 className="text-lg font-semibold text-gray-900">Branch Settings</h3>
         </div>
-        <p className="text-sm text-gray-500 mb-4">Manage your branch locations and settings.</p>
+        
+        <div className="space-y-4">
+          <label className="flex items-center space-x-3">
+            <input
+              type="checkbox"
+              className="rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+            />
+            <span className="text-sm text-gray-700">Allow inter-branch transfers</span>
+          </label>
+
+          <label className="flex items-center space-x-3">
+            <input
+              type="checkbox"
+              className="rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+            />
+            <span className="text-sm text-gray-700">Share inventory across branches</span>
+          </label>
+
+          <label className="flex items-center space-x-3">
+            <input
+              type="checkbox"
+              className="rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+            />
+            <span className="text-sm text-gray-700">Enable branch-specific pricing</span>
+          </label>
+        </div>
       </div>
     </div>
   );
 
   const renderPosTerminalManagement = () => (
     <div className="space-y-8">
+      {/* POS Terminal Settings Card */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
         <div className="flex items-center space-x-3 mb-6">
           <div className="p-2 bg-teal-50 rounded-lg">
             <Monitor className="w-5 h-5 text-teal-600" />
           </div>
-          <h3 className="text-lg font-semibold text-gray-900">POS Terminal Management</h3>
+          <h3 className="text-lg font-semibold text-gray-900">POS Terminal Settings</h3>
         </div>
-        <p className="text-sm text-gray-500 mb-4">Configure your POS terminals and accounts.</p>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Default Tax Rate (%)
+            </label>
+            <input
+              type="number"
+              value={posSettings.defaultTaxRate}
+              onChange={(e) => setPosSettings({...posSettings, defaultTaxRate: Number(e.target.value)})}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+              min="0"
+              max="50"
+              step="0.1"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Low Stock Threshold
+            </label>
+            <input
+              type="number"
+              value={posSettings.lowStockThreshold}
+              onChange={(e) => setPosSettings({...posSettings, lowStockThreshold: Number(e.target.value)})}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+              min="1"
+              max="100"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Receipt Number Prefix
+            </label>
+            <input
+              type="text"
+              value={posSettings.receiptNumberPrefix}
+              onChange={(e) => setPosSettings({...posSettings, receiptNumberPrefix: e.target.value})}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+              placeholder="RCP"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Offline Sync Interval (minutes)
+            </label>
+            <input
+              type="number"
+              value={posSettings.syncInterval}
+              onChange={(e) => setPosSettings({...posSettings, syncInterval: Number(e.target.value)})}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+              min="1"
+              max="60"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* POS Features Card */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+        <div className="flex items-center space-x-3 mb-6">
+          <div className="p-2 bg-blue-50 rounded-lg">
+            <Settings2 className="w-5 h-5 text-blue-600" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900">POS Features</h3>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <label className="flex items-center space-x-3">
+            <input
+              type="checkbox"
+              checked={posSettings.autoPrintReceipt}
+              onChange={(e) => setPosSettings({...posSettings, autoPrintReceipt: e.target.checked})}
+              className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+            />
+            <span className="text-sm text-gray-700">Auto-print receipts</span>
+          </label>
+
+          <label className="flex items-center space-x-3">
+            <input
+              type="checkbox"
+              checked={posSettings.showItemImages}
+              onChange={(e) => setPosSettings({...posSettings, showItemImages: e.target.checked})}
+              className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+            />
+            <span className="text-sm text-gray-700">Show item images</span>
+          </label>
+
+          <label className="flex items-center space-x-3">
+            <input
+              type="checkbox"
+              checked={posSettings.enableQuickKeys}
+              onChange={(e) => setPosSettings({...posSettings, enableQuickKeys: e.target.checked})}
+              className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+            />
+            <span className="text-sm text-gray-700">Enable quick keys</span>
+          </label>
+
+          <label className="flex items-center space-x-3">
+            <input
+              type="checkbox"
+              checked={posSettings.enableBulkOperations}
+              onChange={(e) => setPosSettings({...posSettings, enableBulkOperations: e.target.checked})}
+              className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+            />
+            <span className="text-sm text-gray-700">Enable bulk operations</span>
+          </label>
+
+          <label className="flex items-center space-x-3">
+            <input
+              type="checkbox"
+              checked={posSettings.enableInventoryTracking}
+              onChange={(e) => setPosSettings({...posSettings, enableInventoryTracking: e.target.checked})}
+              className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+            />
+            <span className="text-sm text-gray-700">Enable inventory tracking</span>
+          </label>
+
+          <label className="flex items-center space-x-3">
+            <input
+              type="checkbox"
+              checked={posSettings.enablePriceOverrides}
+              onChange={(e) => setPosSettings({...posSettings, enablePriceOverrides: e.target.checked})}
+              className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+            />
+            <span className="text-sm text-gray-700">Enable price overrides</span>
+          </label>
+
+          <label className="flex items-center space-x-3">
+            <input
+              type="checkbox"
+              checked={posSettings.requireManagerForOverrides}
+              onChange={(e) => setPosSettings({...posSettings, requireManagerForOverrides: e.target.checked})}
+              className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+            />
+            <span className="text-sm text-gray-700">Require manager for overrides</span>
+          </label>
+
+          <label className="flex items-center space-x-3">
+            <input
+              type="checkbox"
+              checked={posSettings.enableCustomerSearch}
+              onChange={(e) => setPosSettings({...posSettings, enableCustomerSearch: e.target.checked})}
+              className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+            />
+            <span className="text-sm text-gray-700">Enable customer search</span>
+          </label>
+
+          <label className="flex items-center space-x-3">
+            <input
+              type="checkbox"
+              checked={posSettings.enableBarcodeGeneration}
+              onChange={(e) => setPosSettings({...posSettings, enableBarcodeGeneration: e.target.checked})}
+              className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+            />
+            <span className="text-sm text-gray-700">Enable barcode generation</span>
+          </label>
+
+          <label className="flex items-center space-x-3">
+            <input
+              type="checkbox"
+              checked={posSettings.enableOfflineMode}
+              onChange={(e) => setPosSettings({...posSettings, enableOfflineMode: e.target.checked})}
+              className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+            />
+            <span className="text-sm text-gray-700">Enable offline mode</span>
+          </label>
+
+          <label className="flex items-center space-x-3">
+            <input
+              type="checkbox"
+              checked={posSettings.enableAuditLog}
+              onChange={(e) => setPosSettings({...posSettings, enableAuditLog: e.target.checked})}
+              className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+            />
+            <span className="text-sm text-gray-700">Enable audit log</span>
+          </label>
+
+          <label className="flex items-center space-x-3">
+            <input
+              type="checkbox"
+              checked={posSettings.enableReceiptNumbering}
+              onChange={(e) => setPosSettings({...posSettings, enableReceiptNumbering: e.target.checked})}
+              className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+            />
+            <span className="text-sm text-gray-700">Enable receipt numbering</span>
+          </label>
+        </div>
+      </div>
+
+      {/* Payment Options Card */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+        <div className="flex items-center space-x-3 mb-6">
+          <div className="p-2 bg-green-50 rounded-lg">
+            <DollarSign className="w-5 h-5 text-green-600" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900">Payment Options</h3>
+        </div>
+        
+        <div className="space-y-4">
+          <label className="flex items-center space-x-3">
+            <input
+              type="checkbox"
+              checked={posSettings.enableMultiPayment}
+              onChange={(e) => setPosSettings({...posSettings, enableMultiPayment: e.target.checked})}
+              className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+            />
+            <span className="text-sm text-gray-700">Enable multiple payment methods</span>
+          </label>
+
+          <label className="flex items-center space-x-3">
+            <input
+              type="checkbox"
+              checked={posSettings.enablePartialPayments}
+              onChange={(e) => setPosSettings({...posSettings, enablePartialPayments: e.target.checked})}
+              className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+            />
+            <span className="text-sm text-gray-700">Enable partial payments</span>
+          </label>
+
+          <label className="flex items-center space-x-3">
+            <input
+              type="checkbox"
+              checked={posSettings.enableLayaway}
+              onChange={(e) => setPosSettings({...posSettings, enableLayaway: e.target.checked})}
+              className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+            />
+            <span className="text-sm text-gray-700">Enable layaway</span>
+          </label>
+
+          <label className="flex items-center space-x-3">
+            <input
+              type="checkbox"
+              checked={posSettings.enableInstallments}
+              onChange={(e) => setPosSettings({...posSettings, enableInstallments: e.target.checked})}
+              className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+            />
+            <span className="text-sm text-gray-700">Enable installment payments</span>
+          </label>
+        </div>
       </div>
     </div>
   );

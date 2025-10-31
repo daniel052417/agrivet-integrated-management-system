@@ -5,7 +5,7 @@ import {
   Megaphone, Calendar, DollarSign,
   Archive, Warehouse, ChevronDown,
   Menu, X, LogOut, UserCheck,
-  Clock, Tag, Target, Star, Gift, Building
+  Clock, Tag, Target, Star, Gift, Building, Receipt, Activity
 } from 'lucide-react';
 import logo from '../../../assets/logo.png';
 import { CustomUser } from '../../../lib/customAuth';
@@ -117,6 +117,21 @@ const SimplifiedSidebar: React.FC<SimplifiedSidebarProps> = ({ user, activeSecti
         { id: 'product-sales', label: 'Product Sales Report', icon: FileText, category: 'Sales' },
       ]
     },
+
+    {
+      id: 'finance',
+      label: 'Finance Management',
+      icon: DollarSign,
+      category: 'Finance',
+      children: [
+        // { id: 'finance-dashboard', label: 'Finance Dashboard', icon: BarChart3, category: 'Finance' },
+        // { id: 'sales-income', label: 'Sales Income Summary', icon: TrendingUp, category: 'Finance' },
+        { id: 'expenses', label: 'Expenses', icon: Receipt, category: 'Finance' },
+        { id: 'cash-flow', label: 'Cash Flow Overview', icon: Activity, category: 'Finance' },
+        // { id: 'financial-reports', label: 'Reports & Exports', icon: FileText, category: 'Finance' },
+      ]
+    },
+
     
     { 
       id: 'staff-user-management',
@@ -278,6 +293,7 @@ const SimplifiedSidebar: React.FC<SimplifiedSidebarProps> = ({ user, activeSecti
     { name: 'Default', items: filteredMenuItems.filter(item => item.category === 'Default') },
     { name: 'Inventory', items: filteredMenuItems.filter(item => item.category === 'Inventory') },
     { name: 'Sales', items: filteredMenuItems.filter(item => item.category === 'Sales') },
+    { name: 'Finance', items: filteredMenuItems.filter(item => item.category === 'Finance') },
     { name: 'Staff & Users', items: filteredMenuItems.filter(item => item.category === 'Staff & Users') },
     { name: 'HR', items: filteredMenuItems.filter(item => item.category === 'HR') },
     { name: 'Marketing', items: filteredMenuItems.filter(item => item.category === 'Marketing') },

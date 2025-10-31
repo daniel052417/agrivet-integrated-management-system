@@ -9,6 +9,11 @@ import AllSalesRecords from '../sales/AllSalesRecords';
 import SalesDashboard from '../sales/SalesMonitoring';
 import DailySalesSummary from '../sales/DailySalesSummary';
 import ProductSalesReport from '../sales/ProductSalesReport';
+// import SalesIncomeSummary from '../finance/Salesincomesummary';
+import CashflowOverview from '../finance/Cashflowoverview';
+// import Reportsexports from '../finance/Reportsexports';
+import Expenses from '../finance/Expenses';
+// import Financedashboard from '../finance/Financedashboard';
 import InventoryManagement from '../inventory/InventoryManagement';
 // import AttendanceTimesheet from '../staff/AttendanceTimesheet';
 // import RolesPermissions from '../staff/RolesPermissions';
@@ -62,6 +67,18 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, onLogou
         return <DailySalesSummary />;
       case 'product-sales':
         return <ProductSalesReport />;
+
+      // case 'sales-income':
+      //   return <SalesIncomeSummary />;
+      case 'cash-flow':
+        return <CashflowOverview />;
+      // case 'financial-reports':
+      //   return <Reportsexports />;
+      case 'expenses':
+        return <Expenses />;
+      // case 'finance-dashboard':
+      //   return <Financedashboard />;
+
       case 'inventory-management':
       case 'all-products':
         return <InventoryManagement />;

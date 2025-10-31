@@ -59,7 +59,9 @@ const InventoryManagement: React.FC = () => {
     image_url: '',
     barcode: '',
     brand: '',
-    enable_multi_unit: false
+    enable_multi_unit: false,
+    batch_no: '',
+    expiration_date: ''
   });
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -358,7 +360,9 @@ const InventoryManagement: React.FC = () => {
           brand: formData.brand || null,
           unit_of_measure: baseUnitLabel,
           image_url: imageUrl || null,
-          is_active: true
+          is_active: true,
+          batch_no: formData.batch_no || null,
+          expiration_date: formData.expiration_date || null
         };
 
         console.log('Creating product with data:', productData);
@@ -469,7 +473,9 @@ const InventoryManagement: React.FC = () => {
           category_id: formData.category_id,
           brand: formData.brand || null,
           image_url: imageUrl || null,
-          supplier_id: formData.supplier_id
+          supplier_id: formData.supplier_id,
+          batch_no: formData.batch_no || null,
+          expiration_date: formData.expiration_date || null
         };
 
         const { error: productError } = await supabase
@@ -479,21 +485,76 @@ const InventoryManagement: React.FC = () => {
 
         if (productError) throw productError;
 
-        // Update unit
-        const unitData = {
-          unit_name: formData.unit_name.trim() || formData.name.trim(),
-          unit_label: formData.unit_label.trim() || 'pcs',
-          conversion_factor: parseFloat(formData.conversion_factor),
-          price_per_unit: parseFloat(formData.price_per_unit),
-          min_sellable_quantity: parseFloat(formData.min_sellable_quantity)
-        };
+        // Handle units based on multi-unit mode
+        if (formData.enable_multi_unit) {
+          // Delete existing units for this product (except the ones we're updating)
+          const existingUnitIds = productUnits.filter(u => u.id && !u.id.startsWith('temp-')).map(u => u.id);
+          
+          if (existingUnitIds.length > 0) {
+            await supabase
+              .from('product_units')
+              .delete()
+              .eq('product_id', editingProductId)
+              .not('id', 'in', `(${existingUnitIds.join(',')})`);
+          } else {
+            // Delete all existing units if we're creating all new ones
+            await supabase
+              .from('product_units')
+              .delete()
+              .eq('product_id', editingProductId);
+          }
+          // Update existing units and create new ones
+          for (const unit of productUnits) {
+            if (unit.id && !unit.id.startsWith('temp-')) {
+              // Update existing unit
+              const { error: updateError } = await supabase
+                .from('product_units')
+                .update({
+                  unit_name: unit.unit_name.trim(),
+                  unit_label: unit.unit_label.trim(),
+                  conversion_factor: parseFloat(unit.conversion_factor),
+                  is_base_unit: unit.is_base_unit,
+                  price_per_unit: parseFloat(unit.price_per_unit),
+                  min_sellable_quantity: parseFloat(unit.min_sellable_quantity)
+                })
+                .eq('id', unit.id);
 
-        const { error: unitError } = await supabase
-          .from('product_units')
-          .update(unitData)
-          .eq('id', product.primary_unit_id);
+              if (updateError) throw updateError;
+            } else {
+              // Create new unit
+              const { error: createError } = await supabase
+                .from('product_units')
+                .insert({
+                  product_id: editingProductId,
+                  unit_name: unit.unit_name.trim(),
+                  unit_label: unit.unit_label.trim(),
+                  conversion_factor: parseFloat(unit.conversion_factor),
+                  is_base_unit: unit.is_base_unit,
+                  is_sellable: true,
+                  price_per_unit: parseFloat(unit.price_per_unit),
+                  min_sellable_quantity: parseFloat(unit.min_sellable_quantity)
+                });
 
-        if (unitError) throw unitError;
+              if (createError) throw createError;
+            }
+          }
+        } else {
+          // Single unit mode - just update the primary unit
+          const unitData = {
+            unit_name: formData.unit_name.trim() || formData.name.trim(),
+            unit_label: formData.unit_label.trim() || 'pcs',
+            conversion_factor: parseFloat(formData.conversion_factor),
+            price_per_unit: parseFloat(formData.price_per_unit),
+            min_sellable_quantity: parseFloat(formData.min_sellable_quantity)
+          };
+
+          const { error: unitError } = await supabase
+            .from('product_units')
+            .update(unitData)
+            .eq('id', product.primary_unit_id);
+
+          if (unitError) throw unitError;
+        }
 
         // Update inventory
         const inventoryData = {
@@ -532,7 +593,9 @@ const InventoryManagement: React.FC = () => {
         min_sellable_quantity: '1',
         image_url: '',
         brand: '',
-        enable_multi_unit: false
+        enable_multi_unit: false,
+        batch_no: '',
+        expiration_date: ''
       });
       setImageFile(null);
       setImagePreview(null);
@@ -568,7 +631,9 @@ const InventoryManagement: React.FC = () => {
       image_url: '',
       barcode: '',
       brand: '',
-      enable_multi_unit: false
+      enable_multi_unit: false,
+      batch_no: '',
+      expiration_date: ''
     });
     setProductUnits([
       {
@@ -590,7 +655,7 @@ const InventoryManagement: React.FC = () => {
   // Multi-unit management functions
   const addProductUnit = () => {
     const newUnit: ProductUnit = {
-      id: Date.now().toString(),
+      id: `temp-${Date.now()}`,
       unit_name: '',
       unit_label: '',
       conversion_factor: '1',
@@ -630,9 +695,34 @@ const InventoryManagement: React.FC = () => {
         return 'bg-orange-100 text-orange-800';
       case 'Out of Stock':
         return 'bg-red-100 text-red-800';
+      case 'Expired':
+        return 'bg-red-100 text-red-800';
+      case 'Near Expiry':
+        return 'bg-yellow-100 text-yellow-800';
       default:
         return 'bg-gray-100 text-gray-800';
     }
+  };
+
+  const getProductStatus = (product: InventoryManagementRow) => {
+    // Get both stock and expiry statuses
+    let stockStatus = product.stock_status;
+    let expiryStatus = null;
+    
+    // Check expiry status
+    if (product.expiration_date) {
+      const today = new Date();
+      const expiryDate = new Date(product.expiration_date);
+      const daysUntilExpiry = Math.floor((expiryDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+      
+      if (daysUntilExpiry < 0) {
+        expiryStatus = 'Expired';
+      } else if (daysUntilExpiry <= 30) {
+        expiryStatus = 'Near Expiry';
+      }
+    }
+    
+    return { stockStatus, expiryStatus };
   };
 
 
@@ -688,8 +778,19 @@ const InventoryManagement: React.FC = () => {
       min_sellable_quantity: '1',
       image_url: '',
       brand: '',
-      enable_multi_unit: false
+      enable_multi_unit: false,
+      batch_no: '',
+      expiration_date: ''
     });
+    setProductUnits([{
+      id: '1',
+      unit_name: '',
+      unit_label: '',
+      conversion_factor: '1',
+      price_per_unit: '',
+      min_sellable_quantity: '1',
+      is_base_unit: true
+    }]);
     setImageFile(null);
     setImagePreview(null);
     setEditingProductId(null);
@@ -697,32 +798,79 @@ const InventoryManagement: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  const openEditModal = (product: InventoryManagementRow) => {
-  setFormData({
-    name: product.product_name || '',
-    category_id: product.category_id || '',
-    sku: product.sku || '',
-    price_per_unit: String(product.price_per_unit ?? ''),
-    stock_quantity: String(product.quantity_available ?? ''),
-    reorder_level: String(product.reorder_level ?? ''),
-    supplier_id: product.supplier_id || '', // ✅ Now populated from view
-    branch_id: product.branch_id || '',
-    description: product.description || '', // ✅ Now populated from view
-    unit_name: product.unit_name || '',
-    unit_label: product.unit_label || '',
-    conversion_factor: String(product.conversion_factor ?? '1'),
-    min_sellable_quantity: String(product.min_sellable_quantity ?? '1'), // ✅ Now populated from view
-    image_url: product.image_url || '',
-    barcode: product.barcode || '',
-    brand: product.brand || '',
-    enable_multi_unit: false // For simplicity, default to false; can be enhanced to fetch actual units
-  });
-  setImageFile(null);
-  setImagePreview(product.image_url || null);
-  setEditingProductId(product.product_id);
-  setModalMode('edit');
-  setIsModalOpen(true);
-};
+  const openEditModal = async (product: InventoryManagementRow) => {
+    try {
+      // Fetch all units for this product
+      const { data: units, error } = await supabase
+        .from('product_units')
+        .select('*')
+        .eq('product_id', product.product_id)
+        .order('is_base_unit', { ascending: false });
+
+      if (error) throw error;
+
+      // Check if product has multiple units
+      const hasMultipleUnits = units && units.length > 1;
+
+      // Set form data
+      setFormData({
+        name: product.product_name || '',
+        category_id: product.category_id || '',
+        sku: product.sku || '',
+        price_per_unit: String(product.price_per_unit ?? ''),
+        stock_quantity: String(product.quantity_available ?? ''),
+        reorder_level: String(product.reorder_level ?? ''),
+        supplier_id: product.supplier_id || '',
+        branch_id: product.branch_id || '',
+        description: product.description || '',
+        unit_name: product.unit_name || '',
+        unit_label: product.unit_label || '',
+        conversion_factor: String(product.conversion_factor ?? '1'),
+        min_sellable_quantity: String(product.min_sellable_quantity ?? '1'),
+        image_url: product.image_url || '',
+        barcode: product.barcode || '',
+        brand: product.brand || '',
+        enable_multi_unit: hasMultipleUnits,
+        batch_no: product.batch_no || '',
+        expiration_date: product.expiration_date || ''
+      });
+
+      // If product has multiple units, load them into productUnits state
+      if (hasMultipleUnits && units) {
+        setProductUnits(units.map(unit => ({
+          id: unit.id,
+          unit_name: unit.unit_name,
+          unit_label: unit.unit_label,
+          conversion_factor: String(unit.conversion_factor),
+          price_per_unit: String(unit.price_per_unit),
+          min_sellable_quantity: String(unit.min_sellable_quantity),
+          is_base_unit: unit.is_base_unit
+        })));
+      } else {
+        // Reset to single unit
+        setProductUnits([{
+          id: '1',
+          unit_name: product.unit_name || '',
+          unit_label: product.unit_label || '',
+          conversion_factor: '1',
+          price_per_unit: String(product.price_per_unit || ''),
+          min_sellable_quantity: '1',
+          is_base_unit: true
+        }]);
+      }
+
+      setImageFile(null);
+      setImagePreview(product.image_url || null);
+      setEditingProductId(product.product_id);
+      setModalMode('edit');
+      setIsModalOpen(true);
+   
+
+    } catch (error) {
+      console.error('Error fetching product units:', error);
+      setError('Failed to load product details');
+    }
+  };
   return (
     <div className="p-6 space-y-6">
       {/* Success/Error Messages */}
@@ -822,6 +970,12 @@ const InventoryManagement: React.FC = () => {
                   Price
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Batch No.
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Expiry Date
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Status
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -870,10 +1024,47 @@ const InventoryManagement: React.FC = () => {
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   ₱{Number(product.price_per_unit || 0).toFixed(2)}
                 </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  {product.batch_no || '—'}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm">
+                  {product.expiration_date ? (
+                    <span className={(() => {
+                      const today = new Date();
+                      const expiryDate = new Date(product.expiration_date);
+                      const daysUntilExpiry = Math.floor((expiryDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                      
+                      if (daysUntilExpiry < 0) {
+                        return 'text-red-600 font-semibold';
+                      } else if (daysUntilExpiry <= 30) {
+                        return 'text-yellow-600 font-semibold';
+                      }
+                      return 'text-gray-900';
+                    })()}>
+                      {new Date(product.expiration_date).toLocaleDateString()}
+                    </span>
+                  ) : (
+                    <span className="text-gray-400">—</span>
+                  )}
+                </td>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(product.stock_status)}`}>
-                    {product.stock_status}
-                  </span>
+                  <div className="space-y-1">
+                    {(() => {
+                      const { stockStatus, expiryStatus } = getProductStatus(product);
+                      return (
+                        <>
+                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(stockStatus)}`}>
+                            {stockStatus}
+                          </span>
+                          {expiryStatus && (
+                            <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(expiryStatus)} ml-1`}>
+                              {expiryStatus}
+                            </span>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   <div>
@@ -1112,6 +1303,40 @@ const InventoryManagement: React.FC = () => {
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                       placeholder="10"
                       min="0"
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="batchNo"
+                      className="block text-sm font-medium text-gray-700 mb-2"
+                    >
+                      Batch Number
+                    </label>
+                    <input
+                      type="text"
+                      id="batchNo"
+                      value={formData.batch_no}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, batch_no: e.target.value }))}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      placeholder="e.g., BN-2025-001"
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="expirationDate"
+                      className="block text-sm font-medium text-gray-700 mb-2"
+                    >
+                      Expiration Date
+                    </label>
+                    <input
+                      type="date"
+                      id="expirationDate"
+                      value={formData.expiration_date}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, expiration_date: e.target.value }))}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      min={new Date().toISOString().split('T')[0]}
                     />
                   </div>
 

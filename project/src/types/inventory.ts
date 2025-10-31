@@ -55,6 +55,9 @@ export interface InventoryManagementRow {
   last_updated: string;
   last_counted: string | null;
   product_created_at: string;
+  batch_no: string;
+  expiration_date: string;
+  
   
   // Multi-unit support
   units: InventoryUnit[];
@@ -143,6 +146,8 @@ export interface ProductFormData {
   barcode?: string;
   brand?: string;
   enable_multi_unit: boolean; 
+  batch_no: string;
+  expiration_date: string;
 }
 
 export interface UnitFormData {

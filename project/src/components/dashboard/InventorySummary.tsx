@@ -195,16 +195,7 @@ const InventorySummary: React.FC = () => {
           </div>
         )}
 
-        {lowStockCount > 0 && (
-          <div className="mt-4 p-3 bg-orange-50 border border-orange-200 rounded-md">
-            <div className="flex items-center space-x-2">
-              <AlertTriangle className="w-4 h-4 text-orange-600" />
-              <span className="text-sm text-orange-800">
-                {lowStockCount} products are running low on stock
-              </span>
-            </div>
-          </div>
-        )}
+        
       </div>
   );
 };

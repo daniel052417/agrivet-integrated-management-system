@@ -4,38 +4,38 @@ import { supabase } from '../../lib/supabase';
 import { LowStockItem, InventoryMetrics } from '../../types/inventory';
 
 // Type definitions
-interface LowStockItem {
-  id: string;
-  name: string;
-  sku: string;
-  category: string;
-  currentStock: number;
-  minimumStock: number;
-  reorderLevel: number;
-  unitPrice: number;
-  totalValue: number;
-  supplier: string;
-  supplierContact: string;
-  supplierEmail: string;
-  lastOrderDate: string;
-  leadTime: string;
-  urgency: 'Critical' | 'High' | 'Medium' | 'Low';
-  daysUntilEmpty: number;
-  avgDailyUsage: number;
-  unitLabel: string;
-  branchId: string;
-  branchName: string;
-}
+// interface LowStockItem {
+//   id: string;
+//   name: string;
+//   sku: string;
+//   category: string;
+//   currentStock: number;
+//   minimumStock: number;
+//   reorderLevel: number;
+//   unitPrice: number;
+//   totalValue: number;
+//   supplier: string;
+//   supplierContact: string;
+//   supplierEmail: string;
+//   lastOrderDate: string;
+//   leadTime: string;
+//   urgency: 'Critical' | 'High' | 'Medium' | 'Low';
+//   daysUntilEmpty: number;
+//   avgDailyUsage: number;
+//   unitLabel: string;
+//   branchId: string;
+//   branchName: string;
+// }
 
-interface InventoryMetrics {
-  title: string;
-  value: string;
-  description: string;
-  color: string;
-  bgColor: string;
-  icon: any;
-  period: string;
-}
+// interface InventoryMetrics {
+//   title: string;
+//   value: string;
+//   description: string;
+//   color: string;
+//   bgColor: string;
+//   icon: any;
+//   period: string;
+// }
 
 // // Mock supabase client - replace with your actual supabase import
 // const supabase = {
@@ -219,7 +219,7 @@ const LowStockAlerts: React.FC = () => {
         { title: 'Critical Alerts', value: String(critical), description: 'Immediate action required', color: 'text-red-600', bgColor: 'bg-red-100', icon: AlertTriangle, period: 'current' },
         { title: 'High Priority', value: String(high), description: 'Reorder within 3 days', color: 'text-orange-600', bgColor: 'bg-orange-100', icon: Clock, period: 'current' },
         { title: 'Medium Priority', value: String(medium), description: 'Reorder within 7 days', color: 'text-yellow-600', bgColor: 'bg-yellow-100', icon: Package, period: 'current' },
-        { title: 'Total Value at Risk', value: currency.format(valueAtRisk), description: 'Value of low stock items', color: 'text-blue-600', bgColor: 'bg-blue-100', icon: TrendingDown, period: 'current' },
+        // { title: 'Total Value at Risk', value: currency.format(valueAtRisk), description: 'Value of low stock items', color: 'text-blue-600', bgColor: 'bg-blue-100', icon: TrendingDown, period: 'current' },
       ]);
 
       const byCat = new Map<string, { items: number; value: number; urgencyRank: number }>();
@@ -416,7 +416,7 @@ const LowStockAlerts: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center space-x-2 ml-4">
+          {/* <div className="flex items-center space-x-2 ml-4">
             <button className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium">
               <ShoppingCart className="w-4 h-4" />
               <span>Reorder</span>
@@ -432,7 +432,7 @@ const LowStockAlerts: React.FC = () => {
                 <MoreVertical className="w-4 h-4" />
               </button>
             </div>
-          </div>
+          </div> */}
         </div>
 
         {isExpanded && (
@@ -599,7 +599,7 @@ const LowStockAlerts: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {alertMetrics.map((metric, index) => {
           const Icon = metric.icon;
           const urgencyLevel = metric.title.includes('Critical') ? 'Critical' : 
@@ -683,10 +683,10 @@ const LowStockAlerts: React.FC = () => {
                       <h4 className="text-sm font-medium text-gray-900">{suggestion.supplier}</h4>
                       <p className="text-xs text-gray-500">{suggestion.items} items • {currency.format(suggestion.totalValue)}</p>
                     </div>
-                    <button className="flex items-center space-x-1 px-3 py-1 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-xs">
+                    {/* <button className="flex items-center space-x-1 px-3 py-1 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-xs">
                       <ShoppingCart className="w-3 h-3" />
                       <span>Reorder</span>
-                    </button>
+                    </button> */}
                   </div>
                   <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
                     <div className="flex items-center space-x-1">
@@ -802,7 +802,7 @@ const LowStockAlerts: React.FC = () => {
                 Low Stock Items ({filteredItems.length})
               </h3>
               <div className="flex items-center space-x-4">
-                <div className="flex items-center space-x-2">
+                {/* <div className="flex items-center space-x-2">
                   <span className="text-sm text-gray-600">Auto-refresh:</span>
                   <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
                   <span className="text-sm text-green-600">Live</span>
@@ -812,7 +812,7 @@ const LowStockAlerts: React.FC = () => {
                     <ShoppingCart className="w-4 h-4" />
                     <span>Bulk Reorder All</span>
                   </button>
-                )}
+                )} */}
               </div>
             </div>
           </div>
@@ -882,7 +882,7 @@ const LowStockAlerts: React.FC = () => {
         </div>
       )}
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+      {/* <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
         <h3 className="text-lg font-semibold text-gray-800 mb-4">Quick Actions</h3>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <button className="flex items-center justify-center space-x-2 p-4 border-2 border-dashed border-gray-300 rounded-lg hover:border-red-500 hover:bg-red-50 transition-colors">
@@ -902,7 +902,7 @@ const LowStockAlerts: React.FC = () => {
             <span className="text-sm font-medium text-gray-700">Export Alert Report</span>
           </button>
         </div>
-      </div>
+      </div> */}
     </div>
   );
 };

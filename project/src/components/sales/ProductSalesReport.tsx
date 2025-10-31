@@ -15,12 +15,6 @@ const ProductSalesReport: React.FC = () => {
     name: string; 
     category_id: string | null; 
   };
-  type VariantRow = {
-    id: string;
-    product_id: string;
-    name: string;
-    price: number;
-  };
   type CategoryRow = { id: string; name: string };
   type ItemRow = { 
     product_id: string; 
@@ -48,10 +42,8 @@ const ProductSalesReport: React.FC = () => {
     rank: number;
   };
 
-  const [products, setProducts] = useState<ProductRow[]>([]);
-  const [variants, setVariants] = useState<VariantRow[]>([]);
+  
   const [categories, setCategories] = useState<CategoryRow[]>([]);
-  const [items, setItems] = useState<ItemRow[]>([]);
   const [productMetrics, setProductMetrics] = useState<ProductMetric[]>([]);
 
   useEffect(() => {
@@ -66,26 +58,49 @@ const ProductSalesReport: React.FC = () => {
       // Calculate date range based on selected period
       const now = new Date();
       let startDate: Date;
+      let prevStartDate: Date;
+      let prevEndDate: Date;
       
       switch (selectedPeriod) {
         case 'today':
           startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+          // Previous day
+          prevStartDate = new Date(startDate);
+          prevStartDate.setDate(startDate.getDate() - 1);
+          prevEndDate = new Date(startDate);
+          prevEndDate.setMilliseconds(-1);
           break;
         case 'this-week':
           startDate = new Date(now);
           startDate.setDate(now.getDate() - now.getDay());
+          // Previous week (7 days before)
+          prevStartDate = new Date(startDate);
+          prevStartDate.setDate(startDate.getDate() - 7);
+          prevEndDate = new Date(startDate);
+          prevEndDate.setMilliseconds(-1);
           break;
         case 'this-month':
           startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+          // Previous month
+          prevStartDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+          prevEndDate = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
           break;
         case 'last-month':
           startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+          // Month before last month
+          prevStartDate = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+          prevEndDate = new Date(now.getFullYear(), now.getMonth() - 1, 0, 23, 59, 59, 999);
           break;
         case 'this-year':
           startDate = new Date(now.getFullYear(), 0, 1);
+          // Previous year
+          prevStartDate = new Date(now.getFullYear() - 1, 0, 1);
+          prevEndDate = new Date(now.getFullYear() - 1, 11, 31, 23, 59, 59, 999);
           break;
         default:
           startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+          prevStartDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+          prevEndDate = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
       }
 
       // Load products with category information and cost
@@ -102,7 +117,7 @@ const ProductSalesReport: React.FC = () => {
       // Load product units for pricing information
       const { data: unitsData, error: unitsError } = await supabase
         .from('product_units')
-        .select('id, product_id, unit_name, price_per_unit')
+        .select('id, product_id, unit_name, price_per_unit, is_base_unit, conversion_factor')
         .eq('is_sellable', true);
 
       if (unitsError) throw unitsError;
@@ -116,61 +131,145 @@ const ProductSalesReport: React.FC = () => {
       if (categoriesError) throw categoriesError;
 
       // Load transaction items for the selected period (using pos_transaction_items table)
+      const { data: txData, error: txError } = await supabase
+        .from('pos_transactions')
+        .select('id, transaction_date, payment_status, transaction_type')
+        .gte('transaction_date', startDate.toISOString())
+        .in('payment_status', ['paid', 'completed'])
+        .eq('transaction_type', 'sale');
+      if (txError) throw txError;
+      const txIds = (txData || []).map(t => t.id);
+
       const { data: itemsData, error: itemsError } = await supabase
         .from('pos_transaction_items')
-        .select('product_id, quantity, unit_price, line_total, created_at')
-        .gte('created_at', startDate.toISOString());
+        .select('product_id, quantity, unit_price, line_total, created_at, transaction_id')
+        .in('transaction_id', txIds);
 
       if (itemsError) throw itemsError;
 
-      setProducts(productsData || []);
-      setVariants(unitsData || []);
+      // Load previous period transaction data for growth calculation
+      const { data: prevTxData, error: prevTxError } = await supabase
+        .from('pos_transactions')
+        .select('id, transaction_date, payment_status, transaction_type')
+        .gte('transaction_date', prevStartDate.toISOString())
+        .lte('transaction_date', prevEndDate.toISOString())
+        .in('payment_status', ['paid', 'completed'])
+        .eq('transaction_type', 'sale');
+      if (prevTxError) throw prevTxError;
+      const prevTxIds = (prevTxData || []).map(t => t.id);
+
+      const { data: prevItemsData, error: prevItemsError } = await supabase
+        .from('pos_transaction_items')
+        .select('product_id, quantity, unit_price, line_total, created_at, transaction_id')
+        .in('transaction_id', prevTxIds);
+
+      if (prevItemsError) throw prevItemsError;
+
       setCategories(categoriesData || []);
-      setItems(itemsData || []);
 
       // Calculate product metrics
-      const metrics: ProductMetric[] = productsData?.map(product => {
-        const productItems = itemsData?.filter(item => item.product_id === product.id) || [];
-        const productUnits = unitsData?.filter(v => v.product_id === product.id) || [];
-        const category = product.categories || categoriesData?.find(c => c.id === product.category_id);
+      const metrics: ProductMetric[] = productsData?.map((product: any) => {
+        const productItems = (itemsData || []).filter((item: any) => item.product_id === product.id) || [];
+        const prevProductItems = (prevItemsData || []).filter((item: any) => item.product_id === product.id) || [];
+        const productUnits = (unitsData as any[])?.filter((v: any) => v.product_id === product.id) || [];
+        const categoryName = (product?.categories && (product.categories as any).name) || (categoriesData?.find((c: any) => c.id === product.category_id)?.name) || 'Uncategorized';
         
-        // Get base unit information
-        const baseUnit = productUnits.find(unit => unit.is_base_unit === true);
-        const baseUnitConversionFactor = baseUnit?.conversion_factor || 1; // e.g., 50 for 50kg base unit
+        // Product cost is per base unit (e.g., 1875 for base unit)
+        const baseUnitCost = Number(product.cost) || 0;
+
+        // Current period calculations
+        const totalSold = productItems.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+        const totalRevenue = productItems.reduce((sum, item) => sum + Number(item.line_total || 0), 0);
+
+        // Previous period calculations for growth comparison
+        const prevTotalSold = prevProductItems.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+        const prevTotalRevenue = prevProductItems.reduce((sum, item) => sum + Number(item.line_total || 0), 0);
+
+        // Calculate total cost by matching each transaction item with its corresponding unit
+        // PROFIT CALCULATION EXPLANATION:
+        // 1. Each product has a base cost in the 'products.cost' field (e.g., ₱1875 for base unit)
+        // 2. Base unit has the largest conversion_factor (e.g., sack = 50)
+        // 3. Other units have smaller conversion_factors (e.g., kg = 1)
+        // 4. To get cost per unit: cost_per_unit = base_cost × (unit_conversion_factor / base_unit_conversion_factor)
+        //    Example: Cost per kg = ₱1875 × (1 / 50) = ₱37.5 per kg
+        // 5. For each transaction item, we find its matching unit and calculate the cost accordingly
+        let totalCost = 0;
+        let avgSellingPrice = 0;
+        let totalSellingPriceSum = 0;
+
+        // Get base unit (the one with highest conversion factor)
+        const baseUnit = productUnits.reduce((max, unit) => 
+          Number(unit.conversion_factor) > Number(max?.conversion_factor || 0) ? unit : max, null
+        );
+        const baseConversionFactor = Number(baseUnit?.conversion_factor || 1);
+
+        productItems.forEach((item: any) => {
+          const quantity = Number(item.quantity || 0);
+          const unitOfMeasure = item.unit_of_measure;
+          
+          // Find the unit that matches this transaction item
+          const matchingUnit = productUnits.find((unit: any) => 
+            unit.unit_name === unitOfMeasure || unit.unit_label === unitOfMeasure
+          );
+          
+          if (matchingUnit && baseUnitCost > 0) {
+            // Calculate cost per unit for this specific unit
+            // Formula: cost_per_unit = base_cost × (unit_conversion_factor / base_conversion_factor)
+            const unitConversionFactor = Number(matchingUnit.conversion_factor || 1);
+            const costPerThisUnit = baseUnitCost * (unitConversionFactor / baseConversionFactor);
+            totalCost += quantity * costPerThisUnit;
+          } else if (baseUnit && baseUnitCost > 0) {
+            // Fallback: if no matching unit found, assume it's the base unit
+            totalCost += quantity * baseUnitCost;
+          }
+          
+          // Sum up selling prices for average calculation
+          totalSellingPriceSum += Number(item.unit_price || 0) * quantity;
+        });
+
+        // Calculate average selling price weighted by quantity
+        avgSellingPrice = totalSold > 0 ? totalSellingPriceSum / totalSold : 0;
         
-        // Get average selling price from units (for display purposes)
-        const avgPrice = productUnits.length > 0 
-          ? productUnits.reduce((sum, v) => sum + v.price_per_unit, 0) / productUnits.length 
-          : 0;
-        
-        // Product cost is per base unit (e.g., 1500 for 50kg)
-        const baseUnitCost = product.cost || 0;
-        
-        const totalSold = productItems.reduce((sum, item) => sum + item.quantity, 0);
-        const totalRevenue = productItems.reduce((sum, item) => sum + (item.line_total || 0), 0);
-        
-        // Calculate total cost based on base unit cost structure
-        // Cost per unit = baseUnitCost / baseUnitConversionFactor (e.g., 1500 / 50 = 30 per kg)
-        const costPerUnit = baseUnitConversionFactor > 0 ? baseUnitCost / baseUnitConversionFactor : 0;
-        const totalCost = productItems.reduce((sum, item) => sum + (item.quantity * costPerUnit), 0);
+        // If no cost could be calculated, try fallback method
+        if (totalCost === 0 && baseUnitCost > 0 && baseUnit) {
+          // Fallback: assume all sales were in base unit
+          totalCost = totalSold * baseUnitCost;
+        }
+
         const totalProfit = totalRevenue - totalCost;
         const profitMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
+        
+        // Calculate average cost per unit for display
+        const avgCostPerUnit = totalSold > 0 ? totalCost / totalSold : 0;
         
         // Calculate average daily sales (mock calculation)
         const daysInPeriod = Math.max(1, Math.ceil((now.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)));
         const avgDailySales = totalSold / daysInPeriod;
         
-        // Mock growth rate
-        const growthRate = Math.random() * 20 - 10; // Random between -10% and +10%
+        // Calculate real growth rate based on revenue comparison
+        let growthRate = 0;
+        if (prevTotalRevenue > 0) {
+          // Calculate percentage change: ((current - previous) / previous) * 100
+          growthRate = ((totalRevenue - prevTotalRevenue) / prevTotalRevenue) * 100;
+        } else if (totalRevenue > 0) {
+          // New product with sales (no previous data) = 100% growth
+          growthRate = 100;
+        } else {
+          // No sales in either period = 0% growth
+          growthRate = 0;
+        }
+        
+        // Cap extreme growth rates for display purposes (optional)
+        growthRate = Math.max(-100, Math.min(999, growthRate));
 
         return {
           id: product.id,
           name: product.name,
           categoryId: product.category_id,
-          category: category?.name || 'Uncategorized',
+          category: categoryName,
           sku: product.sku,
-          unitPrice: avgPrice,
-          costPrice: costPerUnit, // Cost per unit (e.g., 30 per kg)
+          unitPrice: avgSellingPrice, // Average selling price weighted by quantity
+          costPrice: avgCostPerUnit, // Average cost per unit
           stockQuantity: 0, // Stock quantity is in inventory table, not products
           totalSold,
           totalRevenue,
@@ -390,6 +489,9 @@ const ProductSalesReport: React.FC = () => {
                     Revenue
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Cost Price
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Profit
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -427,6 +529,9 @@ const ProductSalesReport: React.FC = () => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                       {formatCurrency(metric.totalRevenue)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                      {formatCurrency(metric.costPrice)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                       {formatCurrency(metric.totalProfit)}
@@ -471,4 +576,3 @@ const ProductSalesReport: React.FC = () => {
 };
 
 export default ProductSalesReport;
-
