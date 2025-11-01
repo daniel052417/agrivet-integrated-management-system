@@ -299,9 +299,12 @@ class CustomAuthService {
 
         this.setCurrentUser(customUser);
 
-        // 7. Create session and JWT token
-        const session = await this.createSession(customUser.id);
-        this.currentSession = session;
+      // 7. Create session and JWT token
+      // Determine login method and MFA usage
+      const loginMethod: 'password' | 'mfa' | 'sso' = 'password'; // TODO: Detect actual login method
+      const mfaUsed = customUser.mfa_enabled || false; // TODO: Check if MFA was actually used
+      const session = await this.createSession(customUser.id, loginMethod, mfaUsed);
+      this.currentSession = session;
 
         // 8. Update last login and activity
         await this.updateLastLogin(customUser.id);
@@ -396,7 +399,10 @@ class CustomAuthService {
       this.setCurrentUser(customUser);
 
       // 7. Create session and JWT token
-      const session = await this.createSession(customUser.id);
+      // Determine login method and MFA usage
+      const loginMethod: 'password' | 'mfa' | 'sso' = 'password'; // TODO: Detect actual login method
+      const mfaUsed = customUser.mfa_enabled || false; // TODO: Check if MFA was actually used
+      const session = await this.createSession(customUser.id, loginMethod, mfaUsed);
       this.currentSession = session;
 
       // 8. Update last login and activity
@@ -457,24 +463,231 @@ class CustomAuthService {
     }
   }
 
-  // Create a new session for the user
-  private async createSession(userId: string): Promise<UserSession> {
+  // Helper function to detect device information
+  private getDeviceInfo(): any {
+    const userAgent = navigator.userAgent;
+    const ua = userAgent.toLowerCase();
+
+    // Detect device type
+    let deviceType: 'desktop' | 'mobile' | 'tablet' = 'desktop';
+    if (ua.includes('mobile') || ua.includes('android') || ua.includes('iphone')) {
+      deviceType = 'mobile';
+    } else if (ua.includes('tablet') || ua.includes('ipad')) {
+      deviceType = 'tablet';
+    }
+
+    // Detect browser
+    let browser = 'Unknown Browser';
+    let browserVersion = '';
+    if (ua.includes('chrome') && !ua.includes('edg')) {
+      const match = userAgent.match(/Chrome\/(\d+)/);
+      browserVersion = match ? match[1] : '';
+      browser = `Chrome ${browserVersion}`;
+    } else if (ua.includes('firefox')) {
+      const match = userAgent.match(/Firefox\/(\d+)/);
+      browserVersion = match ? match[1] : '';
+      browser = `Firefox ${browserVersion}`;
+    } else if (ua.includes('safari') && !ua.includes('chrome')) {
+      const match = userAgent.match(/Version\/(\d+)/);
+      browserVersion = match ? match[1] : '';
+      browser = `Safari ${browserVersion}`;
+    } else if (ua.includes('edg')) {
+      const match = userAgent.match(/Edg\/(\d+)/);
+      browserVersion = match ? match[1] : '';
+      browser = `Edge ${browserVersion}`;
+    }
+
+    // Detect operating system
+    let operatingSystem = 'Unknown OS';
+    if (ua.includes('mac os x')) {
+      const match = userAgent.match(/Mac OS X (\d+[._]\d+[._]\d+)/);
+      operatingSystem = match ? `macOS ${match[1].replace(/_/g, '.')}` : 'macOS';
+    } else if (ua.includes('windows nt')) {
+      const winVersion: Record<string, string> = {
+        '10.0': 'Windows 10',
+        '11.0': 'Windows 11',
+      };
+      const match = userAgent.match(/Windows NT ([\d.]+)/);
+      operatingSystem = match ? (winVersion[match[1]] || `Windows ${match[1]}`) : 'Windows';
+    } else if (ua.includes('linux')) {
+      operatingSystem = 'Linux';
+    } else if (ua.includes('android')) {
+      const match = userAgent.match(/Android ([\d.]+)/);
+      operatingSystem = match ? `Android ${match[1]}` : 'Android';
+    } else if (ua.includes('iphone')) {
+      const match = userAgent.match(/OS ([\d_]+)/);
+      operatingSystem = match ? `iOS ${match[1].replace(/_/g, '.')}` : 'iOS';
+    } else if (ua.includes('ipad')) {
+      const match = userAgent.match(/OS ([\d_]+)/);
+      operatingSystem = match ? `iPadOS ${match[1].replace(/_/g, '.')}` : 'iPadOS';
+    }
+
+    // Detect device name (best guess)
+    let deviceName = 'Unknown Device';
+    if (ua.includes('macintosh')) deviceName = 'MacBook';
+    else if (ua.includes('iphone')) deviceName = 'iPhone';
+    else if (ua.includes('ipad')) deviceName = 'iPad';
+    else if (ua.includes('android')) deviceName = 'Android Device';
+    else if (ua.includes('windows')) deviceName = 'Windows PC';
+    else if (ua.includes('linux')) deviceName = 'Linux PC';
+
+    return {
+      deviceType,
+      deviceName,
+      browser,
+      operatingSystem,
+      screenResolution: typeof window !== 'undefined' 
+        ? `${window.screen.width}x${window.screen.height}` 
+        : 'Unknown',
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
+    };
+  }
+
+  // Helper function to get location info (client-side can only get IP, location requires backend API)
+  private async getLocationInfo(ipAddress?: string): Promise<any> {
+    try {
+      // Try to get IP from a public API if not provided
+      if (!ipAddress) {
+        const ipResponse = await fetch('https://api.ipify.org?format=json');
+        const ipData = await ipResponse.json();
+        ipAddress = ipData.ip;
+      }
+
+      // Try to get location from IP (using free API)
+      try {
+        const locationResponse = await fetch(`https://ipapi.co/${ipAddress}/json/`);
+        const locationData = await locationResponse.json();
+        
+        return {
+          ip: ipAddress,
+          city: locationData.city || null,
+          region: locationData.region || null,
+          country: locationData.country_name || 'Unknown',
+          countryCode: locationData.country_code || null,
+          latitude: locationData.latitude || null,
+          longitude: locationData.longitude || null,
+          isp: locationData.org || null,
+          timezone: locationData.timezone || null
+        };
+      } catch (locationError) {
+        // Fallback if location API fails
+        return {
+          ip: ipAddress,
+          country: 'Unknown'
+        };
+      }
+    } catch (error) {
+      console.error('Error getting location info:', error);
+      return {
+        ip: ipAddress || 'Unknown',
+        country: 'Unknown'
+      };
+    }
+  }
+
+  // Calculate risk score based on login method, device, location, etc.
+  private calculateRiskScore(
+    loginMethod: 'password' | 'mfa' | 'sso',
+    mfaUsed: boolean,
+    deviceInfo: any,
+    locationInfo: any,
+    isNewDevice: boolean = false
+  ): 'low' | 'medium' | 'high' {
+    let riskPoints = 0;
+
+    // MFA reduces risk
+    if (mfaUsed || loginMethod === 'mfa') {
+      riskPoints -= 2;
+    } else if (loginMethod === 'sso') {
+      riskPoints -= 1;
+    }
+
+    // Password-only increases risk
+    if (loginMethod === 'password' && !mfaUsed) {
+      riskPoints += 1;
+    }
+
+    // New/unrecognized device increases risk
+    if (isNewDevice) {
+      riskPoints += 2;
+    }
+
+    // Unusual location (you could check against user's typical locations)
+    // For now, we'll keep it simple
+
+    // Determine final score
+    if (riskPoints <= 0) return 'low';
+    if (riskPoints <= 2) return 'medium';
+    return 'high';
+  }
+
+  // Create a new session for the user and record it in user_sessions table
+  private async createSession(
+    userId: string, 
+    loginMethod: 'password' | 'mfa' | 'sso' = 'password',
+    mfaUsed: boolean = false
+  ): Promise<UserSession> {
     try {
       const sessionId = crypto.randomUUID();
+      const sessionToken = crypto.randomUUID();
       const token = this.generateJWT(userId, sessionId);
       const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+      const now = new Date().toISOString();
 
-      // Store session in database (you might want to create a sessions table)
-      const { error } = await supabase
+      // Get device and location information
+      const deviceInfo = this.getDeviceInfo();
+      const locationInfo = await this.getLocationInfo();
+      
+      // Calculate risk score
+      const riskScore = this.calculateRiskScore(
+        loginMethod,
+        mfaUsed,
+        deviceInfo,
+        locationInfo,
+        false // TODO: Check if device is new
+      );
+
+      // Create session record in user_sessions table
+      const { data: sessionData, error: sessionError } = await supabase
+        .from('user_sessions')
+        .insert({
+          id: sessionId,
+          user_id: userId,
+          session_token: sessionToken,
+          ip_address: locationInfo.ip || null,
+          user_agent: navigator.userAgent,
+          device_info: deviceInfo,
+          location_info: locationInfo,
+          current_page: typeof window !== 'undefined' ? window.location.pathname : null,
+          status: 'active',
+          last_activity: now,
+          created_at: now,
+          expires_at: expiresAt.toISOString(),
+          is_active: true,
+          login_method: loginMethod,
+          mfa_used: mfaUsed,
+          risk_score: riskScore
+        })
+        .select()
+        .single();
+
+      if (sessionError) {
+        console.error('Error creating session record:', sessionError);
+        // Don't throw error, but log it - session might still work
+      }
+
+      // Update user's current session ID
+      const { error: userUpdateError } = await supabase
         .from('users')
         .update({
           current_session_id: sessionId,
-          last_activity: new Date().toISOString(),
+          last_activity: now,
           status: 'online'
         })
         .eq('id', userId);
 
-      if (error) {
+      if (userUpdateError) {
+        console.error('Error updating user session:', userUpdateError);
         throw new Error('Failed to create session');
       }
 
@@ -483,8 +696,8 @@ class CustomAuthService {
         userId: userId,
         token: token,
         expiresAt: expiresAt.toISOString(),
-        createdAt: new Date().toISOString(),
-        lastActivity: new Date().toISOString(),
+        createdAt: now,
+        lastActivity: now,
         isActive: true
       };
 
@@ -704,16 +917,71 @@ class CustomAuthService {
     }
   }
 
+  // Update session activity (call this periodically or on user actions)
+  public async updateSessionActivity(): Promise<void> {
+    try {
+      if (!this.currentUser || !this.currentSession) {
+        return;
+      }
+
+      const now = new Date().toISOString();
+
+      // Update session last_activity
+      const { error: sessionError } = await supabase
+        .from('user_sessions')
+        .update({
+          last_activity: now,
+          current_page: typeof window !== 'undefined' ? window.location.pathname : null,
+          updated_at: now
+        })
+        .eq('id', this.currentSession.id)
+        .eq('is_active', true);
+
+      if (sessionError) {
+        console.error('Error updating session activity:', sessionError);
+      }
+
+      // Update user last_activity
+      await supabase
+        .from('users')
+        .update({
+          last_activity: now
+        })
+        .eq('id', this.currentUser.id);
+    } catch (error) {
+      console.error('Error updating session activity:', error);
+    }
+  }
+
   // Logout user
   public async signOut(): Promise<void> {
     try {
+      const now = new Date().toISOString();
+
+      // Update user_sessions table - set logout_time and mark as inactive
+      if (this.currentSession) {
+        const { error: sessionError } = await supabase
+          .from('user_sessions')
+          .update({
+            is_active: false,
+            status: 'inactive',
+            logout_time: now,
+            updated_at: now
+          })
+          .eq('id', this.currentSession.id);
+
+        if (sessionError) {
+          console.error('Error updating session on logout:', sessionError);
+        }
+      }
+
       // Update user status to offline before signing out
       if (this.currentUser) {
         await supabase
           .from('users')
           .update({ 
             status: 'offline',
-            last_activity: new Date().toISOString(),
+            last_activity: now,
             current_session_id: null
           })
           .eq('id', this.currentUser.id);

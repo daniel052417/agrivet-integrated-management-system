@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { 
   Clock, 
   Search, 
-  Filter, 
   Download, 
   Eye, 
   LogOut, 
@@ -10,7 +9,6 @@ import {
   Monitor, 
   Smartphone, 
   Tablet,
-  Globe,
   Shield,
   AlertTriangle,
   CheckCircle,
@@ -19,6 +17,7 @@ import {
   User,
   Activity
 } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
 
 interface SessionHistoryItem {
   id: string;
@@ -220,29 +219,191 @@ const SessionHistory: React.FC = () => {
       setLoading(true);
       setError(null);
 
-      // For now, use mock data
-      // In a real implementation, this would load from a sessions table
-      setSessions(mockSessions);
+      // Load sessions from database with user information
+      const { data: sessionsData, error: sessionsError } = await supabase
+        .from('user_sessions')
+        .select(`
+          id,
+          user_id,
+          session_token,
+          ip_address,
+          user_agent,
+          device_info,
+          location_info,
+          status,
+          last_activity,
+          created_at,
+          expires_at,
+          is_active,
+          logout_time,
+          login_method,
+          mfa_used,
+          risk_score,
+          users:user_id (
+            id,
+            email,
+            first_name,
+            last_name,
+            role
+          )
+        `)
+        .order('created_at', { ascending: false })
+        .limit(1000);
 
-      // Example of how to load real data:
-      // const { data: sessionsData, error: sessionsError } = await supabase
-      //   .from('user_sessions')
-      //   .select(`
-      //     *,
-      //     users (
-      //       first_name,
-      //       last_name,
-      //       email,
-      //       role
-      //     )
-      //   `)
-      //   .order('login_time', { ascending: false });
-      // if (sessionsError) throw sessionsError;
-      // setSessions(sessionsData || []);
+      if (sessionsError) throw sessionsError;
+
+      // Transform database data to match SessionHistoryItem interface
+      const transformedSessions: SessionHistoryItem[] = sessionsData?.map((session: any) => {
+        const user = session.users;
+        const deviceInfo = session.device_info || {};
+        const locationInfo = session.location_info || {};
+
+        // Extract device information
+        const getDeviceType = (): 'desktop' | 'mobile' | 'tablet' => {
+          if (deviceInfo.deviceType) return deviceInfo.deviceType;
+          const ua = (session.user_agent || '').toLowerCase();
+          if (ua.includes('mobile') || ua.includes('android') || ua.includes('iphone')) return 'mobile';
+          if (ua.includes('tablet') || ua.includes('ipad')) return 'tablet';
+          return 'desktop';
+        };
+
+        const getDeviceName = (): string => {
+          return deviceInfo.deviceName || 
+                 deviceInfo.device || 
+                 (getDeviceType() === 'mobile' ? 'Mobile Device' : 
+                  getDeviceType() === 'tablet' ? 'Tablet' : 'Desktop');
+        };
+
+        const getBrowser = (): string => {
+          if (deviceInfo.browser) return deviceInfo.browser;
+          const ua = session.user_agent || '';
+          if (ua.includes('Chrome') && !ua.includes('Edg')) return 'Chrome ' + (ua.match(/Chrome\/(\d+)/)?.[1] || '');
+          if (ua.includes('Firefox')) return 'Firefox ' + (ua.match(/Firefox\/(\d+)/)?.[1] || '');
+          if (ua.includes('Safari') && !ua.includes('Chrome')) return 'Safari ' + (ua.match(/Version\/(\d+)/)?.[1] || '');
+          if (ua.includes('Edg')) return 'Edge ' + (ua.match(/Edg\/(\d+)/)?.[1] || '');
+          return 'Unknown Browser';
+        };
+
+        const getOperatingSystem = (): string => {
+          if (deviceInfo.operatingSystem) return deviceInfo.operatingSystem;
+          const ua = session.user_agent || '';
+          if (ua.includes('Mac OS X')) {
+            const match = ua.match(/Mac OS X (\d+[._]\d+[._]\d+)/);
+            return match ? `macOS ${match[1].replace(/_/g, '.')}` : 'macOS';
+          }
+          if (ua.includes('Windows NT')) {
+            const winVersion: Record<string, string> = {
+              '10.0': 'Windows 10',
+              '11.0': 'Windows 11',
+            };
+            const match = ua.match(/Windows NT ([\d.]+)/);
+            return match ? (winVersion[match[1]] || `Windows ${match[1]}`) : 'Windows';
+          }
+          if (ua.includes('Linux')) return 'Linux';
+          if (ua.includes('Android')) return 'Android ' + (ua.match(/Android ([\d.]+)/)?.[1] || '');
+          if (ua.includes('iPhone')) return 'iOS ' + (ua.match(/OS ([\d_]+)/)?.[1]?.replace(/_/g, '.') || '');
+          if (ua.includes('iPad')) return 'iPadOS ' + (ua.match(/OS ([\d_]+)/)?.[1]?.replace(/_/g, '.') || '');
+          return 'Unknown OS';
+        };
+
+        // Extract location information
+        const getLocation = (): string => {
+          if (locationInfo.city && locationInfo.region) {
+            return `${locationInfo.city}, ${locationInfo.region}`;
+          }
+          if (locationInfo.city) return locationInfo.city;
+          if (locationInfo.region) return locationInfo.region;
+          return 'Unknown Location';
+        };
+
+        const getCountry = (): string => {
+          return locationInfo.country || 'Unknown';
+        };
+
+        // Map status to component expected format
+        const mapStatus = (): 'active' | 'expired' | 'terminated' | 'logout' => {
+          if (session.logout_time) return 'logout';
+          
+          const now = new Date();
+          const expiresAt = new Date(session.expires_at);
+          
+          if (expiresAt < now && !session.is_active) return 'expired';
+          
+          if (session.status === 'inactive' && !session.logout_time) return 'terminated';
+          
+          if (session.status === 'active' && session.is_active) return 'active';
+          
+          return 'logout'; // default fallback
+        };
+
+        // Map login method
+        const mapLoginMethod = (): 'password' | 'mfa' | 'sso' => {
+          const method = (session.login_method || 'password').toLowerCase();
+          if (method === 'mfa') return 'mfa';
+          if (method === 'sso') return 'sso';
+          return 'password';
+        };
+
+        // Map risk score
+        const mapRiskScore = (): 'low' | 'medium' | 'high' => {
+          const risk = (session.risk_score || 'low').toLowerCase();
+          if (risk === 'high') return 'high';
+          if (risk === 'medium') return 'medium';
+          return 'low';
+        };
+
+        // Calculate session duration in minutes
+        const calculateDuration = (): number => {
+          const start = new Date(session.created_at);
+          const end = session.logout_time 
+            ? new Date(session.logout_time)
+            : (session.last_activity ? new Date(session.last_activity) : new Date());
+          
+          return Math.floor((end.getTime() - start.getTime()) / 60000);
+        };
+
+        // Map user role to expected format
+        const mapUserRole = (): string => {
+          const role = (user?.role || 'staff').toLowerCase();
+          if (role.includes('admin')) return 'Admin';
+          if (role.includes('manager')) return 'Manager';
+          return 'Staff';
+        };
+
+        return {
+          id: session.id,
+          userId: session.user_id,
+          userName: user ? `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'Unknown User' : 'Unknown User',
+          userEmail: user?.email || 'unknown@example.com',
+          userRole: mapUserRole(),
+          sessionId: session.session_token || session.id,
+          deviceType: getDeviceType(),
+          deviceName: getDeviceName(),
+          browser: getBrowser(),
+          operatingSystem: getOperatingSystem(),
+          ipAddress: session.ip_address || '',
+          location: getLocation(),
+          country: getCountry(),
+          loginTime: session.created_at,
+          lastActivity: session.last_activity || session.created_at,
+          logoutTime: session.logout_time || undefined,
+          sessionDuration: calculateDuration(),
+          status: mapStatus(),
+          isCurrentSession: session.is_active && session.status === 'active',
+          userAgent: session.user_agent || '',
+          loginMethod: mapLoginMethod(),
+          mfaUsed: session.mfa_used || false,
+          riskScore: mapRiskScore()
+        };
+      }) || [];
+
+      setSessions(transformedSessions);
 
     } catch (err: any) {
       console.error('Error loading session history:', err);
       setError(err.message || 'Failed to load session history');
+      // Fallback to mock data on error for development
+      setSessions(mockSessions);
     } finally {
       setLoading(false);
     }
@@ -270,9 +431,24 @@ const SessionHistory: React.FC = () => {
     try {
       switch (action) {
         case 'terminate':
-          // This would typically call an API to terminate the session
-          alert('Session terminated');
+          // Update session to inactive status and set logout time
+          const { error: terminateError } = await supabase
+            .from('user_sessions')
+            .update({ 
+              is_active: false,
+              status: 'inactive',
+              logout_time: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', sessionId);
+          
+          if (terminateError) throw terminateError;
+          
+          // Reload sessions to reflect changes
+          await loadSessionHistory();
+          alert('Session terminated successfully');
           break;
+          
         case 'view':
           const session = sessions.find(s => s.id === sessionId);
           if (session) {

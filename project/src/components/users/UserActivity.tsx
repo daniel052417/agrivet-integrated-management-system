@@ -153,22 +153,188 @@ const UserActivity: React.FC = () => {
       setLoading(true);
       setError(null);
 
-      // For now, use mock data
-      // In a real implementation, this would load from an audit_logs table
-      setEvents(MOCK_EVENTS);
-      setSessions(MOCK_SESSIONS);
+      // Load activity events with joins to users and branches
+      const { data: eventsData, error: eventsError } = await supabase
+        .from('user_activity')
+        .select(`
+          id,
+          activity_type,
+          description,
+          page_url,
+          metadata,
+          ip_address,
+          user_agent,
+          created_at,
+          users:user_id (
+            id,
+            email,
+            first_name,
+            last_name,
+            role,
+            branches:branch_id (
+              id,
+              name
+            )
+          )
+        `)
+        .order('created_at', { ascending: false })
+        .limit(1000);
 
-      // Example of how to load real data:
-      // const { data: eventsData, error: eventsError } = await supabase
-      //   .from('audit_logs')
-      //   .select('*')
-      //   .order('created_at', { ascending: false });
-      // if (eventsError) throw eventsError;
-      // setEvents(eventsData || []);
+      if (eventsError) throw eventsError;
+
+      // Transform events data to match component's ActivityEvent type
+      const transformedEvents: ActivityEvent[] = eventsData?.map((event: any) => {
+        const user = event.users;
+        const branch = user?.branches;
+        const metadata = event.metadata || {};
+        
+        // Extract module from page_url or metadata
+        const getModule = (): ActivityEvent['module'] => {
+          if (metadata.module) return metadata.module as ActivityEvent['module'];
+          if (event.page_url) {
+            const url = event.page_url.toLowerCase();
+            if (url.includes('dashboard')) return 'Dashboard';
+            if (url.includes('inventory')) return 'Inventory';
+            if (url.includes('sales')) return 'Sales';
+            if (url.includes('report')) return 'Reports';
+            if (url.includes('staff')) return 'Staff';
+            if (url.includes('market')) return 'Marketing';
+            if (url.includes('setting')) return 'Settings';
+          }
+          return 'Dashboard'; // default
+        };
+
+        // Map activity_type to action
+        const mapAction = (): ActivityEvent['action'] => {
+          const type = (event.activity_type || '').toLowerCase();
+          if (type.includes('login_success') || type.includes('login-success')) return 'login_success';
+          if (type.includes('login_failed') || type.includes('login-failed')) return 'login_failed';
+          if (type.includes('create') || type.includes('created')) return 'create';
+          if (type.includes('update') || type.includes('updated')) return 'update';
+          if (type.includes('delete') || type.includes('deleted')) return 'delete';
+          if (type.includes('export') || type.includes('exported')) return 'export';
+          if (type.includes('view') || type.includes('viewed')) return 'view';
+          return 'view'; // default
+        };
+
+        // Extract device from user_agent
+        const getDevice = (): string => {
+          const ua = event.user_agent || '';
+          if (ua.includes('Chrome')) return 'Chrome';
+          if (ua.includes('Firefox')) return 'Firefox';
+          if (ua.includes('Safari') && !ua.includes('Chrome')) return 'Safari';
+          if (ua.includes('Edge')) return 'Edge';
+          if (ua.includes('Mobile')) return 'Mobile Browser';
+          return ua.substring(0, 50) || 'Unknown Device';
+        };
+
+        // Map role to expected type
+        const mapRole = (): ActivityEvent['role'] => {
+          const role = (user?.role || 'staff').toLowerCase();
+          if (role.includes('admin')) return 'Admin';
+          if (role.includes('manager')) return 'Manager';
+          return 'Staff';
+        };
+
+        return {
+          id: event.id,
+          timestamp: event.created_at,
+          user: user ? `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'Unknown User' : 'Unknown User',
+          email: user?.email || 'unknown@example.com',
+          role: mapRole(),
+          branch: branch?.name || 'Unknown Branch',
+          module: getModule(),
+          action: mapAction(),
+          details: event.description || metadata.details || '',
+          ip: event.ip_address || metadata.ip || '',
+          device: getDevice() + (event.user_agent?.includes('Windows') ? ' on Windows' : 
+                                event.user_agent?.includes('Mac') ? ' on Mac' :
+                                event.user_agent?.includes('Linux') ? ' on Linux' :
+                                event.user_agent?.includes('Android') ? ' on Android' :
+                                event.user_agent?.includes('iOS') ? ' on iOS' : '')
+        };
+      }) || [];
+
+      setEvents(transformedEvents);
+
+      // Load active sessions with joins to users
+      const { data: sessionsData, error: sessionsError } = await supabase
+        .from('user_sessions')
+        .select(`
+          id,
+          ip_address,
+          user_agent,
+          device_info,
+          location_info,
+          status,
+          last_activity,
+          created_at,
+          expires_at,
+          is_active,
+          users:user_id (
+            id,
+            email,
+            first_name,
+            last_name
+          )
+        `)
+        .eq('is_active', true)
+        .order('last_activity', { ascending: false });
+
+      if (sessionsError) throw sessionsError;
+
+      // Transform sessions data to match component's SessionItem type
+      const transformedSessions: SessionItem[] = sessionsData?.map((session: any) => {
+        const user = session.users;
+        const deviceInfo = session.device_info || {};
+        const locationInfo = session.location_info || {};
+        
+        // Extract device information
+        const getDevice = (): string => {
+          if (deviceInfo.device) return deviceInfo.device;
+          if (deviceInfo.browser) {
+            const os = deviceInfo.os ? ` on ${deviceInfo.os}` : '';
+            return `${deviceInfo.browser}${os}`;
+          }
+          // Fallback to parsing user_agent
+          const ua = session.user_agent || '';
+          if (ua.includes('Chrome')) return 'Chrome on ' + (ua.includes('Windows') ? 'Windows' : ua.includes('Mac') ? 'Mac' : ua.includes('Linux') ? 'Linux' : 'Unknown');
+          if (ua.includes('Firefox')) return 'Firefox on ' + (ua.includes('Windows') ? 'Windows' : ua.includes('Mac') ? 'Mac' : ua.includes('Linux') ? 'Linux' : 'Unknown');
+          if (ua.includes('Safari')) return 'Safari on ' + (ua.includes('Mac') ? 'Mac' : ua.includes('iOS') ? 'iOS' : 'Unknown');
+          return 'Unknown Device';
+        };
+
+        // Extract location
+        const getLocation = (): string | undefined => {
+          if (locationInfo.city && locationInfo.region) {
+            return `${locationInfo.city}, ${locationInfo.region}`;
+          }
+          if (locationInfo.country) {
+            return locationInfo.country;
+          }
+          return undefined;
+        };
+
+        return {
+          id: session.id,
+          email: user?.email || 'unknown@example.com',
+          device: getDevice(),
+          ip: session.ip_address || '',
+          location: getLocation(),
+          startedAt: session.created_at,
+          lastActiveAt: session.last_activity || session.created_at,
+          isCurrent: session.is_active && session.status === 'active'
+        };
+      }) || [];
+
+      setSessions(transformedSessions);
 
     } catch (err: any) {
       console.error('Error loading activity data:', err);
       setError(err.message || 'Failed to load activity data');
+      // Fallback to mock data on error
+      setEvents(MOCK_EVENTS);
+      setSessions(MOCK_SESSIONS);
     } finally {
       setLoading(false);
     }
@@ -194,12 +360,30 @@ const UserActivity: React.FC = () => {
     try {
       switch (action) {
         case 'terminate':
-          // This would typically call an API to terminate the session
-          alert('Session terminated');
+          // Update session to inactive status
+          const { error: terminateError } = await supabase
+            .from('user_sessions')
+            .update({ 
+              is_active: false,
+              status: 'inactive',
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', sessionId);
+          
+          if (terminateError) throw terminateError;
+          
+          // Reload sessions to reflect changes
+          await loadActivityData();
+          alert('Session terminated successfully');
           break;
+          
         case 'view':
-          // This would show session details
-          alert('Session details');
+          // Find the session and show details in modal
+          const session = sessions.find(s => s.id === sessionId);
+          if (session) {
+            // You could show a session details modal here
+            alert(`Session Details:\nEmail: ${session.email}\nDevice: ${session.device}\nIP: ${session.ip}\nLocation: ${session.location || 'Unknown'}\nStarted: ${formatTimestamp(session.startedAt)}`);
+          }
           break;
       }
     } catch (err: any) {

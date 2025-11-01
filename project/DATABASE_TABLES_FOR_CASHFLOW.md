@@ -462,3 +462,5 @@ WHERE supplier_id IS NOT NULL
 5. **Real-time Updates**: Consider using Supabase Realtime for live cash flow updates
 
 
+
+
