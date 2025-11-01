@@ -38,6 +38,7 @@ export const SYSTEM_ROLES = {
   MARKETING_STAFF: 'marketing-staff',
   CASHIER: 'cashier',
   INVENTORY_CLERK: 'inventory-clerk',
+  FINANCE_STAFF: 'finance-staff',
 } as const;
 
 export type SystemRole = typeof SYSTEM_ROLES[keyof typeof SYSTEM_ROLES];
@@ -85,6 +86,11 @@ export const ROLE_SIDEBAR_CONFIG = {
   [SYSTEM_ROLES.INVENTORY_CLERK]: {
     sections: [
       'overview', 'inventory-management', 'all-products', 'categories', 'low-stock'
+    ]
+  },
+  [SYSTEM_ROLES.FINANCE_STAFF]: {
+    sections: [
+      'finance', 'expenses', 'cash-flow'
     ]
   },
 };

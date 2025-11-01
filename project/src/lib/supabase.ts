@@ -11,7 +11,28 @@ if (!supabaseUrl || !supabaseAnonKey) {
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 export const supabaseService = createClient(supabaseUrl, supabaseServiceRole);
 
-export type UserRole = 'admin' | 'hr' | 'marketing' | 'cashier' | 'user'
+export type UserRole = 'admin' | 'hr' | 'marketing' | 'cashier' | 'user' | 'finance-staff'
+  | 'inventory-clerk'
+  | 'hr-admin'
+  | 'hr-staff'
+  | 'marketing-admin'
+  | 'marketing-staff'
+  | 'finance-staff'
+  | 'inventory-clerk';
+
+export const USER_ROLES = {
+  ADMIN: 'admin',
+  HR: 'hr',
+  MARKETING: 'marketing',
+  CASHIER: 'cashier',
+  USER: 'user',
+  FINANCE_STAFF: 'finance-staff',
+  INVENTORY_CLERK: 'inventory-clerk',
+  HR_ADMIN: 'hr-admin',
+  HR_STAFF: 'hr-staff',
+  MARKETING_ADMIN: 'marketing-admin',
+  MARKETING_STAFF: 'marketing-staff',
+} as const;
 
 export interface UserProfile {
   id: string // UUID
@@ -741,6 +762,7 @@ export interface Database {
           status: 'Paid' | 'Pending';
           branch_id: string | null; // FK -> branches.id
           payment_method: string | null;
+          source: string | null; // Source of expense: 'POS', 'Manual Entry', 'HR', 'Inventory', etc.
           created_at: string;
           updated_at: string;
           created_by: string | null; // FK -> users.id

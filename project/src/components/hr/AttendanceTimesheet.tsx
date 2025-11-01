@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Calendar, Clock, User, CheckCircle, XCircle, AlertCircle, Filter, Download, Eye, Edit } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { Calendar, Clock, User, CheckCircle, XCircle, AlertCircle, Filter, Download, Eye, Edit, RefreshCw } from 'lucide-react';
+import { useAttendanceTimesheetData } from '../../hooks/useAttendanceTimesheetData';
 
 const AttendanceTimesheet: React.FC = () => {
   const todayStr = useMemo(() => new Date().toISOString().slice(0, 10), []);
@@ -9,26 +9,24 @@ const AttendanceTimesheet: React.FC = () => {
   const [selectedDepartment, setSelectedDepartment] = useState('all');
   const [viewMode, setViewMode] = useState('daily');
 
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
-  const [records, setRecords] = useState<any[]>([]);
-  const [staffById, setStaffById] = useState<Map<string, { name: string; position: string; department: string; active: boolean }>>(new Map());
-  const [staffOptions, setStaffOptions] = useState<{ id: string; name: string }[]>([]);
-  const [departmentOptions, setDepartmentOptions] = useState<string[]>([]);
+  // Data fetching with RBAC filtering - uses hook
+  const {
+    staffById: hookStaffById,
+    staffOptions: hookStaffOptions,
+    departmentOptions: hookDepartmentOptions,
+    records: hookRecords,
+    loading: hookLoading,
+    error: hookError,
+    refreshData
+  } = useAttendanceTimesheetData();
 
-  const startOfWeek = (d: Date) => {
-    const day = d.getUTCDay();
-    const diff = (day === 0 ? -6 : 1) - day; // Monday as start
-    const res = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
-    res.setUTCDate(res.getUTCDate() + diff);
-    return res;
-  };
-  const endOfWeek = (d: Date) => {
-    const s = startOfWeek(d);
-    const e = new Date(s);
-    e.setUTCDate(e.getUTCDate() + 7);
-    return e;
-  };
+  // Use hook data directly
+  const staffById = hookStaffById;
+  const staffOptions = hookStaffOptions;
+  const departmentOptions = hookDepartmentOptions;
+  const records = hookRecords;
+  const loading = hookLoading;
+  const error = hookError;
 
   const formatTime = (t?: string | null) => {
     if (!t) return '-';
@@ -40,47 +38,8 @@ const AttendanceTimesheet: React.FC = () => {
   };
 
   useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        // Staff master data
-        const { data: staffRows, error: staffErr } = await supabase
-          .from('staff')
-          .select('id, first_name, last_name, position, department, is_active')
-          .order('first_name', { ascending: true });
-        if (staffErr) throw staffErr;
-        const sMap = new Map<string, { name: string; position: string; department: string; active: boolean }>();
-        const deptSet = new Set<string>();
-        (staffRows || []).forEach(s => {
-          sMap.set(s.id, { name: `${s.first_name || ''} ${s.last_name || ''}`.trim(), position: s.position || '', department: s.department || '—', active: !!s.is_active });
-          if (s.department) deptSet.add(s.department);
-        });
-        setStaffById(sMap);
-        setStaffOptions((staffRows || []).map(s => ({ id: s.id, name: `${s.first_name || ''} ${s.last_name || ''}`.trim() })));
-        setDepartmentOptions(['all', ...Array.from(deptSet.values())]);
-
-        // Attendance for the week window
-        const d = new Date(`${selectedDate}T00:00:00.000Z`);
-        const start = startOfWeek(d);
-        const end = endOfWeek(d);
-        const { data: recs, error: recErr } = await supabase
-          .from('attendance_records')
-          .select('id, staff_id, attendance_date, time_in, time_out, break_start, break_end, total_hours, overtime_hours, status, notes')
-          .gte('attendance_date', start.toISOString())
-          .lt('attendance_date', end.toISOString())
-          .order('attendance_date', { ascending: true });
-        if (recErr) throw recErr;
-        setRecords(recs || []);
-      } catch (e: any) {
-        console.error('Failed to load attendance', e);
-        setError('Failed to load attendance');
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
-  }, [selectedDate]);
+    refreshData(selectedDate);
+  }, [selectedDate, refreshData]);
 
   const matchesFilters = (staffId: string) => {
     if (selectedStaff !== 'all' && staffId !== selectedStaff) return false;

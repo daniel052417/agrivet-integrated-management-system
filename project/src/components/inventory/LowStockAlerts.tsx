@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { AlertTriangle, Package, TrendingDown, Clock, Truck, Search, Filter, Download, RefreshCw, ShoppingCart, Phone, Mail, Calendar, BarChart3, ChevronDown, ChevronRight, MoreVertical, User, AlertCircle } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
 import { LowStockItem, InventoryMetrics } from '../../types/inventory';
+import { useLowStockData } from '../../hooks/useLowStockData';
 
 // Type definitions
 // interface LowStockItem {
@@ -57,226 +57,20 @@ const LowStockAlerts: React.FC = () => {
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const [viewMode, setViewMode] = useState<'all' | 'by-branch'>('all');
 
-  const [lowStockItems, setLowStockItems] = useState<LowStockItem[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
-  const [alertMetrics, setAlertMetrics] = useState<InventoryMetrics[]>([]);
+  // Data fetching with RBAC filtering - uses hook
+  const {
+    lowStockItems,
+    alertMetrics,
+    categoryBreakdown,
+    reorderSuggestions,
+    branchData,
+    availableBranches,
+    loading,
+    error,
+    refreshData
+  } = useLowStockData();
 
-  type CategoryAgg = { category: string; items: number; value: number; urgency: 'Critical'|'High'|'Medium'|'Low'; color: string };
-  const [categoryBreakdown, setCategoryBreakdown] = useState<CategoryAgg[]>([]);
-
-  type Suggestion = { supplier: string; items: number; totalValue: number; contact: string; email: string; leadTime: string; lastOrder: string };
-  const [reorderSuggestions, setReorderSuggestions] = useState<Suggestion[]>([]);
-  
-  type BranchData = { 
-    id: string; 
-    name: string; 
-    items: LowStockItem[]; 
-    criticalCount: number; 
-    highCount: number; 
-    mediumCount: number; 
-    totalValue: number; 
-  };
-  const [branchData, setBranchData] = useState<BranchData[]>([]);
-  const [availableBranches, setAvailableBranches] = useState<{id: string; name: string}[]>([]);
-
-  const COLORS = ['bg-red-500','bg-green-500','bg-yellow-500','bg-blue-500','bg-purple-500'];
   const currency = new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 0 });
-
-  useEffect(() => {
-    loadLowStockData();
-  }, []);
-
-  const loadLowStockData = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const { data: inventoryData, error: inventoryError } = await supabase
-        .from('inventory')
-        .select(`
-          id,
-          product_id,
-          branch_id,
-          quantity_available,
-          quantity_on_hand,
-          reorder_level,
-          last_counted,
-          updated_at,
-          base_unit,
-          products:product_id (
-            id,
-            sku,
-            name,
-            cost,
-            categories:category_id ( id, name ),
-            suppliers:supplier_id ( id, name, contact_person, email, phone )
-          ),
-          branches:branch_id ( id, name, code )
-        `)
-        .not('branch_id', 'is', null);
-
-      if (inventoryError) throw inventoryError;
-
-      const transformedItems: LowStockItem[] = (inventoryData || [])
-        .filter(item => {
-          if (!item.products || !item.branches) return false;
-          const currentStock = Number(item.quantity_available || 0);
-          const minimumStock = Number(item.reorder_level || 10);
-          return currentStock <= minimumStock;
-        })
-        .map((item: any) => {
-          const product = item.products;
-          const currentStock = Number(item.quantity_available || 0);
-          const minimumStock = Number(item.reorder_level || 10);
-          const avgDailyUsage = Math.max(1, Math.round(currentStock / 14));
-          const daysUntilEmpty = currentStock > 0 ? Math.max(1, Math.ceil(currentStock / avgDailyUsage)) : 0;
-          
-          let urgency: 'Critical' | 'High' | 'Medium' | 'Low' = 'Low';
-          const ratio = minimumStock > 0 ? currentStock / minimumStock : 1;
-          
-          if (currentStock === 0) {
-            urgency = 'Critical';
-          } else if (ratio <= 0.25) {
-            urgency = 'High';
-          } else if (ratio <= 0.5) {
-            urgency = 'Medium';
-          }
-
-          const unitPrice = Number(product.cost || 0);
-          const totalValue = currentStock * unitPrice;
-
-          return {
-            id: `${product.id}-${item.branch_id}`,
-            name: product.name || 'Unknown Product',
-            sku: product.sku || 'N/A',
-            category: product.categories?.name || 'Uncategorized',
-            currentStock,
-            minimumStock,
-            reorderLevel: Math.max(minimumStock, Math.ceil(minimumStock * 1.5)),
-            unitPrice,
-            totalValue,
-            supplier: product.suppliers?.name || 'Unknown',
-            supplierContact: product.suppliers?.phone || 'N/A',
-            supplierEmail: product.suppliers?.email || 'N/A',
-            lastOrderDate: item.updated_at ? new Date(item.updated_at).toLocaleDateString() : 'Never',
-            leadTime: '7 days',
-            urgency,
-            daysUntilEmpty,
-            avgDailyUsage,
-            unitLabel: item.base_unit || 'pcs',
-            branchId: item.branch_id,
-            branchName: item.branches?.name || 'Unknown Branch'
-          };
-        });
-
-      setLowStockItems(transformedItems);
-
-      const branchMap = new Map<string, BranchData>();
-      const branches = new Set<string>();
-      
-      transformedItems.forEach(item => {
-        const branchId = item.branchId;
-        const branchName = item.branchName;
-        
-        branches.add(JSON.stringify({ id: branchId, name: branchName }));
-        
-        if (!branchMap.has(branchId)) {
-          branchMap.set(branchId, {
-            id: branchId,
-            name: branchName,
-            items: [],
-            criticalCount: 0,
-            highCount: 0,
-            mediumCount: 0,
-            totalValue: 0
-          });
-        }
-        
-        const branchData = branchMap.get(branchId)!;
-        branchData.items.push(item);
-        branchData.totalValue += item.totalValue;
-        
-        if (item.urgency === 'Critical') branchData.criticalCount++;
-        else if (item.urgency === 'High') branchData.highCount++;
-        else if (item.urgency === 'Medium') branchData.mediumCount++;
-      });
-      
-      const branchDataArray = Array.from(branchMap.values()).sort((a, b) => b.totalValue - a.totalValue);
-      setBranchData(branchDataArray);
-      
-      const availableBranchesArray = Array.from(branches)
-        .map(b => JSON.parse(b))
-        .sort((a, b) => a.name.localeCompare(b.name));
-      setAvailableBranches(availableBranchesArray);
-
-      const critical = transformedItems.filter(i => i.urgency === 'Critical').length;
-      const high = transformedItems.filter(i => i.urgency === 'High').length;
-      const medium = transformedItems.filter(i => i.urgency === 'Medium').length;
-      const valueAtRisk = transformedItems.reduce((s,i)=> s + i.totalValue, 0);
-      
-      setAlertMetrics([
-        { title: 'Critical Alerts', value: String(critical), description: 'Immediate action required', color: 'text-red-600', bgColor: 'bg-red-100', icon: AlertTriangle, period: 'current' },
-        { title: 'High Priority', value: String(high), description: 'Reorder within 3 days', color: 'text-orange-600', bgColor: 'bg-orange-100', icon: Clock, period: 'current' },
-        { title: 'Medium Priority', value: String(medium), description: 'Reorder within 7 days', color: 'text-yellow-600', bgColor: 'bg-yellow-100', icon: Package, period: 'current' },
-        // { title: 'Total Value at Risk', value: currency.format(valueAtRisk), description: 'Value of low stock items', color: 'text-blue-600', bgColor: 'bg-blue-100', icon: TrendingDown, period: 'current' },
-      ]);
-
-      const byCat = new Map<string, { items: number; value: number; urgencyRank: number }>();
-      const urgencyToRank: Record<'Critical'|'High'|'Medium'|'Low', number> = { Critical: 3, High: 2, Medium: 1, Low: 0 };
-      
-      transformedItems.forEach(i => {
-        const key = i.category;
-        const agg = byCat.get(key) || { items: 0, value: 0, urgencyRank: 0 };
-        agg.items += 1;
-        agg.value += i.totalValue;
-        agg.urgencyRank = Math.max(agg.urgencyRank, urgencyToRank[i.urgency]);
-        byCat.set(key, agg);
-      });
-      
-      const catList: CategoryAgg[] = Array.from(byCat.entries()).map(([cat, agg], idx) => {
-        const urgencyKey = (Object.keys(urgencyToRank) as Array<'Critical'|'High'|'Medium'|'Low'>).find(u => urgencyToRank[u] === agg.urgencyRank) || 'Low';
-        return {
-          category: cat,
-          items: agg.items,
-          value: agg.value,
-          urgency: urgencyKey,
-          color: COLORS[idx % COLORS.length],
-        };
-      }).sort((a,b)=> b.value - a.value);
-      
-      setCategoryBreakdown(catList);
-
-      const bySupplier = new Map<string, { items: number; value: number; last: string; contact: string; email: string }>();
-      
-      transformedItems.forEach(i => {
-        const key = i.supplier;
-        const agg = bySupplier.get(key) || { items: 0, value: 0, last: '', contact: i.supplierContact, email: i.supplierEmail };
-        agg.items += 1; 
-        agg.value += i.totalValue; 
-        agg.last = agg.last && i.lastOrderDate && agg.last > i.lastOrderDate ? agg.last : i.lastOrderDate;
-        bySupplier.set(key, agg);
-      });
-      
-      const sug: Suggestion[] = Array.from(bySupplier.entries()).map(([supplier, agg]) => ({
-        supplier,
-        items: agg.items,
-        totalValue: agg.value,
-        contact: agg.contact || '—',
-        email: agg.email || '—',
-        leadTime: '7-14 days',
-        lastOrder: agg.last || '—',
-      })).sort((a,b)=> b.totalValue - a.totalValue);
-      
-      setReorderSuggestions(sug);
-
-    } catch (err: any) {
-      console.error('Error loading low stock data:', err);
-      setError(err.message || 'Failed to load low stock data');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const filteredItems = lowStockItems.filter(item => {
     const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -530,7 +324,7 @@ const LowStockAlerts: React.FC = () => {
         <h3 className="text-lg font-medium text-red-900 mb-2">Error Loading Low Stock Data</h3>
         <p className="text-red-700 mb-4">{error}</p>
         <button
-          onClick={loadLowStockData}
+          onClick={refreshData}
           className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
         >
           Retry
@@ -586,7 +380,7 @@ const LowStockAlerts: React.FC = () => {
             )}
           </button>
           <button 
-            onClick={loadLowStockData}
+            onClick={refreshData}
             className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
           >
             <RefreshCw className="w-4 h-4" />

@@ -4,7 +4,7 @@ import {
   AlertCircle, CheckCircle, Download, Filter, RefreshCw, Eye, FileText,
   Activity, Zap, Target, Award, DollarSign, MapPin, Building
 } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { useHRAnalyticsData } from '../../hooks/useHRAnalyticsData';
 
 interface AttendanceAnalytics {
   totalStaff: number;
@@ -44,155 +44,23 @@ interface PerformanceAnalytics {
 }
 
 const HRAnalytics: React.FC = () => {
-  const [attendanceAnalytics, setAttendanceAnalytics] = useState<AttendanceAnalytics>({
-    totalStaff: 0,
-    averageAttendance: 0,
-    lateArrivals: 0,
-    earlyDepartures: 0,
-    overtimeHours: 0,
-    absentDays: 0,
-    presentDays: 0
-  });
-  
-  const [leaveAnalytics, setLeaveAnalytics] = useState<LeaveAnalytics>({
-    totalRequests: 0,
-    approvedRequests: 0,
-    rejectedRequests: 0,
-    pendingRequests: 0,
-    totalDaysRequested: 0,
-    averageDaysPerRequest: 0
-  });
-  
-  const [payrollAnalytics, setPayrollAnalytics] = useState<PayrollAnalytics>({
-    totalEmployees: 0,
-    totalGrossPay: 0,
-    totalDeductions: 0,
-    totalNetPay: 0,
-    averageSalary: 0,
-    totalOvertime: 0
-  });
-  
-  const [performanceAnalytics, setPerformanceAnalytics] = useState<PerformanceAnalytics>({
-    totalStaff: 0,
-    highPerformers: 0,
-    averagePerformance: 0,
-    lowPerformers: 0,
-    trainingCompleted: 0,
-    promotions: 0
-  });
-
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
   const [selectedPeriod, setSelectedPeriod] = useState<string>('monthly');
   const [activeTab, setActiveTab] = useState<'attendance' | 'leave' | 'payroll' | 'performance'>('attendance');
 
+  // Data fetching with RBAC filtering - uses hook
+  const {
+    attendanceAnalytics,
+    leaveAnalytics,
+    payrollAnalytics,
+    performanceAnalytics,
+    loading,
+    error,
+    refreshData
+  } = useHRAnalyticsData();
+
   useEffect(() => {
-    loadAnalyticsData();
-  }, [selectedPeriod]);
-
-  const loadAnalyticsData = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      // Load attendance analytics
-      const { data: attendanceData, error: attendanceError } = await supabase
-        .from('attendance_records')
-        .select('*');
-
-      if (attendanceError) throw attendanceError;
-
-      // Load leave analytics
-      const { data: leaveData, error: leaveError } = await supabase
-        .from('leave_requests')
-        .select('*');
-
-      if (leaveError) throw leaveError;
-
-      // Load payroll analytics
-      const { data: payrollData, error: payrollError } = await supabase
-        .from('payroll_records')
-        .select('*');
-
-      if (payrollError) throw payrollError;
-
-      // Load staff data
-      const { data: staffData, error: staffError } = await supabase
-        .from('staff')
-        .select('*')
-        .eq('is_active', true);
-
-      if (staffError) throw staffError;
-
-      // Calculate attendance analytics
-      const totalStaff = staffData?.length || 0;
-      const presentDays = attendanceData?.filter(a => a.status === 'present').length || 0;
-      const absentDays = attendanceData?.filter(a => a.status === 'absent').length || 0;
-      const lateArrivals = attendanceData?.filter(a => a.status === 'late').length || 0;
-      const overtimeHours = attendanceData?.reduce((sum, a) => sum + (a.overtime_hours || 0), 0) || 0;
-      const averageAttendance = totalStaff > 0 ? (presentDays / (presentDays + absentDays)) * 100 : 0;
-
-      setAttendanceAnalytics({
-        totalStaff,
-        averageAttendance,
-        lateArrivals,
-        earlyDepartures: 0, // This would need to be calculated based on early departures
-        overtimeHours,
-        absentDays,
-        presentDays
-      });
-
-      // Calculate leave analytics
-      const totalRequests = leaveData?.length || 0;
-      const approvedRequests = leaveData?.filter(l => l.status === 'approved').length || 0;
-      const rejectedRequests = leaveData?.filter(l => l.status === 'rejected').length || 0;
-      const pendingRequests = leaveData?.filter(l => l.status === 'pending').length || 0;
-      const totalDaysRequested = leaveData?.reduce((sum, l) => sum + l.days_requested, 0) || 0;
-      const averageDaysPerRequest = totalRequests > 0 ? totalDaysRequested / totalRequests : 0;
-
-      setLeaveAnalytics({
-        totalRequests,
-        approvedRequests,
-        rejectedRequests,
-        pendingRequests,
-        totalDaysRequested,
-        averageDaysPerRequest
-      });
-
-      // Calculate payroll analytics
-      const totalEmployees = payrollData?.length || 0;
-      const totalGrossPay = payrollData?.reduce((sum, p) => sum + (p.gross_pay || 0), 0) || 0;
-      const totalDeductions = payrollData?.reduce((sum, p) => sum + (p.total_deductions || 0), 0) || 0;
-      const totalNetPay = payrollData?.reduce((sum, p) => sum + (p.net_pay || 0), 0) || 0;
-      const averageSalary = totalEmployees > 0 ? totalGrossPay / totalEmployees : 0;
-      const totalOvertime = payrollData?.reduce((sum, p) => sum + (p.overtime_pay || 0), 0) || 0;
-
-      setPayrollAnalytics({
-        totalEmployees,
-        totalGrossPay,
-        totalDeductions,
-        totalNetPay,
-        averageSalary,
-        totalOvertime
-      });
-
-      // Calculate performance analytics (mock data for now)
-      setPerformanceAnalytics({
-        totalStaff,
-        highPerformers: Math.floor(totalStaff * 0.2),
-        averagePerformance: 85,
-        lowPerformers: Math.floor(totalStaff * 0.1),
-        trainingCompleted: Math.floor(totalStaff * 0.6),
-        promotions: Math.floor(totalStaff * 0.05)
-      });
-
-    } catch (err: any) {
-      console.error('Error loading analytics data:', err);
-      setError(err.message || 'Failed to load analytics data');
-    } finally {
-      setLoading(false);
-    }
-  };
+    refreshData(selectedPeriod);
+  }, [selectedPeriod, refreshData]);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-PH', { 

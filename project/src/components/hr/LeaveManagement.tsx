@@ -6,7 +6,7 @@ import {
   Upload, Paperclip, X, Info
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-// Mock Supabase - Replace with actual Supabase client
+import { useLeaveManagementData } from '../../hooks/useLeaveManagementData';
 
 interface Staff {
   id: string;
@@ -44,11 +44,27 @@ interface LeaveRequest {
 }
 
 const LeaveManagement: React.FC = () => {
-  // State Management
+  // Data fetching with RBAC filtering - uses hook
+  const {
+    leaveRequests: hookLeaveRequests,
+    staffList: hookStaffList,
+    loading: hookLoading,
+    error: hookError,
+    refreshData
+  } = useLeaveManagementData();
+
+  // Sync hook data to local state for compatibility
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
   const [staffList, setStaffList] = useState<Staff[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setLeaveRequests(hookLeaveRequests);
+    setStaffList(hookStaffList);
+    setLoading(hookLoading);
+    if (hookError) setError(hookError);
+  }, [hookLeaveRequests, hookStaffList, hookLoading, hookError]);
   
   // Filter States
   const [searchTerm, setSearchTerm] = useState('');
@@ -74,134 +90,7 @@ const LeaveManagement: React.FC = () => {
   });
   const [rejectionReason, setRejectionReason] = useState('');
 
-  // Mock Data
-  const mockStaff: Staff[] = [
-    { id: '1', employee_id: 'EMP001', first_name: 'John', last_name: 'Smith', position: 'Sales Manager', department: 'Sales', branch: 'Main Office' },
-    { id: '2', employee_id: 'EMP002', first_name: 'Maria', last_name: 'Garcia', position: 'HR Specialist', department: 'HR', branch: 'Main Office' },
-    { id: '3', employee_id: 'EMP003', first_name: 'Robert', last_name: 'Johnson', position: 'Accountant', department: 'Finance', branch: 'Branch A' },
-    { id: '4', employee_id: 'EMP004', first_name: 'Sarah', last_name: 'Wilson', position: 'Marketing Coordinator', department: 'Marketing', branch: 'Main Office' },
-    { id: '5', employee_id: 'EMP005', first_name: 'Michael', last_name: 'Brown', position: 'IT Support', department: 'IT', branch: 'Branch B' }
-  ];
-
-  const mockLeaveRequests: LeaveRequest[] = [
-    {
-      id: '1',
-      staff_id: '1',
-      staff_name: 'John Smith',
-      employee_id: 'EMP001',
-      position: 'Sales Manager',
-      department: 'Sales',
-      branch: 'Main Office',
-      leave_type: 'annual',
-      start_date: '2025-02-01',
-      end_date: '2025-02-05',
-      days_requested: 5,
-      reason: 'Family vacation',
-      notes: 'Already discussed with team',
-      status: 'pending',
-      applied_date: '2025-01-10',
-      applied_by: 'user_001',
-      created_at: '2025-01-10T09:00:00Z'
-    },
-    {
-      id: '2',
-      staff_id: '2',
-      staff_name: 'Maria Garcia',
-      employee_id: 'EMP002',
-      position: 'HR Specialist',
-      department: 'HR',
-      branch: 'Main Office',
-      leave_type: 'sick',
-      start_date: '2025-01-20',
-      end_date: '2025-01-22',
-      days_requested: 3,
-      reason: 'Flu symptoms',
-      notes: 'Doctor advised rest',
-      attachment_name: 'medical_certificate.pdf',
-      attachment_url: 'https://example.com/cert.pdf',
-      status: 'approved',
-      applied_date: '2025-01-19',
-      applied_by: 'user_002',
-      approved_by: 'manager_001',
-      approved_date: '2025-01-19',
-      created_at: '2025-01-19T14:30:00Z'
-    },
-    {
-      id: '3',
-      staff_id: '3',
-      staff_name: 'Robert Johnson',
-      employee_id: 'EMP003',
-      position: 'Accountant',
-      department: 'Finance',
-      branch: 'Branch A',
-      leave_type: 'personal',
-      start_date: '2025-01-25',
-      end_date: '2025-01-25',
-      days_requested: 1,
-      reason: 'Personal appointment',
-      status: 'approved',
-      applied_date: '2025-01-20',
-      applied_by: 'user_003',
-      approved_by: 'manager_002',
-      approved_date: '2025-01-20',
-      created_at: '2025-01-20T10:15:00Z'
-    }
-  ];
-
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = async () => {
-  try {
-    setLoading(true);
-    setError(null);
-
-    // Fetch staff list
-    const { data: staffData, error: staffError } = await supabase
-      .from('staff')
-      .select('id, employee_id, first_name, last_name, position, department, branch')
-      .order('first_name');
-
-    if (staffError) throw staffError;
-
-    // Fetch leave requests with staff information
-    const { data: leaveData, error: leaveError } = await supabase
-      .from('leave_requests')
-      .select(`
-        *,
-        staff:staff_id (
-          employee_id,
-          first_name,
-          last_name,
-          position,
-          department,
-          branch
-        )
-      `)
-      .order('created_at', { ascending: false });
-
-    if (leaveError) throw leaveError;
-
-    // Transform data to match interface
-    const transformedLeaves = leaveData?.map(leave => ({
-      ...leave,
-      staff_name: `${leave.staff.first_name} ${leave.staff.last_name}`,
-      employee_id: leave.staff.employee_id,
-      position: leave.staff.position,
-      department: leave.staff.department,
-      branch: leave.staff.branch
-    })) || [];
-
-    setStaffList(staffData || []);
-    setLeaveRequests(transformedLeaves);
-  } catch (err: any) {
-    console.error('Error loading data:', err);
-    setError(err.message);
-  } finally {
-    setLoading(false);
-  }
-};
+  // Data is loaded by the hook automatically
 
   // Calculate days between dates
   const calculateDays = (startDate: string, endDate: string): number => {
@@ -295,7 +184,7 @@ const LeaveManagement: React.FC = () => {
         notes: '',
         attachment: null
       });
-      loadData();
+      await refreshData();
     } catch (err: any) {
       alert(`Error: ${err.message}`);
     }
@@ -314,7 +203,7 @@ const LeaveManagement: React.FC = () => {
       if (error) throw error;
 
       alert('Leave request approved! Attendance has been automatically marked.');
-      loadData();
+      await refreshData();
     } catch (err: any) {
       alert(`Error: ${err.message}`);
     }
@@ -343,7 +232,7 @@ const LeaveManagement: React.FC = () => {
       alert('Leave request rejected');
       setShowRejectModal(false);
       setRejectionReason('');
-      loadData();
+      await refreshData();
     } catch (err: any) {
       alert(`Error: ${err.message}`);
     }
@@ -362,7 +251,7 @@ const LeaveManagement: React.FC = () => {
       if (error) throw error;
 
       alert('Leave request cancelled');
-      loadData();
+      await refreshData();
     } catch (err: any) {
       alert(`Error: ${err.message}`);
     }

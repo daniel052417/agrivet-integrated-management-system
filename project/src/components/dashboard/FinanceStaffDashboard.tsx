@@ -4,18 +4,20 @@ import NonAdminSidebar from '../shared/layout/NonAdminSidebar';
 import Header from '../shared/layout/Header';
 import { CustomUser } from '../../lib/customAuth';
 
-// Inventory-specific components
-import InventoryManagement from '../inventory/InventoryManagement';
-import Categories from '../inventory/Categories';
-import LowStockAlerts from '../inventory/LowStockAlerts';
+// Finance-specific components
+import FinanceDashboard from '../finance/Financedashboard';
+import SalesIncomeSummary from '../finance/Salesincomesummary';
+import Expenses from '../finance/Expenses';
+import CashFlowOverview from '../finance/Cashflowoverview';
+import ReportsExports from '../finance/Reportsexports';
 
-interface InventoryDashboardProps {
+interface FinanceStaffDashboardProps {
   user: CustomUser;
   onLogout: () => void;
 }
 
-const InventoryDashboard: React.FC<InventoryDashboardProps> = ({ user, onLogout }) => {
-  const [activeSection, setActiveSection] = useState('inventory-management');
+const FinanceStaffDashboard: React.FC<FinanceStaffDashboardProps> = ({ user, onLogout }) => {
+  const [activeSection, setActiveSection] = useState('finance-dashboard');
   
   // Check if user is super admin
   const isSuperAdmin = useMemo(() => {
@@ -24,18 +26,16 @@ const InventoryDashboard: React.FC<InventoryDashboardProps> = ({ user, onLogout 
 
   const renderContent = () => {
     switch (activeSection) {
-      case 'inventory-management':
-      case 'all-products':
-        return <InventoryManagement />;
-      case 'categories':
-        return <Categories />;
-      case 'feeds':
-      case 'medicine':
-      case 'agriculture':
-      case 'tools':
-        return <InventoryManagement />;
-      case 'low-stock':
-        return <LowStockAlerts />;
+      case 'finance-dashboard':
+        return <FinanceDashboard />;
+      case 'sales-income':
+        return <SalesIncomeSummary />;
+      case 'expenses':
+        return <Expenses />;
+      case 'cash-flow':
+        return <CashFlowOverview />;
+      case 'financial-reports':
+        return <ReportsExports />;
       default:
         return (
           <div className="p-6">
@@ -77,4 +77,5 @@ const InventoryDashboard: React.FC<InventoryDashboardProps> = ({ user, onLogout 
   );
 };
 
-export default InventoryDashboard;
+export default FinanceStaffDashboard;
+

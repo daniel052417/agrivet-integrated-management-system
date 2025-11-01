@@ -10,6 +10,7 @@ import ClosingCashModal from './components/ClosingCashModal';
 import { customAuth, CustomUser } from '../lib/customAuth';
 import { OnlineOrdersService } from './services/onlineOrdersService';
 import { posSessionService } from '../lib/posSessionService';
+import { supabase } from '../lib/supabase';
 
 interface POSAppProps {
   user: CustomUser;
@@ -25,6 +26,7 @@ interface SessionSummary {
   totalTransactions: number;
   duration: string;
   expectedCash: number;
+  totalExpenses: number;
 }
 
 const POSApp: React.FC<POSAppProps> = ({ user, onLogout }) => {
@@ -96,6 +98,33 @@ const POSApp: React.FC<POSAppProps> = ({ user, onLogout }) => {
   };
 
   /**
+   * Calculate total approved expenses for the session
+   * Only includes expenses with status = 'approved'
+   */
+  const calculateApprovedExpenses = async (branchId: string, sessionStartTime: string): Promise<number> => {
+    try {
+      const { data, error } = await supabase
+        .from('expenses')
+        .select('amount')
+        .eq('branch_id', branchId)
+        .eq('status', 'approved')
+        .gte('date', new Date(sessionStartTime).toISOString().split('T')[0])
+        .lte('date', new Date().toISOString().split('T')[0]);
+
+      if (error) {
+        console.error('Error calculating approved expenses:', error);
+        return 0;
+      }
+
+      const totalExpenses = data?.reduce((sum, expense) => sum + (expense.amount || 0), 0) || 0;
+      return totalExpenses;
+    } catch (error) {
+      console.error('Error calculating approved expenses:', error);
+      return 0;
+    }
+  };
+
+  /**
    * Handle logout button click - show closing cash modal
    */
   const handleLogoutClick = async () => {
@@ -115,9 +144,17 @@ const POSApp: React.FC<POSAppProps> = ({ user, onLogout }) => {
         return;
       }
 
+      // Get branch ID from user or session
+      const branchId = user.branch_id || session.branch_id;
+      
       // Calculate session summary
       const duration = calculateDuration(session.opened_at);
-      const expectedCash = (session.starting_cash || 0) + (session.total_sales || 0);
+      
+      // Calculate approved expenses (only approved expenses are included in closing)
+      const totalExpenses = branchId ? await calculateApprovedExpenses(branchId, session.opened_at) : 0;
+      
+      // Expected cash = starting cash + total sales - approved expenses
+      const expectedCash = (session.starting_cash || 0) + (session.total_sales || 0) - totalExpenses;
 
       const summary: SessionSummary = {
         sessionNumber: session.session_number,
@@ -127,7 +164,8 @@ const POSApp: React.FC<POSAppProps> = ({ user, onLogout }) => {
         totalSales: session.total_sales || 0,
         totalTransactions: session.total_transactions || 0,
         duration: duration,
-        expectedCash: expectedCash
+        expectedCash: expectedCash,
+        totalExpenses: totalExpenses
       };
 
       setSessionSummary(summary);

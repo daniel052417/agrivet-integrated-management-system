@@ -24,9 +24,11 @@ import {
   AlertCircle,
   UserX,
   UserCheck,
-  Briefcase
+  Briefcase,
+  RefreshCw
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { useStaffListData } from '../../hooks/useStaffListData';
 import RequestAccount from './RequestAccount';
 import AddStaff from './AddStaff';
 
@@ -84,8 +86,19 @@ interface StaffDocument {
 }
 
 const StaffList: React.FC = () => {
+  // Data fetching with RBAC filtering - uses hook
+  const {
+    staffMembers: hookStaffMembers,
+    branches: hookBranches,
+    loading: hookLoading,
+    error: hookError,
+    refreshData,
+    loadBranches,
+    loadEmploymentHistory: hookLoadEmploymentHistory
+  } = useStaffListData();
+
   const [staffMembers, setStaffMembers] = useState<StaffMember[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -102,90 +115,20 @@ const StaffList: React.FC = () => {
   const [selectedStaff, setSelectedStaff] = useState<StaffMember | null>(null);
   const [employmentHistory, setEmploymentHistory] = useState<EmploymentHistory[]>([]);
   const [staffDocuments, setStaffDocuments] = useState<StaffDocument[]>([]);
-  const [branches, setBranches] = useState<Array<{ id: string; name: string }>>([]);
-
+  
+  // Sync hook data to local state for compatibility
   useEffect(() => {
-    loadStaffMembers();
-    loadBranches();
-  }, []);
+    setStaffMembers(hookStaffMembers);
+    setLoading(hookLoading);
+    if (hookError) setError(hookError);
+  }, [hookStaffMembers, hookBranches, hookLoading, hookError]);
 
-  const loadStaffMembers = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const { data: staffData, error: staffError } = await supabase
-        .from('staff')
-        .select(`
-          id,
-          first_name,
-          last_name,
-          email,
-          employee_id,
-          department,
-          position,
-          branch_id,
-          is_active,
-          role,
-          phone,
-          hire_date,
-          salary,
-          daily_allowance,
-          employment_status,
-          employment_type,
-          address,
-          emergency_contact,
-          emergency_phone,
-          resignation_date,
-          termination_date,
-          notes,
-          created_at,
-          updated_at,
-          branches:branch_id (
-            id,
-            name
-          )
-        `)
-        .order('created_at', { ascending: false });
-
-      if (staffError) throw staffError;
-      setStaffMembers(staffData || []);
-    } catch (err: any) {
-      console.error('Error loading staff members:', err);
-      setError(err.message || 'Failed to load staff members');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadBranches = async () => {
-    try {
-      const { data: branchesData, error } = await supabase
-        .from('branches')
-        .select('id, name')
-        .eq('is_active', true)
-        .order('name');
-      
-      if (error) throw error;
-      setBranches(branchesData || []);
-    } catch (err: any) {
-      console.error('Error loading branches:', err);
-    }
-  };
-
+  const branches = hookBranches;
+  
+  // Local loadEmploymentHistory wrapper
   const loadEmploymentHistory = async (staffId: string) => {
-    try {
-      const { data, error } = await supabase
-        .from('employment_history')
-        .select('*')
-        .eq('staff_id', staffId)
-        .order('effective_date', { ascending: false });
-
-      if (error) throw error;
-      setEmploymentHistory(data || []);
-    } catch (err: any) {
-      console.error('Error loading employment history:', err);
-    }
+    const history = await hookLoadEmploymentHistory(staffId);
+    setEmploymentHistory(history);
   };
 
   const loadStaffDocuments = async (staffId: string) => {
@@ -229,7 +172,7 @@ const StaffList: React.FC = () => {
       if (error) throw error;
 
       setSuccess('Staff member deleted successfully');
-      await loadStaffMembers();
+      await refreshData();
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
       console.error('Error deleting staff:', err);
@@ -266,7 +209,7 @@ const StaffList: React.FC = () => {
       });
 
       setSuccess('Employee marked as resigned');
-      await loadStaffMembers();
+      await refreshData();
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
       console.error('Error marking employee as resigned:', err);
@@ -290,7 +233,7 @@ const StaffList: React.FC = () => {
       if (error) throw error;
 
       setSuccess('Employee reactivated successfully');
-      await loadStaffMembers();
+      await refreshData();
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
       console.error('Error activating employee:', err);
@@ -1005,9 +948,9 @@ const StaffList: React.FC = () => {
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-medium text-gray-900">Add New Staff Member</h3>
                 <button
-                  onClick={() => {
+                  onClick={async () => {
                     setShowAddStaff(false);
-                    loadStaffMembers();
+                    await refreshData();
                   }}
                   className="text-gray-400 hover:text-gray-600"
                 >
@@ -1015,9 +958,9 @@ const StaffList: React.FC = () => {
                 </button>
               </div>
               
-              <AddStaff onBack={() => {
+              <AddStaff onBack={async () => {
                 setShowAddStaff(false);
-                loadStaffMembers();
+                await refreshData();
               }} />
             </div>
           </div>
@@ -1032,10 +975,10 @@ const StaffList: React.FC = () => {
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-medium text-gray-900">Edit Staff Member</h3>
                 <button
-                  onClick={() => {
+                  onClick={async () => {
                     setShowEditStaff(false);
                     setSelectedStaff(null);
-                    loadStaffMembers();
+                    await refreshData();
                   }}
                   className="text-gray-400 hover:text-gray-600"
                 >
@@ -1045,10 +988,10 @@ const StaffList: React.FC = () => {
               
               <AddStaff 
                 initialData={selectedStaff} 
-                onBack={() => {
-                  setShowEditStaff(false);
-                  setSelectedStaff(null);
-                  loadStaffMembers();
+                onBack={async () => {
+                    setShowEditStaff(false);
+                    setSelectedStaff(null);
+                    await refreshData();
                 }} 
               />
             </div>

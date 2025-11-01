@@ -16,7 +16,10 @@ import {
   Eye,
   Image as ImageIcon,
   Grid3X3,
-  List
+  List,
+  DollarSign,
+  Camera,
+  Upload
 } from 'lucide-react';
 import TouchButton from '../components/shared/TouchButton';
 import Modal from '../components/shared/Modal';
@@ -44,6 +47,21 @@ const CashierScreen: React.FC = () => {
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [paymentSuccess, setPaymentSuccess] = useState(false);
   const barcodeInputRef = useRef<HTMLInputElement>(null);
+  
+  // Expense states
+  const [showExpenseModal, setShowExpenseModal] = useState(false);
+  const [expenseType, setExpenseType] = useState('');
+  const [expenseOther, setExpenseOther] = useState('');
+  const [expenseAmount, setExpenseAmount] = useState('');
+  const [expenseDescription, setExpenseDescription] = useState('');
+  const [expenseImage, setExpenseImage] = useState<File | null>(null);
+  const [expenseImagePreview, setExpenseImagePreview] = useState<string | null>(null);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>('');
+  const [employees, setEmployees] = useState<any[]>([]);
+  const [isLoadingEmployees, setIsLoadingEmployees] = useState(false);
+  const [isSubmittingExpense, setIsSubmittingExpense] = useState(false);
+  const [branchName, setBranchName] = useState<string>('');
+  const expenseImageInputRef = useRef<HTMLInputElement>(null);
 
   const getCurrentBranchId = () => {
     const currentUser = customAuth.getCurrentUser();
@@ -71,6 +89,76 @@ const CashierScreen: React.FC = () => {
   useEffect(() => {
     loadProducts();
   }, []);
+
+  // Load employees when Cash Advance is selected
+  useEffect(() => {
+    if (expenseType === 'Cash Advance' && showExpenseModal) {
+      loadEmployees();
+    } else {
+      setEmployees([]);
+      setSelectedEmployeeId('');
+    }
+  }, [expenseType, showExpenseModal]);
+
+  // Load branch name when expense modal opens
+  useEffect(() => {
+    if (showExpenseModal) {
+      loadBranchName();
+    }
+  }, [showExpenseModal]);
+
+  const loadBranchName = async () => {
+    try {
+      const branchId = getCurrentBranchId();
+      if (branchId && branchId !== 'default-branch') {
+        const { data, error } = await supabase
+          .from('branches')
+          .select('name')
+          .eq('id', branchId)
+          .eq('is_active', true)
+          .single();
+        
+        if (error) throw error;
+        setBranchName(data?.name || branchId);
+      } else {
+        setBranchName(branchId || 'N/A');
+      }
+    } catch (error) {
+      console.error('Error loading branch name:', error);
+      const branchId = getCurrentBranchId();
+      setBranchName(branchId || 'N/A');
+    }
+  };
+
+  const loadEmployees = async () => {
+    try {
+      setIsLoadingEmployees(true);
+      const branchId = getCurrentBranchId();
+      
+      const { data, error } = await supabase
+        .from('staff')
+        .select(`
+          id,
+          first_name,
+          last_name,
+          employee_id,
+          position,
+          email
+        `)
+        .eq('branch_id', branchId)
+        .eq('is_active', true)
+        .in('position', ['cashier', 'branch staff'])
+        .order('first_name');
+
+      if (error) throw error;
+      setEmployees(data || []);
+    } catch (error) {
+      console.error('Error loading employees:', error);
+      alert('Failed to load employees. Please try again.');
+    } finally {
+      setIsLoadingEmployees(false);
+    }
+  };
 
   const loadProducts = async () => {
     try {
@@ -493,9 +581,16 @@ const CashierScreen: React.FC = () => {
         unitPrice: currentPrice || 0, // Use the exact price_per_unit from database
         discount: 0,
         lineTotal: (currentPrice || 0) * minQuantity,
+        minimum_stock: (selectedUnit as any)?.minimum_stock ?? product.minimum_stock ?? 0,
         selectedUnit: {
-          ...selectedUnit!,
-          conversion_factor: (selectedUnit as any)?.conversion_factor || 1
+          id: selectedUnit?.id || '',
+          unit_name: selectedUnit?.unit_name || '',
+          unit_label: selectedUnit?.unit_label || '',
+          price: currentPrice || 0,
+          is_base_unit: selectedUnit?.is_base_unit || false,
+          conversion_factor: (selectedUnit as any)?.conversion_factor || 1,
+          min_sellable_quantity: (selectedUnit as any)?.min_sellable_quantity || 1,
+          minimum_stock: (selectedUnit as any)?.minimum_stock ?? 0
         },
         isBaseUnit: selectedUnit?.is_base_unit || false
       };
@@ -668,6 +763,236 @@ const CashierScreen: React.FC = () => {
       console.error('Payment processing failed:', error);
       alert(`Payment failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
       setIsProcessingPayment(false);
+    }
+  };
+
+  const handleExpenseImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        alert('Please select an image file');
+        return;
+      }
+      
+      // Validate file size (5MB limit)
+      if (file.size > 5 * 1024 * 1024) {
+        alert('Image size should be less than 5MB');
+        return;
+      }
+      
+      setExpenseImage(file);
+      
+      // Create preview
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setExpenseImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleSubmitExpense = async () => {
+    try {
+      // Validate form
+      if (!expenseType) {
+        alert('Please select an expense type');
+        return;
+      }
+      
+      if (expenseType === 'Other' && !expenseOther.trim()) {
+        alert('Please specify the expense type');
+        return;
+      }
+      
+      if (!expenseAmount || parseFloat(expenseAmount) <= 0) {
+        alert('Please enter a valid amount');
+        return;
+      }
+      
+      if (!expenseDescription.trim()) {
+        alert('Please enter a description');
+        return;
+      }
+      
+      if (expenseType === 'Cash Advance' && !selectedEmployeeId) {
+        alert('Please select an employee for cash advance');
+        return;
+      }
+
+      setIsSubmittingExpense(true);
+      
+      const currentUser = customAuth.getCurrentUser();
+      if (!currentUser) {
+        throw new Error('User not authenticated');
+      }
+      
+      const branchId = getCurrentBranchId();
+      
+      // Upload image if provided
+      let receiptUrl = null;
+      let receiptFileName = null;
+      
+      if (expenseImage) {
+        const fileExt = expenseImage.name.split('.').pop();
+        const fileName = `expenses/${branchId}/${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
+        
+        const { error: uploadError } = await supabase.storage
+          .from('receipts')
+          .upload(fileName, expenseImage, {
+            cacheControl: '3600',
+            upsert: false
+          });
+        
+        if (uploadError) {
+          // Try fallback bucket if receipts bucket doesn't exist
+          console.warn('Receipts bucket not found, trying expenses bucket');
+          const { error: fallbackError } = await supabase.storage
+            .from('expenses')
+            .upload(fileName, expenseImage, {
+              cacheControl: '3600',
+              upsert: false
+            });
+          
+          if (fallbackError) {
+            console.error('Error uploading expense image:', fallbackError);
+            // Continue without image
+          } else {
+            const { data: { publicUrl } } = supabase.storage
+              .from('expenses')
+              .getPublicUrl(fileName);
+            receiptUrl = publicUrl;
+            receiptFileName = fileName;
+          }
+        } else {
+          const { data: { publicUrl } } = supabase.storage
+            .from('receipts')
+            .getPublicUrl(fileName);
+          receiptUrl = publicUrl;
+          receiptFileName = fileName;
+        }
+      }
+      
+      // Determine category name
+      const categoryName = expenseType === 'Other' ? expenseOther : expenseType;
+      
+      // Get or create expense category
+      let categoryId: string | null = null;
+      
+      // First, try to find existing category
+      const { data: existingCategory } = await supabase
+        .from('expense_categories')
+        .select('id')
+        .eq('name', categoryName)
+        .eq('is_active', true)
+        .single();
+      
+      if (existingCategory) {
+        categoryId = existingCategory.id;
+      } else {
+        // Create new category if it doesn't exist
+        const { data: newCategory, error: createCategoryError } = await supabase
+          .from('expense_categories')
+          .insert([{
+            name: categoryName,
+            is_active: true
+          }])
+          .select('id')
+          .single();
+        
+        if (createCategoryError) {
+          console.error('Error creating expense category:', createCategoryError);
+          // Continue without category_id if creation fails
+        } else if (newCategory) {
+          categoryId = newCategory.id;
+        }
+      }
+      
+      // Prepare description with employee info if cash advance
+      const finalDescription = expenseType === 'Cash Advance' && selectedEmployeeId
+        ? `${expenseDescription} (Employee: ${employees.find(e => e.id === selectedEmployeeId)?.first_name} ${employees.find(e => e.id === selectedEmployeeId)?.last_name})`
+        : expenseDescription;
+      
+      // Get current date
+      const expenseDate = new Date().toISOString().split('T')[0];
+      
+      // Determine status and approval requirements based on category
+      // Cash Advance requires approval, others are auto-approved
+      const isCashAdvance = categoryName === 'Cash Advance';
+      const requiresApproval = isCashAdvance;
+      const expenseStatus = isCashAdvance ? 'pending_approval' : 'approved';
+      
+      // If approved, set reviewed_by and reviewed_at immediately
+      const reviewedBy = !isCashAdvance ? currentUser.id : null;
+      const reviewedAt = !isCashAdvance ? new Date().toISOString() : null;
+      
+      // Create expense record with new schema compatible with Expenses.tsx
+      const expenseData: any = {
+        date: expenseDate,
+        description: finalDescription,
+        amount: parseFloat(expenseAmount),
+        category_id: categoryId,
+        branch_id: branchId !== 'default-branch' ? branchId : null,
+        receipt_url: receiptUrl,
+        payment_method: null, // Can be set if needed
+        reference: `POS-${Date.now()}`, // Reference number for tracking
+        status: expenseStatus,
+        created_by: currentUser.id,
+        requires_approval: requiresApproval,
+        reviewed_by: reviewedBy,
+        reviewed_at: reviewedAt,
+        source: 'POS' // Mark expense as coming from POS/CashierScreen
+      };
+      
+      // Add receipt_file_name if available (if schema supports it)
+      if (receiptFileName) {
+        expenseData.receipt_file_name = receiptFileName;
+      }
+      
+      const { error } = await supabase
+        .from('expenses')
+        .insert([expenseData])
+        .select()
+        .single();
+      
+      if (error) {
+        console.error('Error creating expense:', error);
+        throw error;
+      }
+      
+      alert('Expense submitted successfully!');
+      
+      // Reset form
+      setExpenseType('');
+      setExpenseOther('');
+      setExpenseAmount('');
+      setExpenseDescription('');
+      setExpenseImage(null);
+      setExpenseImagePreview(null);
+      setSelectedEmployeeId('');
+      setBranchName('');
+      setShowExpenseModal(false);
+      
+    } catch (error) {
+      console.error('Error submitting expense:', error);
+      alert(`Failed to submit expense: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setIsSubmittingExpense(false);
+    }
+  };
+
+  const handleCloseExpenseModal = () => {
+    if (!isSubmittingExpense) {
+      setShowExpenseModal(false);
+      // Reset form
+      setExpenseType('');
+      setExpenseOther('');
+      setExpenseAmount('');
+      setExpenseDescription('');
+      setExpenseImage(null);
+      setExpenseImagePreview(null);
+      setSelectedEmployeeId('');
+      setBranchName('');
     }
   };
 
@@ -948,6 +1273,16 @@ const CashierScreen: React.FC = () => {
                 </button>
               </div>
             )}
+            
+            {/* Add Expense Button */}
+            <TouchButton
+              onClick={() => setShowExpenseModal(true)}
+              variant="outline"
+              icon={DollarSign}
+              className="px-6"
+            >
+              Add Expense
+            </TouchButton>
             
             {/* <TouchButton
               onClick={() => barcodeInputRef.current?.focus()}
@@ -1437,6 +1772,243 @@ const CashierScreen: React.FC = () => {
           }
         }}
       />
+
+      {/* Add Expense Modal */}
+      <Modal
+        isOpen={showExpenseModal}
+        onClose={handleCloseExpenseModal}
+        title="Add Expense"
+        size="lg"
+      >
+        <div className="space-y-6">
+          {/* Expense Type */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Expense Type <span className="text-red-500">*</span>
+            </label>
+            <select
+              value={expenseType}
+              onChange={(e) => setExpenseType(e.target.value)}
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-lg"
+              disabled={isSubmittingExpense}
+            >
+              <option value="">Select expense type</option>
+              <option value="Cash Advance">Cash Advance</option>
+              <option value="Delivery Payment">Delivery Payment</option>
+              <option value="Utilities">Utilities</option>
+              <option value="Supplies">Supplies</option>
+              <option value="Maintenance">Maintenance</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+
+          {/* Other Expense Type Field */}
+          {expenseType === 'Other' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Specify Expense Type <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={expenseOther}
+                onChange={(e) => setExpenseOther(e.target.value)}
+                placeholder="Enter expense type"
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-lg"
+                disabled={isSubmittingExpense}
+              />
+            </div>
+          )}
+
+          {/* Employee Selection for Cash Advance */}
+          {expenseType === 'Cash Advance' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Employee <span className="text-red-500">*</span>
+              </label>
+              {isLoadingEmployees ? (
+                <div className="flex items-center justify-center py-4">
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-emerald-600"></div>
+                </div>
+              ) : (
+                <select
+                  value={selectedEmployeeId}
+                  onChange={(e) => setSelectedEmployeeId(e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-lg"
+                  disabled={isSubmittingExpense}
+                >
+                  <option value="">Select employee</option>
+                  {employees.map(employee => (
+                    <option key={employee.id} value={employee.id}>
+                      {employee.first_name} {employee.last_name} - {employee.position} ({employee.employee_id})
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+          )}
+
+          {/* Amount */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Amount <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="number"
+              value={expenseAmount}
+              onChange={(e) => setExpenseAmount(e.target.value)}
+              placeholder="0.00"
+              min="0"
+              step="0.01"
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-lg"
+              disabled={isSubmittingExpense}
+            />
+          </div>
+
+          {/* Description */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Description <span className="text-red-500">*</span>
+            </label>
+            <textarea
+              value={expenseDescription}
+              onChange={(e) => setExpenseDescription(e.target.value)}
+              placeholder="Enter expense description"
+              rows={3}
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-lg resize-none"
+              disabled={isSubmittingExpense}
+            />
+          </div>
+
+          {/* Image Capture */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Receipt/Image
+            </label>
+            <div className="space-y-3">
+              <input
+                ref={expenseImageInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={handleExpenseImageChange}
+                className="hidden"
+                disabled={isSubmittingExpense}
+              />
+              <div className="flex space-x-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    // Create a new input for camera capture
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = 'image/*';
+                    // Set capture attribute for camera access (mobile)
+                    (input as any).capture = 'environment'; // Use rear camera
+                    input.onchange = (e) => {
+                      const file = (e.target as HTMLInputElement).files?.[0];
+                      if (file) {
+                        handleExpenseImageChange({ target: { files: [file] } } as any);
+                      }
+                    };
+                    input.click();
+                  }}
+                  className="flex items-center space-x-2 px-4 py-3 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={isSubmittingExpense}
+                >
+                  <Camera className="w-5 h-5" />
+                  <span>Capture Photo</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = 'image/*';
+                    input.onchange = (e) => {
+                      const file = (e.target as HTMLInputElement).files?.[0];
+                      if (file) {
+                        handleExpenseImageChange({ target: { files: [file] } } as any);
+                      }
+                    };
+                    input.click();
+                  }}
+                  className="flex items-center space-x-2 px-4 py-3 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={isSubmittingExpense}
+                >
+                  <Upload className="w-5 h-5" />
+                  <span>Upload Image</span>
+                </button>
+              </div>
+              
+              {expenseImagePreview && (
+                <div className="mt-3 relative">
+                  <img
+                    src={expenseImagePreview}
+                    alt="Expense receipt preview"
+                    className="w-full max-h-64 object-contain rounded-lg border border-gray-300"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setExpenseImage(null);
+                      setExpenseImagePreview(null);
+                      if (expenseImageInputRef.current) {
+                        expenseImageInputRef.current.value = '';
+                      }
+                    }}
+                    className="absolute top-2 right-2 p-2 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors"
+                    disabled={isSubmittingExpense}
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Auto-filled Branch and User Info */}
+          <div className="bg-gray-50 rounded-xl p-4">
+            <h4 className="text-sm font-medium text-gray-700 mb-2">Transaction Information</h4>
+            <div className="space-y-2 text-sm text-gray-600">
+              <div className="flex justify-between">
+                <span>Branch:</span>
+                <span className="font-medium">{branchName || 'Loading...'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Recorded By:</span>
+                <span className="font-medium">{(() => {
+                  const currentUser = customAuth.getCurrentUser();
+                  return currentUser ? `${currentUser.first_name || ''} ${currentUser.last_name || ''}`.trim() || currentUser.email : 'N/A';
+                })()}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Date:</span>
+                <span className="font-medium">{new Date().toLocaleDateString()}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex space-x-4">
+            <TouchButton
+              onClick={handleCloseExpenseModal}
+              variant="outline"
+              className="flex-1"
+              disabled={isSubmittingExpense}
+            >
+              Cancel
+            </TouchButton>
+            <TouchButton
+              onClick={handleSubmitExpense}
+              variant="success"
+              className="flex-1"
+              disabled={isSubmittingExpense}
+            >
+              {isSubmittingExpense ? 'Submitting...' : 'Submit Expense'}
+            </TouchButton>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };

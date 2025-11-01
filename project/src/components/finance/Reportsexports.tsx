@@ -1,31 +1,6 @@
 import React, { useState } from 'react';
-import { FileText, Download, Calendar, Filter, BarChart3, FileSpreadsheet, Eye, Send } from 'lucide-react';
-
-interface ReportType {
-  id: string;
-  name: string;
-  description: string;
-  icon: React.ComponentType<any>;
-  estimatedSize: string;
-  lastGenerated: string;
-}
-
-interface RecentReport {
-  id: number;
-  name: string;
-  type: string;
-  size: string;
-  generated: string;
-  status: 'Ready' | 'Processing';
-  downloadUrl: string;
-}
-
-interface QuickReport {
-  name: string;
-  description: string;
-  type: string;
-  icon: React.ComponentType<any>;
-}
+import { FileText, Download, Calendar, Filter, BarChart3, FileSpreadsheet, Eye, Send, RefreshCw } from 'lucide-react';
+import { useReportsExportData } from '../../hooks/useReportsExportData';
 
 type Period = 'today' | 'week' | 'month' | 'quarter' | 'year' | 'custom';
 type Format = 'pdf' | 'excel' | 'csv';
@@ -38,124 +13,17 @@ const ReportsExports: React.FC = () => {
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
 
-  // Mock data for available reports
-  const reportTypes: ReportType[] = [
-    {
-      id: 'income-expense',
-      name: 'Income & Expense Summary',
-      description: 'Comprehensive overview of all income and expenses',
-      icon: BarChart3,
-      estimatedSize: '2.4 MB',
-      lastGenerated: '2024-10-31 10:30 AM'
-    },
-    {
-      id: 'cash-flow',
-      name: 'Cash Flow Report',
-      description: 'Detailed cash flow analysis with trends',
-      icon: FileText,
-      estimatedSize: '1.8 MB',
-      lastGenerated: '2024-10-31 09:15 AM'
-    },
-    {
-      id: 'profit-estimate',
-      name: 'Profit Estimate Report',
-      description: 'Profit margins and estimates by category',
-      icon: FileSpreadsheet,
-      estimatedSize: '1.2 MB',
-      lastGenerated: '2024-10-30 04:45 PM'
-    },
-    {
-      id: 'branch-comparison',
-      name: 'Branch Performance Comparison',
-      description: 'Compare financial performance across branches',
-      icon: BarChart3,
-      estimatedSize: '3.1 MB',
-      lastGenerated: '2024-10-30 02:20 PM'
-    },
-    {
-      id: 'category-analysis',
-      name: 'Category Analysis Report',
-      description: 'Breakdown of sales and expenses by product category',
-      icon: FileText,
-      estimatedSize: '2.7 MB',
-      lastGenerated: '2024-10-29 11:00 AM'
-    }
-  ];
-
-  const recentReports: RecentReport[] = [
-    {
-      id: 1,
-      name: 'October 2024 - Income & Expense Summary',
-      type: 'PDF',
-      size: '2.4 MB',
-      generated: '2024-10-31 10:30 AM',
-      status: 'Ready',
-      downloadUrl: '#'
-    },
-    {
-      id: 2,
-      name: 'Cash Flow Report - Q4 2024',
-      type: 'Excel',
-      size: '1.8 MB',
-      generated: '2024-10-31 09:15 AM',
-      status: 'Ready',
-      downloadUrl: '#'
-    },
-    {
-      id: 3,
-      name: 'Branch Performance - October 2024',
-      type: 'PDF',
-      size: '3.1 MB',
-      generated: '2024-10-30 04:45 PM',
-      status: 'Ready',
-      downloadUrl: '#'
-    },
-    {
-      id: 4,
-      name: 'Weekly Profit Analysis',
-      type: 'CSV',
-      size: '856 KB',
-      generated: '2024-10-30 02:20 PM',
-      status: 'Processing',
-      downloadUrl: '#'
-    },
-    {
-      id: 5,
-      name: 'Category Analysis - September 2024',
-      type: 'Excel',
-      size: '2.7 MB',
-      generated: '2024-10-29 11:00 AM',
-      status: 'Ready',
-      downloadUrl: '#'
-    }
-  ];
-
-  const quickReports: QuickReport[] = [
-    {
-      name: 'Today\'s Summary',
-      description: 'Quick overview of today\'s financials',
-      type: 'daily',
-      icon: Calendar
-    },
-    {
-      name: 'Weekly Performance',
-      description: 'This week\'s income and expenses',
-      type: 'weekly',
-      icon: BarChart3
-    },
-    {
-      name: 'Monthly Overview',
-      description: 'Complete monthly financial summary',
-      type: 'monthly',
-      icon: FileText
-    },
-    {
-      name: 'Branch Comparison',
-      description: 'Compare all branch performances',
-      type: 'comparison',
-      icon: FileSpreadsheet
-    }
-  ];
+  // Data fetching with RBAC filtering - uses hook
+  const {
+    reportTypes,
+    recentReports,
+    quickReports,
+    exportStatistics,
+    loading,
+    error,
+    refreshData,
+    generateReport
+  } = useReportsExportData();
 
   const selectedReport = reportTypes.find(report => report.id === selectedReportType);
 
@@ -181,9 +49,25 @@ const ReportsExports: React.FC = () => {
     setEndDate(event.target.value);
   };
 
-  const handleQuickReportClick = (reportType: string) => {
-    // Handle quick report generation
-    console.log('Generating quick report:', reportType);
+  const handleQuickReportClick = async (reportType: string) => {
+    try {
+      // Map quick report types to periods
+      const periodMap: Record<string, Period> = {
+        'daily': 'today',
+        'weekly': 'week',
+        'monthly': 'month',
+        'comparison': 'month'
+      };
+      
+      const period = periodMap[reportType] || 'month';
+      await generateReport(reportType, period, selectedFormat);
+      
+      // Refresh data to show new report
+      await refreshData();
+    } catch (err) {
+      console.error('Error generating quick report:', err);
+      alert('Failed to generate report. Please try again.');
+    }
   };
 
   const handlePreviewReport = () => {
@@ -191,15 +75,72 @@ const ReportsExports: React.FC = () => {
     console.log('Previewing report');
   };
 
-  const handleGenerateDownload = () => {
-    // Handle report generation and download
-    console.log('Generating and downloading report');
+  const handleGenerateDownload = async () => {
+    try {
+      await generateReport(
+        selectedReportType,
+        selectedPeriod,
+        selectedFormat,
+        customDateRange ? startDate : undefined,
+        customDateRange ? endDate : undefined
+      );
+      
+      // Refresh data to show new report
+      await refreshData();
+      
+      alert('Report generation started. You will be notified when it\'s ready.');
+    } catch (err) {
+      console.error('Error generating report:', err);
+      alert('Failed to generate report. Please try again.');
+    }
   };
 
-  const handleEmailReport = () => {
-    // Handle emailing report
-    console.log('Emailing report');
+  const handleEmailReport = async () => {
+    try {
+      await generateReport(
+        selectedReportType,
+        selectedPeriod,
+        selectedFormat,
+        customDateRange ? startDate : undefined,
+        customDateRange ? endDate : undefined
+      );
+      
+      // In a real implementation, you would trigger an email action
+      alert('Report will be emailed to you when ready.');
+    } catch (err) {
+      console.error('Error emailing report:', err);
+      alert('Failed to email report. Please try again.');
+    }
   };
+
+  if (loading) {
+    return (
+      <div className="p-6 space-y-6">
+        <div className="flex items-center justify-center py-12">
+          <RefreshCw className="h-8 w-8 animate-spin text-indigo-600" />
+          <span className="ml-2 text-lg text-gray-600">Loading reports data...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-6 space-y-6">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+          <div className="flex items-center">
+            <span className="text-red-800">{error}</span>
+            <button 
+              onClick={refreshData}
+              className="ml-auto bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-6">
@@ -207,11 +148,23 @@ const ReportsExports: React.FC = () => {
 
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
-            <FileText className="h-8 w-8 text-indigo-600" />
-            Reports & Exports
-          </h1>
-          <p className="text-gray-600 mt-2">Generate and download financial summaries and reports</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
+                <FileText className="h-8 w-8 text-indigo-600" />
+                Reports & Exports
+              </h1>
+              <p className="text-gray-600 mt-2">Generate and download financial summaries and reports</p>
+            </div>
+            <button
+              onClick={refreshData}
+              disabled={loading}
+              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+              Refresh
+            </button>
+          </div>
         </div>
 
         {/* Quick Reports */}
@@ -381,30 +334,34 @@ const ReportsExports: React.FC = () => {
             {/* Recent Reports */}
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Reports</h3>
-              <div className="space-y-3">
-                {recentReports.map((report) => (
-                  <div key={report.id} className="border border-gray-200 rounded-lg p-3">
-                    <div className="flex items-start justify-between mb-2">
-                      <h4 className="text-sm font-medium text-gray-900 line-clamp-2">{report.name}</h4>
-                      <span className={`px-2 py-1 text-xs rounded-full ${
-                        report.status === 'Ready' 
-                          ? 'bg-green-100 text-green-800' 
-                          : 'bg-yellow-100 text-yellow-800'
-                      }`}>
-                        {report.status}
-                      </span>
+              {recentReports.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">No recent reports available</div>
+              ) : (
+                <div className="space-y-3">
+                  {recentReports.map((report) => (
+                    <div key={report.id} className="border border-gray-200 rounded-lg p-3">
+                      <div className="flex items-start justify-between mb-2">
+                        <h4 className="text-sm font-medium text-gray-900 line-clamp-2">{report.name}</h4>
+                        <span className={`px-2 py-1 text-xs rounded-full ${
+                          report.status === 'Ready' 
+                            ? 'bg-green-100 text-green-800' 
+                            : 'bg-yellow-100 text-yellow-800'
+                        }`}>
+                          {report.status}
+                        </span>
+                      </div>
+                      <div className="text-xs text-gray-500 mb-2">
+                        <span>{report.type} • {report.size} • {report.generated}</span>
+                      </div>
+                      {report.status === 'Ready' && (
+                        <button className="w-full text-center py-1 px-2 bg-indigo-100 text-indigo-700 rounded text-xs font-medium hover:bg-indigo-200 transition-colors">
+                          Download
+                        </button>
+                      )}
                     </div>
-                    <div className="text-xs text-gray-500 mb-2">
-                      <span>{report.type} • {report.size} • {report.generated}</span>
-                    </div>
-                    {report.status === 'Ready' && (
-                      <button className="w-full text-center py-1 px-2 bg-indigo-100 text-indigo-700 rounded text-xs font-medium hover:bg-indigo-200 transition-colors">
-                        Download
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Report Settings */}
@@ -450,19 +407,19 @@ const ReportsExports: React.FC = () => {
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-gray-600">Reports generated this month</span>
-                  <span className="font-medium text-gray-900">24</span>
+                  <span className="font-medium text-gray-900">{exportStatistics.reportsGeneratedThisMonth}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-gray-600">Most popular format</span>
-                  <span className="font-medium text-gray-900">PDF (65%)</span>
+                  <span className="font-medium text-gray-900">{exportStatistics.mostPopularFormat}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-gray-600">Average generation time</span>
-                  <span className="font-medium text-gray-900">2.3 seconds</span>
+                  <span className="font-medium text-gray-900">{exportStatistics.averageGenerationTime}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-gray-600">Total storage used</span>
-                  <span className="font-medium text-gray-900">45.2 MB</span>
+                  <span className="font-medium text-gray-900">{exportStatistics.totalStorageUsed}</span>
                 </div>
               </div>
             </div>

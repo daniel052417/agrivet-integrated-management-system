@@ -1,49 +1,6 @@
-import React, { useState } from 'react';
-import { Activity, TrendingUp, TrendingDown, DollarSign, Calendar, ArrowUpRight, ArrowDownRight } from 'lucide-react';
-
-interface CashFlowData {
-  currentBalance: number;
-  netCashFlow: number;
-  totalInflow: number;
-  totalOutflow: number;
-  workingCapital: number;
-}
-
-interface DailyCashFlow {
-  date: string;
-  inflow: number;
-  outflow: number;
-  net: number;
-}
-
-interface MonthlyCashFlow {
-  month: string;
-  inflow: number;
-  outflow: number;
-  net: number;
-}
-
-interface CashFlowCategory {
-  category: string;
-  amount: number;
-  percentage: number;
-  trend: string;
-  positive: boolean;
-}
-
-interface CashFlowCategories {
-  inflow: CashFlowCategory[];
-  outflow: CashFlowCategory[];
-}
-
-interface RecentTransaction {
-  id: number;
-  type: 'inflow' | 'outflow';
-  description: string;
-  amount: number;
-  time: string;
-  category: string;
-}
+import React, { useState, useEffect, useMemo } from 'react';
+import { Activity, TrendingUp, TrendingDown, DollarSign, Calendar, ArrowUpRight, ArrowDownRight, RefreshCw } from 'lucide-react';
+import { useCashFlowData } from '../../hooks/useCashFlowData';
 
 type Period = 'week' | 'month' | 'quarter' | 'year';
 type ViewType = 'chart' | 'table';
@@ -52,93 +9,30 @@ const CashFlowOverview: React.FC = () => {
   const [selectedPeriod, setSelectedPeriod] = useState<Period>('month');
   const [viewType, setViewType] = useState<ViewType>('chart');
 
-  // Mock data for cash flow
-  const cashFlowData: CashFlowData = {
-    currentBalance: 125430,
-    netCashFlow: 27110,
-    totalInflow: 1245680,
-    totalOutflow: 1218570,
-    workingCapital: 198750
-  };
+  // Data fetching with RBAC filtering - uses hook
+  const {
+    cashFlowData,
+    dailyCashFlow,
+    cashFlowCategories,
+    recentTransactions,
+    loading,
+    error,
+    refreshData
+  } = useCashFlowData();
 
-  const dailyCashFlow: DailyCashFlow[] = [
-    { date: '2024-10-25', inflow: 38500, outflow: 15200, net: 23300 },
-    { date: '2024-10-26', inflow: 42100, outflow: 28900, net: 13200 },
-    { date: '2024-10-27', inflow: 35800, outflow: 19500, net: 16300 },
-    { date: '2024-10-28', inflow: 47200, outflow: 22100, net: 25100 },
-    { date: '2024-10-29', inflow: 39600, outflow: 31800, net: 7800 },
-    { date: '2024-10-30', inflow: 44300, outflow: 18700, net: 25600 },
-    { date: '2024-10-31', inflow: 45750, outflow: 18320, net: 27430 }
-  ];
+  // Data fetching functions are now handled by useCashFlowData hook
+  // Only keeping UI-specific logic here
 
-  const monthlyCashFlow: MonthlyCashFlow[] = [
-    { month: 'Jun', inflow: 520000, outflow: 385000, net: 135000 },
-    { month: 'Jul', inflow: 485000, outflow: 402000, net: 83000 },
-    { month: 'Aug', inflow: 625000, outflow: 445000, net: 180000 },
-    { month: 'Sep', inflow: 590000, outflow: 428000, net: 162000 },
-    { month: 'Oct', inflow: 678000, outflow: 456000, net: 222000 },
-    { month: 'Nov', inflow: 712000, outflow: 489000, net: 223000 }
-  ];
+  // Fetch data on mount and when period changes
+  useEffect(() => {
+    refreshData(selectedPeriod);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPeriod]);
 
-  const cashFlowCategories: CashFlowCategories = {
-    inflow: [
-      { category: 'Retail Sales', amount: 456780, percentage: 36.7, trend: '+8.2%', positive: true },
-      { category: 'Wholesale Sales', amount: 342900, percentage: 27.5, trend: '+12.5%', positive: true },
-      { category: 'Online Sales', amount: 289650, percentage: 23.3, trend: '+18.7%', positive: true },
-      { category: 'Service Revenue', amount: 156350, percentage: 12.5, trend: '+5.4%', positive: true }
-    ],
-    outflow: [
-      { category: 'Supplier Payments', amount: 485200, percentage: 39.8, trend: '+2.1%', positive: false },
-      { category: 'Operating Expenses', amount: 312450, percentage: 25.6, trend: '-1.5%', positive: true },
-      { category: 'Payroll & Benefits', amount: 256890, percentage: 21.1, trend: '+3.2%', positive: false },
-      { category: 'Utilities & Rent', amount: 164030, percentage: 13.5, trend: '+0.8%', positive: false }
-    ]
-  };
-
-  const recentTransactions: RecentTransaction[] = [
-    { 
-      id: 1, 
-      type: 'inflow', 
-      description: 'Retail sales - Main Store', 
-      amount: 18500, 
-      time: '2 hours ago',
-      category: 'Sales'
-    },
-    { 
-      id: 2, 
-      type: 'outflow', 
-      description: 'Supplier payment - ABC Distributors', 
-      amount: 15500, 
-      time: '3 hours ago',
-      category: 'Supplier'
-    },
-    { 
-      id: 3, 
-      type: 'inflow', 
-      description: 'Online order payments', 
-      amount: 8750, 
-      time: '4 hours ago',
-      category: 'Sales'
-    },
-    { 
-      id: 4, 
-      type: 'outflow', 
-      description: 'Electricity bill payment', 
-      amount: 2800, 
-      time: '5 hours ago',
-      category: 'Utilities'
-    },
-    { 
-      id: 5, 
-      type: 'inflow', 
-      description: 'Wholesale payment received', 
-      amount: 12400, 
-      time: '6 hours ago',
-      category: 'Sales'
-    }
-  ];
-
-  const maxValue = Math.max(...dailyCashFlow.map(d => Math.max(d.inflow, d.outflow)));
+  const maxValue = useMemo(() => {
+    if (dailyCashFlow.length === 0) return 1;
+    return Math.max(...dailyCashFlow.map(d => Math.max(d.inflow, d.outflow)), 1);
+  }, [dailyCashFlow]);
 
   const handlePeriodChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
     setSelectedPeriod(event.target.value as Period);
@@ -154,11 +48,28 @@ const CashFlowOverview: React.FC = () => {
 
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
-            <Activity className="h-8 w-8 text-blue-600" />
-            Cash Flow Overview
-          </h1>
-          <p className="text-gray-600 mt-2">Monitor how money moves in and out of your business</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
+                <Activity className="h-8 w-8 text-blue-600" />
+                Cash Flow Overview
+              </h1>
+              <p className="text-gray-600 mt-2">Monitor how money moves in and out of your business</p>
+            </div>
+            <button
+              onClick={() => refreshData(selectedPeriod)}
+              disabled={loading}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+              Refresh
+            </button>
+          </div>
+          {error && (
+            <div className="mt-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+              {error}
+            </div>
+          )}
         </div>
 
         {/* Period Selector */}
@@ -258,9 +169,19 @@ const CashFlowOverview: React.FC = () => {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
           {/* Cash Flow Chart */}
           <div className="lg:col-span-2 bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-            <h2 className="text-xl font-semibold text-gray-900 mb-6">Daily Cash Flow Trend</h2>
+            <h2 className="text-xl font-semibold text-gray-900 mb-6">
+              {selectedPeriod === 'week' ? 'Daily' : selectedPeriod === 'month' ? 'Daily' : 'Monthly'} Cash Flow Trend
+            </h2>
             
-            {viewType === 'chart' ? (
+            {loading ? (
+              <div className="flex items-center justify-center h-80">
+                <RefreshCw className="h-8 w-8 animate-spin text-blue-600" />
+              </div>
+            ) : dailyCashFlow.length === 0 ? (
+              <div className="flex items-center justify-center h-80 text-gray-500">
+                <p>No cash flow data available for the selected period</p>
+              </div>
+            ) : viewType === 'chart' ? (
               <div className="h-80">
                 <div className="flex items-end justify-between h-full gap-2">
                   {dailyCashFlow.map((day, index) => (
@@ -312,17 +233,20 @@ const CashFlowOverview: React.FC = () => {
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Inflow</th>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Outflow</th>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Net</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200">
-                    {dailyCashFlow.map((day, index) => (
+                {dailyCashFlow.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">No data available</div>
+                ) : (
+                  <table className="w-full">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Inflow</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Outflow</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Net</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {dailyCashFlow.map((day, index) => (
                       <tr key={index}>
                         <td className="px-4 py-3 text-sm text-gray-900">
                           {new Date(day.date).toLocaleDateString()}
@@ -339,9 +263,10 @@ const CashFlowOverview: React.FC = () => {
                           {day.net >= 0 ? '+' : ''}₱{day.net.toLocaleString()}
                         </td>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
               </div>
             )}
           </div>
@@ -349,8 +274,15 @@ const CashFlowOverview: React.FC = () => {
           {/* Recent Transactions */}
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Transactions</h3>
-            <div className="space-y-3">
-              {recentTransactions.map((transaction) => (
+            {loading ? (
+              <div className="flex items-center justify-center py-8">
+                <RefreshCw className="h-6 w-6 animate-spin text-blue-600" />
+              </div>
+            ) : recentTransactions.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">No recent transactions</div>
+            ) : (
+              <div className="space-y-3">
+                {recentTransactions.map((transaction) => (
                 <div key={transaction.id} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-b-0">
                   <div className="flex items-center gap-3">
                     <div className={`p-2 rounded-lg ${
@@ -378,8 +310,9 @@ const CashFlowOverview: React.FC = () => {
                     <div className="text-xs text-gray-500">{transaction.category}</div>
                   </div>
                 </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
             <button className="w-full mt-4 py-2 px-4 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
               View All Transactions
             </button>
@@ -394,8 +327,15 @@ const CashFlowOverview: React.FC = () => {
               <ArrowUpRight className="h-5 w-5 text-green-600" />
               Cash Inflow Sources
             </h3>
-            <div className="space-y-4">
-              {cashFlowCategories.inflow.map((category, index) => (
+            {loading ? (
+              <div className="flex items-center justify-center py-8">
+                <RefreshCw className="h-6 w-6 animate-spin text-blue-600" />
+              </div>
+            ) : cashFlowCategories.inflow.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">No inflow data available</div>
+            ) : (
+              <div className="space-y-4">
+                {cashFlowCategories.inflow.map((category, index) => (
                 <div key={index} className="border border-gray-200 rounded-lg p-4">
                   <div className="flex items-center justify-between mb-2">
                     <h4 className="font-medium text-gray-900">{category.category}</h4>
@@ -415,8 +355,9 @@ const CashFlowOverview: React.FC = () => {
                     ></div>
                   </div>
                 </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Cash Outflow Categories */}
@@ -425,8 +366,15 @@ const CashFlowOverview: React.FC = () => {
               <ArrowDownRight className="h-5 w-5 text-red-600" />
               Cash Outflow Categories
             </h3>
-            <div className="space-y-4">
-              {cashFlowCategories.outflow.map((category, index) => (
+            {loading ? (
+              <div className="flex items-center justify-center py-8">
+                <RefreshCw className="h-6 w-6 animate-spin text-blue-600" />
+              </div>
+            ) : cashFlowCategories.outflow.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">No outflow data available</div>
+            ) : (
+              <div className="space-y-4">
+                {cashFlowCategories.outflow.map((category, index) => (
                 <div key={index} className="border border-gray-200 rounded-lg p-4">
                   <div className="flex items-center justify-between mb-2">
                     <h4 className="font-medium text-gray-900">{category.category}</h4>
@@ -452,8 +400,9 @@ const CashFlowOverview: React.FC = () => {
                     ></div>
                   </div>
                 </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>

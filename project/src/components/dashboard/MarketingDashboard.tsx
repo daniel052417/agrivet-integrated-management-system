@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import SimplifiedSidebar from '../shared/layout/SimplifiedSidebar';
+import NonAdminSidebar from '../shared/layout/NonAdminSidebar';
 import Header from '../shared/layout/Header';
 import { CustomUser } from '../../lib/customAuth';
 
@@ -17,6 +18,11 @@ interface MarketingDashboardProps {
 
 const MarketingDashboardComponent: React.FC<MarketingDashboardProps> = ({ user, onLogout }) => {
   const [activeSection, setActiveSection] = useState('marketing-dashboard');
+  
+  // Check if user is super admin
+  const isSuperAdmin = useMemo(() => {
+    return user.role_name === 'super-admin' || user.role === 'super-admin';
+  }, [user]);
 
   const renderContent = () => {
     switch (activeSection) {
@@ -46,12 +52,21 @@ const MarketingDashboardComponent: React.FC<MarketingDashboardProps> = ({ user, 
 
   return (
     <div className="flex h-screen bg-gradient-to-br from-gray-50 to-gray-100">
-      <SimplifiedSidebar 
-        user={user} 
-        onLogout={onLogout}
-        activeSection={activeSection}
-        onSectionChange={setActiveSection}
-      />
+      {isSuperAdmin ? (
+        <SimplifiedSidebar 
+          user={user} 
+          onLogout={onLogout}
+          activeSection={activeSection}
+          onSectionChange={setActiveSection}
+        />
+      ) : (
+        <NonAdminSidebar 
+          user={user} 
+          onLogout={onLogout}
+          activeSection={activeSection}
+          onSectionChange={setActiveSection}
+        />
+      )}
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header onMenuToggle={() => {}} />
         <main className="flex-1 overflow-y-auto bg-gradient-to-br from-gray-50 to-gray-100">

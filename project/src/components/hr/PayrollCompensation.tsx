@@ -5,7 +5,7 @@ import {
   AlertCircle, RefreshCw, Building, Mail, Phone
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { settingsService } from '../../lib/settingsService';
+import { usePayrollCompensationData } from '../../hooks/usePayrollCompensationData';
 interface PayrollPeriod {
   id: string;
   name: string;
@@ -76,10 +76,6 @@ interface Employee {
 }
 
 const PayrollCompensation: React.FC = () => {
-  const [payrollPeriods, setPayrollPeriods] = useState<PayrollPeriod[]>([]);
-  const [payrollRecords, setPayrollRecords] = useState<PayrollRecord[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'periods' | 'records'>('periods');
   const [selectedPeriod, setSelectedPeriod] = useState<string>('');
@@ -96,8 +92,27 @@ const PayrollCompensation: React.FC = () => {
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
   const [showAdjustmentModal, setShowAdjustmentModal] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState<PayrollRecord | null>(null);
-  const [branches, setBranches] = useState<Array<{ id: string; name: string }>>([]);
-  const [hrSettings, setHrSettings] = useState<any>(null);
+
+  // Data fetching with RBAC filtering - uses hook
+  const {
+    payrollPeriods,
+    payrollRecords: hookPayrollRecords,
+    branches,
+    hrSettings,
+    loading,
+    error,
+    refreshPeriods,
+    refreshRecords,
+    loadBranches,
+    loadHRSettings
+  } = usePayrollCompensationData();
+
+  const [payrollRecords, setPayrollRecords] = useState<PayrollRecord[]>([]);
+
+  // Sync hook data to local state for compatibility
+  useEffect(() => {
+    setPayrollRecords(hookPayrollRecords);
+  }, [hookPayrollRecords]);
   // Period form
   const [periodForm, setPeriodForm] = useState({
     name: '',
@@ -115,83 +130,10 @@ const PayrollCompensation: React.FC = () => {
   });
 
   useEffect(() => {
-    loadPayrollData();
-    loadBranches();
-    
-  }, []);
-  useEffect(() => {
-    loadPayrollData();
-    loadBranches();
-    loadHRSettings(); // Add this line
-  }, []);
-  useEffect(() => {
     if (selectedPeriod) {
-      loadPayrollRecords(selectedPeriod);
+      refreshRecords(selectedPeriod);
     }
-  }, [selectedPeriod]);
-
-    const loadHRSettings = async () => {
-  try {
-    const settings = await settingsService.getHRSettings();
-    setHrSettings(settings);
-    console.log('💰 Payroll HR Settings loaded:', settings);
-  } catch (err: any) {
-    console.error('Error loading HR settings:', err);
-  }
-};
-
-  const loadBranches = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('branches')
-        .select('id, name')
-        .eq('is_active', true)
-        .order('name');
-      
-      if (error) throw error;
-      setBranches(data || []);
-    } catch (err: any) {
-      console.error('Error loading branches:', err);
-    }
-  };
-
-  const loadPayrollData = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const { data, error: fetchError } = await supabase
-        .from('payroll_periods')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (fetchError) throw fetchError;
-      setPayrollPeriods(data || []);
-    } catch (err: any) {
-      console.error('Error loading payroll data:', err);
-      setError(err.message || 'Failed to load payroll data');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadPayrollRecords = async (periodId: string) => {
-    try {
-      setLoading(true);
-      const { data, error } = await supabase
-        .rpc('get_payroll_records_with_attendance', {
-          p_period_id: periodId
-        });
-
-      if (error) throw error;
-      setPayrollRecords(data || []);
-    } catch (err: any) {
-      console.error('Error loading payroll records:', err);
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [selectedPeriod, refreshRecords]);
 
   const computePayrollWithSettings = (record: any, attendance: any) => {
   let grossPay = record.base_salary || 0;
@@ -286,7 +228,7 @@ const computePagIBIG = (income: number) => {
         end_date: '',
         period_type: 'monthly'
       });
-      await loadPayrollData();
+      await refreshPeriods();
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
       console.error('Error creating period:', err);
@@ -310,7 +252,7 @@ const computePagIBIG = (income: number) => {
       if (generateError) throw generateError;
 
       setSuccess(`Payroll generated for ${data.total_records} employees!`);
-      await loadPayrollRecords(periodId);
+      await refreshRecords(periodId);
       setShowGeneratePayrollModal(false);
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
@@ -350,7 +292,7 @@ const computePagIBIG = (income: number) => {
         description: '',
         amount: 0
       });
-      await loadPayrollRecords(selectedRecord.period_id);
+      await refreshRecords(selectedRecord.period_id);
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
       console.error('Error adding adjustment:', err);
@@ -381,7 +323,7 @@ const computePagIBIG = (income: number) => {
       if (error) throw error;
 
       setSuccess('Payroll approved successfully!');
-      await loadPayrollRecords(selectedPeriod);
+      await refreshRecords(selectedPeriod);
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
       console.error('Error approving payroll:', err);
@@ -402,7 +344,7 @@ const computePagIBIG = (income: number) => {
       if (error) throw error;
 
       setSuccess('Payroll marked as paid!');
-      await loadPayrollRecords(selectedPeriod);
+      await refreshRecords(selectedPeriod);
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
       console.error('Error marking as paid:', err);

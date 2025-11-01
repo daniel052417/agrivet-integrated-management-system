@@ -1,30 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Search, Filter, Plus, Edit, Trash2, Eye, X, Save, Package, Upload, Image as ImageIcon } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { InventoryManagementRow, ProductFormData, InventoryFilters } from '../../types/inventory';
-
-interface Category {
-  id: string;
-  name: string;
-}
-
-interface Supplier {
-  id: string;
-  name: string;
-}
-
-interface Branch {
-  id: string;
-  name: string;
-}
-
-interface Brand {
-  id: string;
-  name: string;
-  image_url?: string;
-}
-
-// Using the imported interface from types/inventory.ts
+import { InventoryManagementRow, ProductFormData } from '../../types/inventory';
+import { useInventoryManagementData } from '../../hooks/useInventoryManagementData';
 
 const InventoryManagement: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -32,14 +10,20 @@ const InventoryManagement: React.FC = () => {
   const [selectedBranch, setSelectedBranch] = useState('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [branches, setBranches] = useState<Branch[]>([]);
-  const [brands, setBrands] = useState<Brand[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [localError, setLocalError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [products, setProducts] = useState<InventoryManagementRow[]>([]);
-  const [isLoadingProducts, setIsLoadingProducts] = useState<boolean>(false);
+
+  // Data fetching with RBAC filtering - uses hook
+  const {
+    products,
+    categories,
+    suppliers,
+    branches,
+    brands,
+    loading: isLoadingProducts,
+    error: dataError,
+    refreshProducts
+  } = useInventoryManagementData();
   const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const [formData, setFormData] = useState<ProductFormData>({
@@ -145,13 +129,13 @@ const InventoryManagement: React.FC = () => {
     if (file) {
       // Validate file type
       if (!file.type.startsWith('image/')) {
-        setError('Please select a valid image file');
+        setLocalError('Please select a valid image file');
         return;
       }
 
       // Validate file size (5MB max)
       if (file.size > 5 * 1024 * 1024) {
-        setError('Image size must be less than 5MB');
+        setLocalError('Image size must be less than 5MB');
         return;
       }
 
@@ -175,112 +159,6 @@ const InventoryManagement: React.FC = () => {
     }
   };
 
-  const fetchProducts = async () => {
-    console.log('🚀 Starting to fetch products from inventory_management...');
-    setIsLoadingProducts(true);
-    
-    try {
-      // Build query with filters
-      let query = supabase
-        .from('inventory_management')
-        .select('*')
-        .order('product_name');
-
-      // Apply branch filter
-      if (selectedBranch !== 'all') {
-        query = query.eq('branch_id', selectedBranch);
-      }
-
-      // Apply category filter
-      if (selectedCategory !== 'all') {
-        query = query.eq('category_id', selectedCategory);
-      }
-
-      // Apply search filter
-      if (searchTerm.trim()) {
-        query = query.or(`product_name.ilike.%${searchTerm}%,sku.ilike.%${searchTerm}%,category_name.ilike.%${searchTerm}%`);
-      }
-
-      const { data, error } = await query;
-      
-      if (error) { 
-        console.error('❌ Query Error:', error);
-        throw error;
-      }
-      
-      console.log('🔍 Raw inventory data fetched:', data);
-      console.log('📊 Number of inventory records:', data?.length || 0);
-      console.log('🏢 Selected branch:', selectedBranch);
-      console.log('📂 Selected category:', selectedCategory);
-      console.log('🔍 Search term:', searchTerm);
-      
-      setProducts(data || []);
-    } catch (err: any) {
-      console.error('❌ Error fetching products:', err);
-      setError('Failed to load products: ' + (err.message || 'Unknown error'));
-    } finally {
-      setIsLoadingProducts(false);
-    }
-  };
-
-  // Fetch categories and suppliers on component mount
-  useEffect(() => {
-    const fetchData = async () => {
-      console.log('🎯 Component mounted, starting data fetch...');
-      try {
-        // Fetch categories
-        const { data: categoriesData, error: categoriesError } = await supabase
-          .from('categories')
-          .select('id, name')
-          .eq('is_active', true)
-          .order('name');
-
-        if (categoriesError) throw categoriesError;
-        console.log('📂 Categories loaded:', categoriesData?.length || 0, 'categories');
-        setCategories(categoriesData || []);
-
-        // Fetch suppliers
-        const { data: suppliersData, error: suppliersError } = await supabase
-          .from('suppliers')
-          .select('id, name')
-          .eq('is_active', true)
-          .order('name');
-
-        if (suppliersError) throw suppliersError;
-        console.log('🏭 Suppliers loaded:', suppliersData?.length || 0, 'suppliers');
-        setSuppliers(suppliersData || []);
-
-        // Fetch branches
-        const { data: branchesData, error: branchesError } = await supabase
-          .from('branches')
-          .select('id, name')
-          .eq('is_active', true)
-          .order('name');
-
-        if (branchesError) throw branchesError;
-        console.log('🏢 Branches loaded:', branchesData?.length || 0, 'branches');
-        setBranches(branchesData || []);
-
-        // Fetch brands
-        const { data: brandsData, error: brandsError } = await supabase
-          .from('brands')
-          .select('id, name, image_url')
-          .order('name');
-
-        if (brandsError) throw brandsError;
-        console.log('🏷️ Brands loaded:', brandsData?.length || 0, 'brands');
-        setBrands(brandsData || []);
-
-        await fetchProducts();
-      } catch (error) {
-        console.error('Error fetching data:', error);
-        setError('Failed to load categories and suppliers');
-      }
-    };
-
-    fetchData();
-  }, []);
-
   // Refetch products when filters change
   useEffect(() => {
     if (branches.length > 0) {
@@ -288,14 +166,18 @@ const InventoryManagement: React.FC = () => {
       console.log('🏢 Selected branch:', selectedBranch);
       console.log('📂 Selected category:', selectedCategory);
       console.log('🔍 Search term:', searchTerm);
-      fetchProducts();
+      refreshProducts({
+        searchTerm,
+        selectedBranch,
+        selectedCategory
+      });
     }
-  }, [selectedBranch, selectedCategory, searchTerm]);
+  }, [selectedBranch, selectedCategory, searchTerm, branches.length, refreshProducts]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    setError(null);
+    setLocalError(null);
     setSuccess(null);
 
     try {
@@ -339,7 +221,7 @@ const InventoryManagement: React.FC = () => {
         } catch (uploadError: any) {
           console.error('Image upload failed:', uploadError);
           // For now, continue without image rather than failing the entire form
-          setError(`Image upload failed: ${uploadError?.message || 'Unknown error'}. Product will be saved without image.`);
+          setLocalError(`Image upload failed: ${uploadError?.message || 'Unknown error'}. Product will be saved without image.`);
           imageUrl = ''; // Set to empty string so we don't save an invalid URL
         }
       }
@@ -575,7 +457,11 @@ const InventoryManagement: React.FC = () => {
 
       // Success
       setSuccess(modalMode === 'add' ? 'Product added successfully!' : 'Product updated successfully!');
-      await fetchProducts();
+      await refreshProducts({
+        searchTerm,
+        selectedBranch,
+        selectedCategory
+      });
       setIsModalOpen(false);
       setFormData({
         name: '',
@@ -607,7 +493,7 @@ const InventoryManagement: React.FC = () => {
 
     } catch (error: any) {
       console.error('Error adding product:', error);
-      setError(error.message || 'Failed to add product');
+      setLocalError(error.message || 'Failed to add product');
     } finally {
       setIsLoading(false);
     }
@@ -648,7 +534,7 @@ const InventoryManagement: React.FC = () => {
     ]);
     setImageFile(null);
     setImagePreview(null);
-    setError(null);
+    setLocalError(null);
     setSuccess(null);
   };
 
@@ -668,7 +554,7 @@ const InventoryManagement: React.FC = () => {
 
   const removeProductUnit = (id: string) => {
     if (productUnits.length <= 1) {
-      setError('At least one unit is required');
+      setLocalError('At least one unit is required');
       return;
     }
     setProductUnits(productUnits.filter(unit => unit.id !== id));
@@ -754,10 +640,14 @@ const InventoryManagement: React.FC = () => {
         .eq('id', id);
       if (productError) throw productError;
 
-      await fetchProducts();
+      await refreshProducts({
+        searchTerm,
+        selectedBranch,
+        selectedCategory
+      });
     } catch (err: any) {
       console.error('Delete failed', err);
-      setError('Failed to delete product');
+      setLocalError('Failed to delete product');
     }
   };
 
@@ -868,9 +758,12 @@ const InventoryManagement: React.FC = () => {
 
     } catch (error) {
       console.error('Error fetching product units:', error);
-      setError('Failed to load product details');
+      setLocalError('Failed to load product details');
     }
   };
+
+  // Combine data error and local error for display
+  const displayError = localError || dataError;
   return (
     <div className="p-6 space-y-6">
       {/* Success/Error Messages */}
@@ -883,12 +776,12 @@ const InventoryManagement: React.FC = () => {
         </div>
       )}
 
-      {error && (
+      {displayError && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center space-x-3">
           <div className="w-5 h-5 bg-red-500 rounded-full flex items-center justify-center">
             <X className="w-3 h-3 text-white" />
           </div>
-          <p className="text-red-800 font-medium">{error}</p>
+          <p className="text-red-800 font-medium">{displayError}</p>
         </div>
       )}
 
@@ -1360,9 +1253,9 @@ const InventoryManagement: React.FC = () => {
 
 
                   {/* Form Error Display */}
-                  {error && (
+                  {localError && (
                     <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-                      <p className="text-red-800 text-sm">{error}</p>
+                      <p className="text-red-800 text-sm">{localError}</p>
                     </div>
                   )}
                 </div>

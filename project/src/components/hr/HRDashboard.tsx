@@ -3,36 +3,41 @@ import {
   Users, Calendar, FileText, TrendingUp, 
   UserPlus, Award, BookOpen, BarChart3, Bell,
   CheckCircle, AlertCircle, Clock as ClockIcon,
-  ListTodo, Zap, DollarSign
+  ListTodo, Zap, DollarSign, RefreshCw
 } from 'lucide-react';
+import { useHRDashboardData } from '../../hooks/useHRDashboardData';
 
 // import PayrollCompensation from './PayrollCompensation';
-
-interface HRMetrics {
-  totalEmployees: number;
-  activeEmployees: number;
-  newHires: number;
-  pendingApprovals: number;
-  averageAttendance: number;
-  leaveRequests: number;
-}
 
 const HRDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState('overview');
 
-  // Mock data - replace with actual data from your database
-  const hrMetrics: HRMetrics = {
-    totalEmployees: 24,
-    activeEmployees: 22,
-    newHires: 3,
-    pendingApprovals: 8,
-    averageAttendance: 94.2,
-    leaveRequests: 5
-  };
+  // Data fetching with RBAC filtering - uses hook
+  const {
+    hrMetrics,
+    loading,
+    error,
+    refreshData
+  } = useHRDashboardData();
 
   const renderOverview = () => (
     <div className="space-y-6">
+      {/* Error Display */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+          {error}
+        </div>
+      )}
+
+      {/* Loading State */}
+      {loading && (
+        <div className="flex items-center justify-center py-12">
+          <RefreshCw className="h-8 w-8 animate-spin text-blue-600" />
+        </div>
+      )}
+
       {/* Key Metrics */}
+      {!loading && (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
           <div className="flex items-center">
@@ -82,8 +87,10 @@ const HRDashboard: React.FC = () => {
           </div>
         </div>
       </div>
+      )}
 
       {/* Quick Actions */}
+      {!loading && (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h3>
@@ -132,6 +139,7 @@ const HRDashboard: React.FC = () => {
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 
@@ -142,8 +150,20 @@ const HRDashboard: React.FC = () => {
   return (
     <div className="hr-dashboard">
       <div className="mb-6">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">HR Dashboard</h1>
-        <p className="text-gray-600">Human resources management and analytics</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">HR Dashboard</h1>
+            <p className="text-gray-600">Human resources management and analytics</p>
+          </div>
+          <button
+            onClick={() => refreshData()}
+            disabled={loading}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {/* Tab Navigation */}

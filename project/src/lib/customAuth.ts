@@ -71,6 +71,7 @@ export const SYSTEM_ROLES = {
   MARKETING_STAFF: 'marketing-staff',
   CASHIER: 'cashier',
   INVENTORY_CLERK: 'inventory-clerk',
+  FINANCE_STAFF: 'finance-staff',
   USER: 'user', // Default role for general users
 } as const;
 
@@ -119,6 +120,11 @@ export const ROLE_SIDEBAR_CONFIG = {
   [SYSTEM_ROLES.INVENTORY_CLERK]: {
     sections: [
       'inventory-management', 'all-products', 'categories', 'low-stock',
+    ],
+  },
+  [SYSTEM_ROLES.FINANCE_STAFF]: {
+    sections: [
+      'finance', 'finance-dashboard', 'sales-income', 'expenses', 'cash-flow', 'financial-reports',
     ],
   },
   [SYSTEM_ROLES.USER]: { // Default for basic users
