@@ -357,3 +357,4 @@ export const logActivity = async (
 - Component falls back to parsing `user_agent` if JSONB is empty
 - Location requires third-party IP geolocation service integration
 
+

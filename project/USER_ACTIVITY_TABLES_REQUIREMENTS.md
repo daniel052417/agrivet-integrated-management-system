@@ -224,3 +224,4 @@ You'll need to track sessions:
 - Implement session tracking to populate `user_sessions`
 - Update component to handle real data transformation
 
+

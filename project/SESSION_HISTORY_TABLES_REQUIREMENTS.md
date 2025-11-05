@@ -326,3 +326,4 @@ $$ LANGUAGE plpgsql;
 4. Ensure `device_info` and `location_info` JSONB fields are properly populated
 5. Update the component's `loadSessionHistory()` function to query real data and transform it
 
+
