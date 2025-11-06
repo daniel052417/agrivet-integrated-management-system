@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import logo from '../../../assets/logo.png';
 import { CustomUser } from '../../../lib/customAuth';
-import { settingsService } from '../../../lib/settingsService'; // ✅ ADD THIS
+import { settingsService } from '../../../lib/settingsService';
 
 interface SimplifiedSidebarProps {
   user: CustomUser;
@@ -30,17 +30,18 @@ interface MenuItem {
 const SimplifiedSidebar: React.FC<SimplifiedSidebarProps> = ({ user, activeSection, onSectionChange, onLogout }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [expandedCategories, setExpandedCategories] = useState<string[]>(['Default']);
-  const [hrSettings, setHrSettings] = useState<any>(null); // ✅ Already exists
+  const [hrSettings, setHrSettings] = useState<any>(null);
+  const [companyLogo, setCompanyLogo] = useState<string | null>(null);
+  const [appName, setAppName] = useState('TIONGSON');
   
   // Check if user is super admin
   const isSuperAdmin = user.role_name === 'super-admin' || user.role === 'super-admin';
 
-  // ✅ ADD THIS useEffect to load HR settings
   useEffect(() => {
     loadHRSettings();
+    loadLogoSettings();
   }, []);
 
-  // ✅ ADD THIS function
   const loadHRSettings = async () => {
     try {
       const settings = await settingsService.getHRSettings();
@@ -48,6 +49,17 @@ const SimplifiedSidebar: React.FC<SimplifiedSidebarProps> = ({ user, activeSecti
       console.log('🔧 HR Settings loaded in sidebar:', settings);
     } catch (err) {
       console.error('Error loading HR settings:', err);
+    }
+  };
+
+  const loadLogoSettings = async () => {
+    try {
+      const settings = await settingsService.getAllSettings();
+      const general = settings.general || {};
+      setCompanyLogo(general.companyLogo || settings.company_logo || null);
+      setAppName(general.companyName || settings.company_name || 'TIONGSON');
+    } catch (error) {
+      console.error('Error loading logo settings:', error);
     }
   };
 
@@ -184,8 +196,6 @@ const SimplifiedSidebar: React.FC<SimplifiedSidebarProps> = ({ user, activeSecti
       category: 'Reports',
     },
     
-    { id: 'exports', label: 'Exports & Reports', icon: FileText, category: 'Other' },
-    { id: 'claims', label: 'Claims', icon: MessageSquare, category: 'Other' },
     { id: 'settings', label: 'Settings', icon: Settings, category: 'Other' },
   ];
 
@@ -322,14 +332,34 @@ const SimplifiedSidebar: React.FC<SimplifiedSidebarProps> = ({ user, activeSecti
           {!isCollapsed && (
             <div className="flex items-center space-x-3">
               <div className="w-10 h-10 rounded-xl overflow-hidden shadow-lg">
-                <img src={logo} alt="AGRIVET" className="w-full h-full object-cover" />
+                <img 
+                  src={companyLogo || logo} 
+                  alt="Company Logo" 
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    // Fallback to default logo if company logo fails to load
+                    e.currentTarget.src = logo;
+                  }}
+                />
               </div>
               <div>
-                <h1 className="text-xl font-bold text-green-800">TIONGSON</h1>
+                <h1 className="text-xl font-bold text-green-800">{appName}</h1>
                 <p className="text-xs text-gray-500">
                   {isSuperAdmin ? 'Super Admin Dashboard' : 'Admin Dashboard'}
                 </p>
               </div>
+            </div>
+          )}
+          {isCollapsed && (
+            <div className="w-10 h-10 rounded-xl overflow-hidden shadow-lg mx-auto">
+              <img 
+                src={companyLogo || logo} 
+                alt="Company Logo" 
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  e.currentTarget.src = logo;
+                }}
+              />
             </div>
           )}
           

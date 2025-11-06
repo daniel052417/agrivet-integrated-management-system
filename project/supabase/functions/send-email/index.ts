@@ -17,9 +17,11 @@ interface EmailRequest {
   to: string;
   name: string;
   activationToken?: string;
+  otpCode?: string;
+  expiryMinutes?: number;
   companyName?: string;
   expiryHours?: number;
-  type: 'activation' | 'confirmation';
+  type: 'activation' | 'confirmation' | 'otp';
 }
 
 serve(async (req) => {
@@ -29,7 +31,7 @@ serve(async (req) => {
   }
 
   try {
-    const { to, name, activationToken, companyName = 'AgriVet Management System', expiryHours = 24, type }: EmailRequest = await req.json()
+    const { to, name, activationToken, otpCode, expiryMinutes, companyName = 'AgriVet Management System', expiryHours = 24, type }: EmailRequest = await req.json()
 
     if (!to || !name) {
       return new Response(
@@ -114,6 +116,72 @@ serve(async (req) => {
           ⏰ Important: This activation link will expire in ${expiryHours} hours for security reasons.
           
           If you didn't request this account or have any questions, please contact your HR department.
+        `
+      };
+    } else if (type === 'otp' && otpCode) {
+      emailContent = {
+        to,
+        subject: `Your Login Verification Code - ${companyName}`,
+        html: `
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Login Verification Code</title>
+            <style>
+              body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
+              .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+              .header { background: #2563eb; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
+              .content { background: #f8fafc; padding: 30px; border-radius: 0 0 8px 8px; }
+              .otp-box { background: white; border: 2px solid #2563eb; border-radius: 8px; padding: 20px; text-align: center; margin: 20px 0; }
+              .otp-code { font-size: 32px; font-weight: bold; color: #2563eb; letter-spacing: 8px; font-family: 'Courier New', monospace; }
+              .warning { background: #fef3c7; border: 1px solid #f59e0b; padding: 15px; border-radius: 6px; margin: 20px 0; }
+              .footer { text-align: center; margin-top: 30px; color: #6b7280; font-size: 14px; }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <div class="header">
+                <h1>🔐 Login Verification Code</h1>
+              </div>
+              <div class="content">
+                <h2>Hello ${name}!</h2>
+                <p>You've requested to log in to your <strong>${companyName}</strong> account. Please use the verification code below:</p>
+                
+                <div class="otp-box">
+                  <div style="color: #6b7280; font-size: 14px; margin-bottom: 10px;">Your verification code:</div>
+                  <div class="otp-code">${otpCode}</div>
+                </div>
+                
+                <div class="warning">
+                  <strong>⏰ Important:</strong> This code will expire in ${expiryMinutes || 5} minutes. Do not share this code with anyone.
+                </div>
+                
+                <p>If you didn't request this code, please ignore this email or contact support if you're concerned about your account's security.</p>
+              </div>
+              <div class="footer">
+                <p>This is an automated security message. Please do not reply to this email.</p>
+                <p>&copy; ${new Date().getFullYear()} ${companyName}. All rights reserved.</p>
+              </div>
+            </div>
+          </body>
+          </html>
+        `,
+        text: `
+          Login Verification Code - ${companyName}
+          
+          Hello ${name}!
+          
+          You've requested to log in to your ${companyName} account. Please use the verification code below:
+          
+          Verification Code: ${otpCode}
+          
+          ⏰ Important: This code will expire in ${expiryMinutes || 5} minutes. Do not share this code with anyone.
+          
+          If you didn't request this code, please ignore this email or contact support if you're concerned about your account's security.
+          
+          This is an automated security message. Please do not reply to this email.
         `
       };
     } else if (type === 'confirmation') {

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   ShoppingCart, 
   Package, 
@@ -17,6 +17,7 @@ import logo from '../../assets/logo.png';
 import { CustomUser } from '../../lib/customAuth';
 import { useBranchTerminal } from '../../hooks/useBranchTerminal';
 import { branchTerminalService } from '../../lib/branchTerminalService';
+import { settingsService } from '../../lib/settingsService';
 
 interface POSLayoutProps {
   children: React.ReactNode;
@@ -36,7 +37,22 @@ const POSLayout: React.FC<POSLayoutProps> = ({
   onlineOrdersCount = 0
 }) => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [companyLogo, setCompanyLogo] = useState<string | null>(null);
   const { branchTerminalData, loading, error } = useBranchTerminal(user);
+
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const settings = await settingsService.getAllSettings();
+        const general = settings.general || {};
+        setCompanyLogo(general.companyLogo || settings.company_logo || null);
+      } catch (error) {
+        console.error('Error loading logo settings:', error);
+      }
+    };
+
+    loadSettings();
+  }, []);
 
   const navigationItems = [
     { id: 'cashier', label: 'Cashier', icon: ShoppingCart, color: 'bg-green-500' },
@@ -63,7 +79,14 @@ const POSLayout: React.FC<POSLayoutProps> = ({
               </button>
               
               <div className="flex items-center space-x-3">
-                <img src={logo} alt="AgriVet POS" className="w-10 h-10 rounded-lg" />
+                <img 
+                  src={companyLogo || logo} 
+                  alt="Company Logo" 
+                  className="w-10 h-10 rounded-lg"
+                  onError={(e) => {
+                    e.currentTarget.src = logo;
+                  }}
+                />
                 <div>
                   {loading ? (
                     <div className="flex items-center space-x-2">

@@ -140,8 +140,6 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, onLogou
 
       case 'reports':
         return <ReportsAnalytics />;
-      case 'event-center':
-        return <EventCenter />;
       case 'settings':
         return <SettingsPage />;
       
@@ -196,30 +194,7 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, onLogou
       // New menu items from the updated sidebar
       case 'sales-pos':
         return <SalesDashboard />; // Use SalesDashboard for Sales & POS
-      case 'exports':
-        return (
-          <div className="p-6">
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
-              <h2 className="text-2xl font-bold text-gray-800 mb-4">Exports & Reports</h2>
-              <p className="text-gray-600">Export data and generate reports</p>
-              <div className="mt-4 inline-flex items-center px-4 py-2 bg-blue-100 text-blue-800 rounded-lg">
-                <span className="text-sm">📊 Export Tools</span>
-              </div>
-            </div>
-          </div>
-        );
-      case 'claims':
-        return (
-          <div className="p-6">
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
-              <h2 className="text-2xl font-bold text-gray-800 mb-4">Claims Management</h2>
-              <p className="text-gray-600">Manage insurance claims and reimbursements</p>
-              <div className="mt-4 inline-flex items-center px-4 py-2 bg-green-100 text-green-800 rounded-lg">
-                <span className="text-sm">📋 Claims System</span>
-              </div>
-            </div>
-          </div>
-        );
+      
       
       default:
         return (

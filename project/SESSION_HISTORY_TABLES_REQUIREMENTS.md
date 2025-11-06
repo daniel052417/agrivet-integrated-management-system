@@ -327,3 +327,6 @@ $$ LANGUAGE plpgsql;
 5. Update the component's `loadSessionHistory()` function to query real data and transform it
 
 
+
+
+

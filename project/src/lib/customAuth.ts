@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 import bcrypt from 'bcryptjs';
 import { posSessionService } from './posSessionService';
+import { mfaService } from './mfaService';
 
 // Custom user interface based on your actual users table schema
 export interface CustomUser {
@@ -153,7 +154,9 @@ class CustomAuthService {
   }
 
   // Authenticate user with email and password against the 'users' table
-  public async signInWithPassword(email: string, password: string): Promise<CustomUser> {
+  // Returns CustomUser if login successful and MFA not required
+  // Throws MFARequiredError if MFA is required (check error.requiresMFA)
+  public async signInWithPassword(email: string, password: string): Promise<CustomUser | { requiresMFA: true; userId: string; userEmail: string; userName: string; userRole: string }> {
     try {
       // 1. Fetch user from the 'users' table
       console.log('🔍 Searching for user with email:', email);
@@ -243,8 +246,32 @@ class CustomAuthService {
       // 5. Reset failed login attempts on successful login
       await this.resetFailedLoginAttempts(finalUserData.id);
 
-      // 6. Construct CustomUser object
+      // 6. Check MFA requirement BEFORE creating session
       const userRole = finalUserData.user_roles?.[0]?.roles; // Handle case where user_roles might be null/undefined
+      const roleName = userRole?.name || finalUserData.role || 'user';
+      
+      // Check if MFA is required for this user's role
+      const mfaRequired = await mfaService.isMFARequired(roleName);
+      
+      if (mfaRequired) {
+        // Check if device is verified
+        const deviceFingerprint = mfaService.generateDeviceFingerprint();
+        const isDeviceVerified = await mfaService.isDeviceVerified(finalUserData.id, deviceFingerprint);
+        
+        if (!isDeviceVerified) {
+          // MFA required - return special response
+          console.log('🔐 MFA required for user:', finalUserData.email);
+          return {
+            requiresMFA: true,
+            userId: finalUserData.id,
+            userEmail: finalUserData.email,
+            userName: `${finalUserData.first_name} ${finalUserData.last_name}`,
+            userRole: roleName
+          };
+        }
+      }
+
+      // 7. Construct CustomUser object (MFA not required or device verified)
       
       // If no role found, create a default role structure
       if (!userRole) {
@@ -405,10 +432,10 @@ class CustomAuthService {
       const session = await this.createSession(customUser.id, loginMethod, mfaUsed);
       this.currentSession = session;
 
-      // 8. Update last login and activity
+      // 9. Update last login and activity
       await this.updateLastLogin(customUser.id);
 
-      // 9. Create POS session if user is a cashier
+      // 10. Create POS session if user is a cashier
       if (userRole.name === 'cashier' && customUser.branch_id) {
         try {
           console.log('🔄 [POS Session] Validating POS session creation for cashier:', customUser.id);
@@ -622,7 +649,7 @@ class CustomAuthService {
   }
 
   // Create a new session for the user and record it in user_sessions table
-  private async createSession(
+  public async createSession(
     userId: string, 
     loginMethod: 'password' | 'mfa' | 'sso' = 'password',
     mfaUsed: boolean = false

@@ -127,6 +127,31 @@ class SettingsService {
     return this.getSettings();
   }
 
+  // Deep merge utility function
+  private deepMerge(target: any, source: any): any {
+    const output = { ...target };
+    
+    if (this.isObject(target) && this.isObject(source)) {
+      Object.keys(source).forEach(key => {
+        if (this.isObject(source[key])) {
+          if (!(key in target)) {
+            Object.assign(output, { [key]: source[key] });
+          } else {
+            output[key] = this.deepMerge(target[key], source[key]);
+          }
+        } else {
+          Object.assign(output, { [key]: source[key] });
+        }
+      });
+    }
+    
+    return output;
+  }
+
+  private isObject(item: any): boolean {
+    return item && typeof item === 'object' && !Array.isArray(item);
+  }
+
   async updateSettings(newSettings: Partial<any>): Promise<boolean> {
     try {
       console.log('🔄 Updating settings in database (system_settings)...');
@@ -134,8 +159,20 @@ class SettingsService {
       // Get current settings first
       const currentSettings = await this.getSettings();
 
-      // Merge with new settings (shallow merge)
-      const mergedSettings = { ...currentSettings, ...newSettings };
+      // Deep merge with new settings to preserve nested structures
+      const mergedSettings = this.deepMerge(currentSettings, newSettings);
+
+      // Also maintain flat keys for backward compatibility (merge flat keys from both)
+      Object.keys(newSettings).forEach(sectionKey => {
+        if (this.isObject(newSettings[sectionKey])) {
+          // If it's a nested object (like general, security, etc.), also add flat keys
+          Object.keys(newSettings[sectionKey]).forEach(key => {
+            // Convert camelCase to snake_case for flat keys
+            const flatKey = key.replace(/([A-Z])/g, '_$1').toLowerCase();
+            mergedSettings[flatKey] = newSettings[sectionKey][key];
+          });
+        }
+      });
 
       // Determine updater user id using multiple strategies
       const updatedBy = await this.getUpdaterUserId();
@@ -229,6 +266,7 @@ class SettingsService {
       contact_email: 'admin@agrivet.com',
       support_phone: '+63 2 8123 4567',
       company_address: '123 Business St, Manila, Philippines',
+      company_logo: null,
       brand_color: '#3B82F6',
       currency: 'PHP',
       auto_save: true,
@@ -238,22 +276,29 @@ class SettingsService {
       date_format: 'YYYY-MM-DD',
       receipt_header: 'Thank you for your business!',
       receipt_footer: 'Visit us again soon!',
-      default_branch: 'main',
+      show_logo_on_receipt: true,
+      receipt_number_prefix: 'RCP',
+      default_branch: '',
       selected_timezone: 'Asia/Manila',
       selected_theme: 'light',
       selected_language: 'en',
       
       // Security Settings Defaults
       session_timeout: 30,
-      require_2fa: false,
-      password_min_length: 8,
-      password_require_special: true,
-      password_expiration: 90,
       login_attempts: 5,
       lockout_duration: 15,
-      ip_whitelist: [],
-      ip_banlist: [],
-      audit_log_visibility: true,
+      require_email_verification: false,
+      require_mfa: false,
+      require_2fa: false, // Backward compatibility
+      mfa_applies_to: {
+        superAdmin: true,
+        cashier: true
+      },
+      password_min_length: 8,
+      password_require_special: true,
+      password_require_mixed_case: false,
+      allow_login_only_verified_browsers: false,
+      notify_owner_on_new_device: false,
       
       // Notification Settings Defaults
       email_notifications: true,

@@ -692,3 +692,6 @@ CREATE TABLE IF NOT EXISTS public.expense_categories (
 CREATE INDEX IF NOT EXISTS idx_expense_categories_parent ON expense_categories(parent_id);
 ```
 
+
+
+

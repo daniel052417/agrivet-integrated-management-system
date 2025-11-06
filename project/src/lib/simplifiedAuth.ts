@@ -54,7 +54,7 @@ export const ROLE_SIDEBAR_CONFIG = {
       'staff-user-management', 'user-accounts', 'session-history', 'user-roles-overview', 'roles-permissions', 'activity-logs',
       'hr', 'hr-dashboard', 'staff', 'attendance-dashboard', 'leave-management', 'hr-analytics', 'payroll',
       'marketing', 'marketing-overview', 'promotions-announcements', 'insights-analytics', 'client-notifications', 'facebook-integration',
-      'reports', 'exports', 'claims', 'settings'
+      'reports','settings'
     ]
   },
   [SYSTEM_ROLES.HR_ADMIN]: {

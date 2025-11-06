@@ -2,9 +2,11 @@ import { useState, useEffect } from 'react';
 import LoginPage from './Login/components/LoginPage';
 import AccountActivation from './components/auth/AccountActivation';
 import OpeningCashModal from './components/modals/OpeningCashModal';
+import MFAVerification from './components/auth/MFAVerification';
 import { customAuth, CustomUser } from './lib/customAuth';
 import { getDashboardForRole } from './lib/rolePages';
 import { posSessionService } from './lib/posSessionService';
+import { mfaAuth, MFAVerificationData } from './lib/mfaAuth';
 
 function App() {
   const [user, setUser] = useState<CustomUser | null>(null);
@@ -19,6 +21,10 @@ function App() {
   // State for Opening Cash Modal
   const [showOpeningCashModal, setShowOpeningCashModal] = useState(false);
   const [needsOpeningCash, setNeedsOpeningCash] = useState(false);
+
+  // State for MFA Verification
+  const [mfaData, setMfaData] = useState<MFAVerificationData | null>(null);
+  const [showMFA, setShowMFA] = useState(false);
 
   // Check if we're on the activation page
   const isActivationPage = () => {
@@ -72,10 +78,25 @@ function App() {
   const handleLogin = async (credentials: { username: string; password: string }) => {
     try {
       setError('');
-      const userData = await customAuth.signInWithPassword(
+      const result = await customAuth.signInWithPassword(
         credentials.username,
         credentials.password
       );
+      
+      // Check if MFA is required
+      if ('requiresMFA' in result && result.requiresMFA) {
+        setMfaData({
+          userId: result.userId,
+          userEmail: result.userEmail,
+          userName: result.userName,
+          userRole: result.userRole
+        });
+        setShowMFA(true);
+        return;
+      }
+      
+      // Normal login successful
+      const userData = result as CustomUser;
       
       // Check if user is a cashier and needs to set opening cash
       const isCashier = userData.role_name === 'cashier' || userData.role === 'cashier';
@@ -105,6 +126,45 @@ function App() {
       console.error('Login error:', err);
       setError(err.message || 'Login failed');
     }
+  };
+
+  const handleMFAVerify = async (otp: string) => {
+    if (!mfaData) return;
+    
+    try {
+      setError('');
+      const userData = await mfaAuth.verifyOTPAndCompleteLogin(mfaData, otp);
+      
+      // Check if user is a cashier and needs to set opening cash
+      const isCashier = userData.role_name === 'cashier' || userData.role === 'cashier';
+      
+      if (isCashier) {
+        const hasPosSession = (userData as any).current_pos_session;
+        if (hasPosSession) {
+          const session = (userData as any).current_pos_session;
+          if (!session.starting_cash || session.starting_cash === 0) {
+            setNeedsOpeningCash(true);
+            setShowOpeningCashModal(true);
+          }
+        } else {
+          setNeedsOpeningCash(true);
+          setShowOpeningCashModal(true);
+        }
+      }
+      
+      setUser(userData);
+      setShowMFA(false);
+      setMfaData(null);
+    } catch (err: any) {
+      console.error('MFA verification error:', err);
+      throw err; // Re-throw to let MFAVerification component handle it
+    }
+  };
+
+  const handleMFACancel = () => {
+    setShowMFA(false);
+    setMfaData(null);
+    setError('Login cancelled');
   };
 
   const handleOpeningCashSubmit = async (amount: number) => {
@@ -211,6 +271,19 @@ function App() {
           console.log('🔄 Navigating to:', path);
           window.location.href = path;
         }}
+      />
+    );
+  }
+
+  // Show MFA verification if required
+  if (showMFA && mfaData) {
+    return (
+      <MFAVerification
+        userId={mfaData.userId}
+        userEmail={mfaData.userEmail}
+        userName={mfaData.userName}
+        onVerify={handleMFAVerify}
+        onCancel={handleMFACancel}
       />
     );
   }

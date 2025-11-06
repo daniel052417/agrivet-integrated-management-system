@@ -70,3 +70,6 @@ COMMENT ON COLUMN public.inventory_movements.quantity IS 'Quantity change: posit
 COMMENT ON COLUMN public.inventory_movements.reference_number IS 'Related transaction number (e.g., PO number, transaction number, adjustment ID)';
 COMMENT ON COLUMN public.inventory_movements.reference_id IS 'Foreign key to related transaction (e.g., purchase_order_id, pos_transaction_id)';
 
+
+
+

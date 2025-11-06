@@ -29,9 +29,12 @@ interface MenuItem {
 const NonAdminSidebar: React.FC<NonAdminSidebarProps> = ({ user, activeSection, onSectionChange, onLogout }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [hrSettings, setHrSettings] = useState<any>(null);
+  const [companyLogo, setCompanyLogo] = useState<string | null>(null);
+  const [appName, setAppName] = useState('TIONGSON');
 
   useEffect(() => {
     loadHRSettings();
+    loadLogoSettings();
   }, []);
 
   const loadHRSettings = async () => {
@@ -41,6 +44,17 @@ const NonAdminSidebar: React.FC<NonAdminSidebarProps> = ({ user, activeSection, 
       console.log('🔧 HR Settings loaded in sidebar:', settings);
     } catch (err) {
       console.error('Error loading HR settings:', err);
+    }
+  };
+
+  const loadLogoSettings = async () => {
+    try {
+      const settings = await settingsService.getAllSettings();
+      const general = settings.general || {};
+      setCompanyLogo(general.companyLogo || settings.company_logo || null);
+      setAppName(general.companyName || settings.company_name || 'TIONGSON');
+    } catch (error) {
+      console.error('Error loading logo settings:', error);
     }
   };
 
@@ -249,14 +263,33 @@ const NonAdminSidebar: React.FC<NonAdminSidebarProps> = ({ user, activeSection, 
           {!isCollapsed && (
             <div className="flex items-center space-x-3">
               <div className="w-10 h-10 rounded-xl overflow-hidden shadow-lg">
-                <img src={logo} alt="AGRIVET" className="w-full h-full object-cover" />
+                <img 
+                  src={companyLogo || logo} 
+                  alt="Company Logo" 
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    e.currentTarget.src = logo;
+                  }}
+                />
               </div>
               <div>
-                <h1 className="text-xl font-bold text-green-800">TIONGSON</h1>
+                <h1 className="text-xl font-bold text-green-800">{appName}</h1>
                 <p className="text-xs text-gray-500">
                   Admin Dashboard
                 </p>
               </div>
+            </div>
+          )}
+          {isCollapsed && (
+            <div className="w-10 h-10 rounded-xl overflow-hidden shadow-lg mx-auto">
+              <img 
+                src={companyLogo || logo} 
+                alt="Company Logo" 
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  e.currentTarget.src = logo;
+                }}
+              />
             </div>
           )}
           
