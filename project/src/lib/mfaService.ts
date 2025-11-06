@@ -112,18 +112,27 @@ class MFAService {
    */
   async isDeviceVerified(userId: string, deviceFingerprint: string): Promise<boolean> {
     try {
+      // Use maybeSingle() instead of single() to avoid 406 error when no record exists
       const { data, error } = await supabase
         .from('verified_devices')
         .select('id')
         .eq('user_id', userId)
         .eq('device_fingerprint', deviceFingerprint)
-        .single();
+        .maybeSingle();
 
-      if (error || !data) {
+      // If error is a 406 (Not Acceptable) or PGRST116 (no rows), device is not verified
+      if (error) {
+        // PGRST116 means no rows found, which is expected for unverified devices
+        if (error.code === 'PGRST116') {
+          return false;
+        }
+        // Log other errors but don't fail
+        console.warn('Error checking device verification (non-critical):', error);
         return false;
       }
 
-      return true;
+      // If data exists, device is verified
+      return !!data;
     } catch (error) {
       console.error('Error checking device verification:', error);
       return false;
@@ -271,7 +280,7 @@ class MFAService {
         .select('id')
         .eq('user_id', userId)
         .eq('device_fingerprint', deviceFingerprint)
-        .single();
+        .maybeSingle();
 
       if (existing) {
         // Update last used time

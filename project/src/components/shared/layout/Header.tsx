@@ -1,5 +1,7 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Search, Bell, User, Settings, Menu } from 'lucide-react';
+import NotificationDropdown from '../NotificationDropdown';
+import UserNotificationsService from '../../../lib/userNotificationsService';
 
 interface HeaderProps {
   onMenuToggle?: () => void;
@@ -16,6 +18,40 @@ const Header: React.FC<HeaderProps> = ({
   user,
   onLogout
 }) => {
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const userId = user?.id || user?.user_id;
+
+  useEffect(() => {
+    if (userId) {
+      // Fetch unread count on mount
+      fetchUnreadCount();
+      
+      // Poll for new notifications every 30 seconds
+      const interval = setInterval(fetchUnreadCount, 30000);
+      return () => clearInterval(interval);
+    }
+  }, [userId]);
+
+  const fetchUnreadCount = async () => {
+    if (!userId) return;
+    
+    try {
+      const count = await UserNotificationsService.getUnreadCount(userId);
+      setUnreadCount(count);
+    } catch (error) {
+      console.error('Error fetching unread count:', error);
+    }
+  };
+
+  const handleNotificationClick = () => {
+    setShowNotifications(!showNotifications);
+    // Refresh unread count when opening
+    if (!showNotifications && userId) {
+      fetchUnreadCount();
+    }
+  };
+
   return (
     <header className="bg-white/80 backdrop-blur-md shadow-sm border-b border-gray-100 px-6 py-4 sticky top-0 z-30">
       <div className="flex items-center justify-between">
@@ -46,10 +82,35 @@ const Header: React.FC<HeaderProps> = ({
             />
           </div>
 
-          <button className="relative p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors">
-            <Bell className="w-5 h-5" />
-            <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full"></span>
-          </button>
+          {userId ? (
+            <div className="relative">
+              <button 
+                onClick={handleNotificationClick}
+                className="relative p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <Bell className="w-5 h-5" />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-[18px] h-5 px-1 text-xs font-medium text-white bg-red-500 rounded-full flex items-center justify-center">
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                )}
+              </button>
+              
+              {showNotifications && (
+                <NotificationDropdown 
+                  userId={userId} 
+                  onClose={() => {
+                    setShowNotifications(false);
+                    fetchUnreadCount(); // Refresh count when closing
+                  }} 
+                />
+              )}
+            </div>
+          ) : (
+            <button className="relative p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors">
+              <Bell className="w-5 h-5" />
+            </button>
+          )}
 
           <div className="flex items-center space-x-3 pl-4 border-l border-gray-200">
             <div className="text-right">

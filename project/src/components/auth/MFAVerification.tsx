@@ -23,12 +23,30 @@ const MFAVerification: React.FC<MFAVerificationProps> = ({
   const [isResending, setIsResending] = useState(false);
   const [otpSent, setOtpSent] = useState(false);
   const [countdown, setCountdown] = useState(0);
+  const [devOtp, setDevOtp] = useState<string | null>(null);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   // Send OTP on mount
   useEffect(() => {
     sendOTP();
-  }, []);
+    
+    // Check for OTP in sessionStorage (development mode)
+    const storedOtp = sessionStorage.getItem('mfa_otp_code');
+    const storedEmail = sessionStorage.getItem('mfa_otp_email');
+    if (storedOtp && storedEmail === userEmail) {
+      setDevOtp(storedOtp);
+      // Clear after 5 minutes
+      const timeout = setTimeout(() => {
+        sessionStorage.removeItem('mfa_otp_code');
+        sessionStorage.removeItem('mfa_otp_email');
+        sessionStorage.removeItem('mfa_otp_expires');
+        setDevOtp(null);
+      }, 5 * 60 * 1000);
+      
+      return () => clearTimeout(timeout);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run on mount
 
   // Countdown timer
   useEffect(() => {
@@ -242,6 +260,23 @@ const MFAVerification: React.FC<MFAVerificationProps> = ({
             </div>
           )}
 
+          {/* Development Mode OTP Display */}
+          {devOtp && (
+            <div className="mt-6 p-4 bg-yellow-50 border-2 border-yellow-300 rounded-lg">
+              <div className="text-center">
+                <p className="text-xs font-semibold text-yellow-800 mb-2 uppercase tracking-wide">
+                  🔧 Development Mode - OTP Code
+                </p>
+                <p className="text-3xl font-bold text-yellow-900 font-mono tracking-wider mb-2">
+                  {devOtp}
+                </p>
+                <p className="text-xs text-yellow-700">
+                  Check browser console for more details. This only appears in development.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Help Text */}
           <div className="mt-8 p-4 bg-gray-50 rounded-lg">
             <div className="flex items-start space-x-3">
@@ -251,6 +286,11 @@ const MFAVerification: React.FC<MFAVerificationProps> = ({
                 <p>
                   The code expires in 5 minutes. Make sure to check your spam folder if you don't see the email.
                 </p>
+                {devOtp && (
+                  <p className="mt-2 text-xs text-gray-500 italic">
+                    💡 Tip: OTP code is shown above (development mode only)
+                  </p>
+                )}
               </div>
             </div>
           </div>

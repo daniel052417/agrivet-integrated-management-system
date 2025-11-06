@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { Building, Phone, Mail, Calendar, DollarSign, User, Briefcase, Save, UserPlus, Shield, CheckCircle, XCircle, MapPin, UserCog, Clock, Hash } from 'lucide-react';
+import { Building, Phone, Mail, Calendar, DollarSign, User, Briefcase, Save, UserPlus, Shield, CheckCircle, XCircle, MapPin, UserCog, Clock, Hash, Camera } from 'lucide-react';
 import { staffManagementApi, CreateStaffData } from '../../lib/staffApi';
 import { ValidationService } from '../../lib/validation';
 import { supabase } from '../../lib/supabase';
 import { emailService } from '../../lib/emailService';
+import FaceRegistration from './FaceRegistration';
+import { faceRegistrationService, StaffFaceData } from '../../lib/faceRegistrationService';
 
 interface AddStaffProps {
   onBack?: () => void;
+  initialData?: any; // Staff data for edit mode
 }
 
 interface StaffFormData {
@@ -38,10 +41,14 @@ interface StaffFormData {
   };
 }
 
-const AddStaff: React.FC<AddStaffProps> = ({ onBack }) => {
+const AddStaff: React.FC<AddStaffProps> = ({ onBack, initialData }) => {
   const [loading, setLoading] = useState(false);
   const [branches, setBranches] = useState<Array<{ id: string; name: string }>>([]);
   const [roles, setRoles] = useState<Array<{ id: string; name: string; display_name: string; description?: string; is_active: boolean }>>([]);
+  const [showFaceRegistration, setShowFaceRegistration] = useState(false);
+  const [faceData, setFaceData] = useState<StaffFaceData | null>(null);
+  const [existingFaceData, setExistingFaceData] = useState<StaffFaceData | null>(null);
+  const isEditMode = !!initialData;
   const [form, setForm] = useState<StaffFormData>({
     first_name: '',
     last_name: '',
@@ -79,7 +86,53 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack }) => {
   useEffect(() => {
     loadBranches();
     loadRoles();
-  }, []);
+    
+    // If in edit mode, load existing face data
+    if (initialData?.id) {
+      loadExistingFaceData(initialData.id);
+    }
+    
+    // If in edit mode, populate form with initial data
+    if (initialData) {
+      setForm({
+        first_name: initialData.first_name || '',
+        last_name: initialData.last_name || '',
+        middle_name: initialData.middle_name || '',
+        email: initialData.email || '',
+        phone: initialData.phone || '',
+        address: initialData.address || '',
+        date_of_birth: initialData.date_of_birth || '',
+        gender: initialData.gender || '',
+        marital_status: initialData.marital_status || 'single',
+        position: initialData.position || '',
+        department: initialData.department || '',
+        hire_date: initialData.hire_date || new Date().toISOString().slice(0, 10),
+        is_active: initialData.is_active !== undefined ? initialData.is_active : true,
+        employee_id: initialData.employee_id || '',
+        role: initialData.role || 'staff',
+        branch_id: initialData.branch_id || undefined,
+        salary: initialData.salary || undefined,
+        employment_type: initialData.employment_type || 'Regular',
+        salary_type: initialData.salary_type || 'Monthly',
+        work_schedule: initialData.work_schedule || '',
+        payment_method: initialData.payment_method || '',
+        createUserAccount: false,
+        accountDetails: {
+          role: initialData.role || 'staff',
+          sendEmailInvite: false,
+        }
+      });
+    }
+  }, [initialData]);
+
+  const loadExistingFaceData = async (staffId: string) => {
+    try {
+      const existingFace = await faceRegistrationService.getStaffFace(staffId);
+      setExistingFaceData(existingFace);
+    } catch (error) {
+      console.error('Error loading existing face data:', error);
+    }
+  };
 
   const loadBranches = async () => {
     try {
@@ -247,7 +300,7 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack }) => {
       // Generate employee ID if auto-generate is enabled
       const finalEmployeeId = autoGenerateId ? generateEmployeeId() : form.employee_id;
       
-      // Create staff member
+      // Create or update staff member
       const staffData: CreateStaffData = {
         first_name: form.first_name,
         last_name: form.last_name,
@@ -272,7 +325,45 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack }) => {
         payment_method: form.payment_method
       };
       
-      const createdStaff = await staffManagementApi.staff.createStaff(staffData);
+      let createdStaff;
+      if (isEditMode && initialData?.id) {
+        // Update existing staff
+        createdStaff = await staffManagementApi.staff.updateStaff({
+          id: initialData.id,
+          ...staffData
+        });
+        
+        // Update face data if it was registered
+        if (faceData && faceData.staff_id !== createdStaff.id) {
+          try {
+            faceData.staff_id = createdStaff.id;
+            if (existingFaceData?.id) {
+              await faceRegistrationService.updateFaceDescriptor(existingFaceData.id, faceData);
+            } else {
+              await faceRegistrationService.saveFaceDescriptor(faceData);
+            }
+            console.log('✅ Face data updated for staff member');
+          } catch (faceError) {
+            console.error('Error updating face data:', faceError);
+            // Don't fail the entire operation if face update fails
+          }
+        }
+      } else {
+        // Create new staff
+        createdStaff = await staffManagementApi.staff.createStaff(staffData);
+        
+        // Save face data if it was registered before staff creation
+        if (faceData && !faceData.staff_id) {
+          try {
+            faceData.staff_id = createdStaff.id;
+            await faceRegistrationService.saveFaceDescriptor(faceData);
+            console.log('✅ Face data saved for new staff member');
+          } catch (faceError) {
+            console.error('Error saving face data:', faceError);
+            // Don't fail the entire operation if face save fails
+          }
+        }
+      }
       
       // If user account creation is requested, create account with magic link
       if (form.createUserAccount && form.accountDetails?.role) {
@@ -510,8 +601,14 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack }) => {
                 <UserPlus className="w-6 h-6 text-blue-600" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold text-gray-900">Add New Staff Member</h1>
-                <p className="text-gray-600">Create a new staff member and optionally a user account</p>
+                <h1 className="text-2xl font-bold text-gray-900">
+                  {isEditMode ? 'Edit Staff Member' : 'Add New Staff Member'}
+                </h1>
+                <p className="text-gray-600">
+                  {isEditMode 
+                    ? 'Update staff member information and optionally register face' 
+                    : 'Create a new staff member and optionally a user account'}
+                </p>
               </div>
             </div>
           </div>
@@ -957,6 +1054,89 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack }) => {
                 />
                 <span className="ml-2 text-sm text-gray-700">Active employee</span>
               </label>
+            </div>
+          </div>
+
+          {/* Face Registration */}
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+              <Camera className="w-5 h-5 mr-2" />
+              Face Registration {isEditMode ? '(Optional)' : '(Optional)'}
+            </h3>
+            
+            <div className="space-y-4">
+              {existingFaceData && !showFaceRegistration && (
+                <div className="p-4 bg-green-50 border border-green-200 rounded-md">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <CheckCircle className="w-5 h-5 text-green-600" />
+                      <span className="text-sm text-green-800">
+                        Face is already registered for this staff member
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowFaceRegistration(true)}
+                      className="text-sm text-green-700 hover:text-green-900 underline"
+                    >
+                      Re-register
+                    </button>
+                  </div>
+                </div>
+              )}
+              
+              {!existingFaceData && !showFaceRegistration && (
+                <div className="p-4 bg-blue-50 border border-blue-200 rounded-md">
+                  <p className="text-sm text-blue-800 mb-3">
+                    Register the staff member's face for attendance tracking using facial recognition.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setShowFaceRegistration(true)}
+                    className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                  >
+                    <Camera className="w-4 h-4" />
+                    <span>Register Face</span>
+                  </button>
+                </div>
+              )}
+              
+              {showFaceRegistration && (
+                <FaceRegistration
+                  staffId={isEditMode ? initialData?.id : undefined}
+                  branchId={form.branch_id}
+                  staffName={isEditMode ? `${form.first_name} ${form.last_name}` : undefined}
+                  existingFaceData={existingFaceData}
+                  onFaceRegistered={(data) => {
+                    setFaceData(data);
+                    setShowFaceRegistration(false);
+                    if (isEditMode && initialData?.id) {
+                      setExistingFaceData(data);
+                    }
+                  }}
+                  onCancel={() => setShowFaceRegistration(false)}
+                />
+              )}
+              
+              {faceData && !showFaceRegistration && !existingFaceData && (
+                <div className="p-4 bg-green-50 border border-green-200 rounded-md">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <CheckCircle className="w-5 h-5 text-green-600" />
+                      <span className="text-sm text-green-800">
+                        Face registered successfully {isEditMode ? '' : '(will be saved when staff is created)'}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowFaceRegistration(true)}
+                      className="text-sm text-green-700 hover:text-green-900 underline"
+                    >
+                      Change
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

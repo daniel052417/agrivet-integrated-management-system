@@ -118,7 +118,9 @@ export const emailApi = {
   async sendOTPEmail(data: OTPEmailData): Promise<EmailResult> {
     try {
       // Use Supabase Edge Function
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/mfa-email`, {
+      // NOTE: Function is deployed as 'swift-processor' (slug) even though it's named 'mfa-email' in dashboard
+      // The actual endpoint URL is: /functions/v1/swift-processor
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/swift-processor`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

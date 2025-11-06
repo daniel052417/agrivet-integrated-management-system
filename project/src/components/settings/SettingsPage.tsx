@@ -62,14 +62,14 @@ const SettingsPage: React.FC = () => {
   // Notification settings state
   const [emailNotifications, setEmailNotifications] = useState(true);
   const [pushNotifications, setPushNotifications] = useState(true);
-  const [smsNotifications, setSmsNotifications] = useState(false);
   const [lowStockAlerts, setLowStockAlerts] = useState(true);
-  const [salesAlerts, setSalesAlerts] = useState(true);
-  const [systemAlerts, setSystemAlerts] = useState(true);
   const [newOrderAlerts, setNewOrderAlerts] = useState(true);
-  const [staffActivityAlerts, setStaffActivityAlerts] = useState(true);
+  const [systemAlerts, setSystemAlerts] = useState(true);
+  const [dailySalesSummary, setDailySalesSummary] = useState(false);
+  const [attendanceAlerts, setAttendanceAlerts] = useState(false);
   const [bccManager, setBccManager] = useState(true);
   const [managerEmail, setManagerEmail] = useState('manager@agrivet.com');
+  const [dailySummaryRecipients, setDailySummaryRecipients] = useState<string[]>([]);
 
   // Data settings state
   const [backupFrequency, setBackupFrequency] = useState('daily');
@@ -335,14 +335,14 @@ const SettingsPage: React.FC = () => {
       // Notifications
       setEmailNotifications((notif.emailNotifications ?? s.email_notifications) ?? emailNotifications);
       setPushNotifications((notif.pushNotifications ?? s.push_notifications) ?? pushNotifications);
-      setSmsNotifications((notif.smsNotifications ?? s.sms_notifications) ?? smsNotifications);
       setLowStockAlerts((notif.lowStockAlerts ?? s.low_stock_alerts) ?? lowStockAlerts);
-      setSalesAlerts((notif.salesAlerts ?? s.sales_alerts) ?? salesAlerts);
-      setSystemAlerts((notif.systemAlerts ?? s.system_alerts) ?? systemAlerts);
       setNewOrderAlerts((notif.newOrderAlerts ?? s.new_order_alerts) ?? newOrderAlerts);
-      setStaffActivityAlerts((notif.staffActivityAlerts ?? s.staff_activity_alerts) ?? staffActivityAlerts);
+      setSystemAlerts((notif.systemAlerts ?? s.system_alerts) ?? systemAlerts);
+      setDailySalesSummary((notif.dailySalesSummary ?? s.daily_sales_summary) ?? dailySalesSummary);
+      setAttendanceAlerts((notif.attendanceAlerts ?? s.attendance_alerts) ?? attendanceAlerts);
       setBccManager((notif.bccManager ?? s.bcc_manager) ?? bccManager);
       setManagerEmail((notif.managerEmail ?? s.manager_email) ?? managerEmail);
+      setDailySummaryRecipients((notif.dailySummaryRecipients ?? s.daily_summary_recipients) ?? []);
 
       // HR
       setEnableDeductionForAbsences((hr.enableDeductionForAbsences ?? s.enable_deduction_for_absences) ?? enableDeductionForAbsences);
@@ -429,14 +429,14 @@ const SettingsPage: React.FC = () => {
         notifications: {
           emailNotifications,
           pushNotifications,
-          smsNotifications,
           lowStockAlerts,
-          salesAlerts,
-          systemAlerts,
           newOrderAlerts,
-          staffActivityAlerts,
+          systemAlerts,
+          dailySalesSummary,
+          attendanceAlerts,
           bccManager,
-          managerEmail
+          managerEmail,
+          dailySummaryRecipients
         },
         hr: {
           enableDeductionForAbsences,
@@ -1208,7 +1208,7 @@ const SettingsPage: React.FC = () => {
               <Mail className="w-5 h-5 text-gray-600" />
               <div>
                 <div className="font-medium text-gray-900">Email Notifications</div>
-                <div className="text-sm text-gray-500">Receive updates via email</div>
+                <div className="text-sm text-gray-500">Receive updates via email (most reliable and free)</div>
               </div>
             </div>
             <input
@@ -1224,29 +1224,13 @@ const SettingsPage: React.FC = () => {
               <Bell className="w-5 h-5 text-gray-600" />
               <div>
                 <div className="font-medium text-gray-900">Push Notifications</div>
-                <div className="text-sm text-gray-500">Browser and mobile push notifications</div>
+                <div className="text-sm text-gray-500">Browser and mobile push notifications for PWA</div>
               </div>
             </div>
             <input
               type="checkbox"
               checked={pushNotifications}
               onChange={(e) => setPushNotifications(e.target.checked)}
-              className="rounded border-gray-300 text-yellow-600 focus:ring-yellow-500"
-            />
-          </label>
-
-          <label className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50">
-            <div className="flex items-center space-x-3">
-              <Phone className="w-5 h-5 text-gray-600" />
-              <div>
-                <div className="font-medium text-gray-900">SMS Notifications</div>
-                <div className="text-sm text-gray-500">Text message alerts for critical updates</div>
-              </div>
-            </div>
-            <input
-              type="checkbox"
-              checked={smsNotifications}
-              onChange={(e) => setSmsNotifications(e.target.checked)}
               className="rounded border-gray-300 text-yellow-600 focus:ring-yellow-500"
             />
           </label>
@@ -1276,26 +1260,6 @@ const SettingsPage: React.FC = () => {
           <label className="flex items-center space-x-3">
             <input
               type="checkbox"
-              checked={salesAlerts}
-              onChange={(e) => setSalesAlerts(e.target.checked)}
-              className="rounded border-gray-300 text-yellow-600 focus:ring-yellow-500"
-            />
-            <span className="text-sm text-gray-700">Sales Alerts</span>
-          </label>
-
-          <label className="flex items-center space-x-3">
-            <input
-              type="checkbox"
-              checked={systemAlerts}
-              onChange={(e) => setSystemAlerts(e.target.checked)}
-              className="rounded border-gray-300 text-yellow-600 focus:ring-yellow-500"
-            />
-            <span className="text-sm text-gray-700">System Alerts</span>
-          </label>
-
-          <label className="flex items-center space-x-3">
-            <input
-              type="checkbox"
               checked={newOrderAlerts}
               onChange={(e) => setNewOrderAlerts(e.target.checked)}
               className="rounded border-gray-300 text-yellow-600 focus:ring-yellow-500"
@@ -1306,11 +1270,34 @@ const SettingsPage: React.FC = () => {
           <label className="flex items-center space-x-3">
             <input
               type="checkbox"
-              checked={staffActivityAlerts}
-              onChange={(e) => setStaffActivityAlerts(e.target.checked)}
+              checked={systemAlerts}
+              onChange={(e) => setSystemAlerts(e.target.checked)}
               className="rounded border-gray-300 text-yellow-600 focus:ring-yellow-500"
             />
-            <span className="text-sm text-gray-700">Staff Activity Alerts</span>
+            <span className="text-sm text-gray-700">System Alerts</span>
+            <span className="text-xs text-gray-400">(Critical issues only)</span>
+          </label>
+
+          <label className="flex items-center space-x-3">
+            <input
+              type="checkbox"
+              checked={dailySalesSummary}
+              onChange={(e) => setDailySalesSummary(e.target.checked)}
+              className="rounded border-gray-300 text-yellow-600 focus:ring-yellow-500"
+            />
+            <span className="text-sm text-gray-700">Daily Sales Summary</span>
+            <span className="text-xs text-gray-400">(Once daily at closing)</span>
+          </label>
+
+          <label className="flex items-center space-x-3">
+            <input
+              type="checkbox"
+              checked={attendanceAlerts}
+              onChange={(e) => setAttendanceAlerts(e.target.checked)}
+              className="rounded border-gray-300 text-yellow-600 focus:ring-yellow-500"
+            />
+            <span className="text-sm text-gray-700">Attendance Alerts</span>
+            <span className="text-xs text-gray-400">(If HR module enabled)</span>
           </label>
         </div>
       </div>
@@ -1324,7 +1311,7 @@ const SettingsPage: React.FC = () => {
           <h3 className="text-lg font-semibold text-gray-900">Email Settings</h3>
         </div>
         
-        <div className="space-y-4">
+        <div className="space-y-6">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Manager Email (CC)
@@ -1347,6 +1334,76 @@ const SettingsPage: React.FC = () => {
             />
             <span className="text-sm text-gray-700">BCC manager on all notification emails</span>
           </label>
+
+          <div className="pt-4 border-t border-gray-200">
+            <label className="block text-sm font-medium text-gray-700 mb-3">
+              Send Daily Summary To
+            </label>
+            <p className="text-xs text-gray-500 mb-3">
+              Select recipients for daily automated sales summary (sent once daily at closing time)
+            </p>
+            <div className="space-y-3">
+              <label className="flex items-center space-x-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50">
+                <input
+                  type="checkbox"
+                  checked={dailySummaryRecipients.includes('owner')}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setDailySummaryRecipients([...dailySummaryRecipients, 'owner']);
+                    } else {
+                      setDailySummaryRecipients(dailySummaryRecipients.filter(r => r !== 'owner'));
+                    }
+                  }}
+                  className="rounded border-gray-300 text-yellow-600 focus:ring-yellow-500"
+                />
+                <div>
+                  <span className="text-sm font-medium text-gray-900">Owner</span>
+                  <p className="text-xs text-gray-500">Business owner receives daily summary</p>
+                </div>
+              </label>
+
+              <label className="flex items-center space-x-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50">
+                <input
+                  type="checkbox"
+                  checked={dailySummaryRecipients.includes('manager')}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setDailySummaryRecipients([...dailySummaryRecipients, 'manager']);
+                    } else {
+                      setDailySummaryRecipients(dailySummaryRecipients.filter(r => r !== 'manager'));
+                    }
+                  }}
+                  className="rounded border-gray-300 text-yellow-600 focus:ring-yellow-500"
+                />
+                <div>
+                  <span className="text-sm font-medium text-gray-900">Manager</span>
+                  <p className="text-xs text-gray-500">Store manager receives daily summary</p>
+                </div>
+              </label>
+
+              <label className="flex items-center space-x-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50">
+                <input
+                  type="checkbox"
+                  checked={dailySummaryRecipients.includes('cashier_lead')}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setDailySummaryRecipients([...dailySummaryRecipients, 'cashier_lead']);
+                    } else {
+                      setDailySummaryRecipients(dailySummaryRecipients.filter(r => r !== 'cashier_lead'));
+                    }
+                  }}
+                  className="rounded border-gray-300 text-yellow-600 focus:ring-yellow-500"
+                />
+                <div>
+                  <span className="text-sm font-medium text-gray-900">Cashier Lead</span>
+                  <p className="text-xs text-gray-500">Lead cashier receives daily summary</p>
+                </div>
+              </label>
+            </div>
+            <p className="mt-3 text-xs text-gray-500 italic">
+              💡 Daily summaries include: sales totals, order count, low stock items, and key metrics
+            </p>
+          </div>
         </div>
       </div>
     </div>

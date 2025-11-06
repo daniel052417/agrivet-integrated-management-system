@@ -451,6 +451,15 @@ const InventoryManagement: React.FC = () => {
           .eq('id', product.inventory_id);
 
         if (inventoryError) throw inventoryError;
+
+        // Check and send low stock alert if stock is below threshold
+        try {
+          const LowStockAlertService = (await import('../../lib/alerts/lowStockAlertService')).default;
+          await LowStockAlertService.checkAndSendLowStockAlert(product.id);
+        } catch (alertError) {
+          // Don't fail the update if alert fails
+          console.warn('Failed to send low stock alert:', alertError);
+        }
       }
 
       // Error handling is done in individual operations above

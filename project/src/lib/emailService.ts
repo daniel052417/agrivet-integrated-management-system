@@ -370,14 +370,22 @@ export const emailService = {
       }
 
       // Simulate email sending (fallback)
-      console.log('📧 [SIMULATION MODE] Sending OTP email:', {
-        to: emailContent.to,
-        subject: emailContent.subject,
-        otpCode: otpCode
-      });
-
+      // Make OTP very visible in console for development/testing
+      console.log('%c🔐 MFA OTP CODE (DEVELOPMENT MODE)', 'background: #2563eb; color: white; font-size: 20px; font-weight: bold; padding: 10px; border-radius: 5px;');
+      console.log('%c' + otpCode, 'background: #fef3c7; color: #1f2937; font-size: 32px; font-weight: bold; padding: 20px; border: 3px solid #f59e0b; border-radius: 10px; letter-spacing: 8px; font-family: monospace;');
+      console.log('%c📧 Email would be sent to: ' + emailContent.to, 'background: #e5e7eb; color: #1f2937; font-size: 14px; padding: 8px; border-radius: 5px;');
       console.log('⚠️  WARNING: This is SIMULATION MODE - No real email was sent!');
-      console.log('📖 To send real emails, configure email service (SendGrid or Gmail)');
+      console.log('📖 To send real emails:');
+      console.log('   1. Deploy Supabase Edge Function: supabase functions deploy mfa-email');
+      console.log('   2. Set SENDGRID_API_KEY in Supabase Dashboard → Edge Functions → Secrets');
+      console.log('   3. Or configure Gmail SMTP in gmailEmailService.ts');
+      
+      // Store OTP in sessionStorage for easy access (development only)
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('mfa_otp_code', otpCode);
+        sessionStorage.setItem('mfa_otp_email', to);
+        sessionStorage.setItem('mfa_otp_expires', new Date(Date.now() + expiryMinutes * 60 * 1000).toISOString());
+      }
       
       // Simulate network delay
       await new Promise(resolve => setTimeout(resolve, 1000));

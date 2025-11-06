@@ -73,3 +73,5 @@ COMMENT ON COLUMN public.inventory_movements.reference_id IS 'Foreign key to rel
 
 
 
+
+

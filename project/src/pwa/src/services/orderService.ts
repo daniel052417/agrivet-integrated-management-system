@@ -4,6 +4,7 @@ import PaymentService from './paymentService'
 import EmailService from './emailService'
 import InventoryService from './inventoryService'
 import OrderTrackingService from './orderTrackingService'
+import NewOrderAlertService from '../../../lib/alerts/newOrderAlertService'
 
 interface OrderServiceConfig {
   supabaseUrl: string
@@ -179,6 +180,14 @@ class OrderService {
       }
 
       console.log('✅ OrderService: Order created successfully:', order.id, 'with customer_id:', order.customer_id)
+
+      // Send new order alert
+      try {
+        await NewOrderAlertService.sendNewOrderAlert(order.id);
+      } catch (alertError) {
+        // Don't fail order creation if alert fails
+        console.warn('Failed to send new order alert:', alertError);
+      }
 
       // Create order items
       const orderItems = cart.items.map(item => ({

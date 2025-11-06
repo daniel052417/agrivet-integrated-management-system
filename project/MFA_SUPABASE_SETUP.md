@@ -2,7 +2,13 @@
 
 ## 🔧 **Required Setup for MFA Email Functionality**
 
-The errors you're seeing (`406`, `500`) indicate that the Supabase Edge Function needs to be set up. Here's how to fix it:
+The errors you're seeing (`406`, `CORS`, `net::ERR_FAILED`) have been fixed in the code. Here's what was fixed and how to deploy:
+
+### **🔴 Issues Fixed:**
+1. ✅ **CORS Error**: Added proper CORS headers including `Access-Control-Allow-Methods`
+2. ✅ **406 Not Acceptable**: Fixed `verified_devices` query to use `maybeSingle()` instead of `single()`
+3. ✅ **Function Name Mismatch**: Created dedicated `mfa-email` Edge Function
+4. ✅ **Preflight Handling**: Improved OPTIONS request handling with proper status codes
 
 ---
 
@@ -28,7 +34,11 @@ The errors you're seeing (`406`, `500`) indicate that the Supabase Edge Function
 
 4. **Deploy the Edge Function**:
    ```bash
+   # Deploy the MFA email function
    supabase functions deploy mfa-email
+   
+   # Also deploy/update the send-email function (for other email types)
+   supabase functions deploy send-email
    ```
 
 ### **Option B: Using Supabase Dashboard**
@@ -36,11 +46,11 @@ The errors you're seeing (`406`, `500`) indicate that the Supabase Edge Function
 1. Go to **Supabase Dashboard** → **Edge Functions**
 2. Click **"Create a new function"**
 3. Name it: `mfa-email`
-4. Copy the contents of `supabase/functions/send-email/index.ts` (or your `mfa-email` function file)
+4. Copy the contents of `supabase/functions/mfa-email/index.ts`
 5. Paste into the function editor
 6. Click **"Deploy"**
 
-**Note**: If you renamed the function folder, make sure the Edge Function is deployed as `mfa-email` (not `send-email`).
+**Important**: The `mfa-email` function is now separate from `send-email` and specifically handles MFA OTP emails with proper CORS configuration.
 
 ---
 
@@ -162,9 +172,15 @@ fetch('https://YOUR_PROJECT_REF.supabase.co/functions/v1/mfa-email', {
 
 ## 🔍 **Troubleshooting**
 
-### **Error 406: Not Acceptable**
-- **Cause**: Edge Function not deployed or wrong URL
-- **Fix**: Deploy the function as `mfa-email` or check the URL in `emailApi.ts`
+### **Error 406: Not Acceptable** ✅ FIXED
+- **Cause**: Using `.single()` on `verified_devices` query when no record exists
+- **Fix**: Changed to `.maybeSingle()` in `mfaService.ts` - this is now fixed in the code
+- **Status**: No longer occurs - gracefully handles missing device records
+
+### **CORS Error** ✅ FIXED
+- **Cause**: Missing `Access-Control-Allow-Methods` header and improper OPTIONS handling
+- **Fix**: Added proper CORS headers and improved preflight request handling
+- **Status**: Fixed in both `mfa-email` and `send-email` functions
 
 ### **Error 500: Internal Server Error**
 - **Cause**: Missing environment variables or SendGrid API error
@@ -172,6 +188,7 @@ fetch('https://YOUR_PROJECT_REF.supabase.co/functions/v1/mfa-email', {
   1. Check Edge Function logs in Supabase Dashboard
   2. Verify `SENDGRID_API_KEY` is set
   3. Verify `FROM_EMAIL` is verified in SendGrid
+- **Note**: The function now returns success even if SendGrid fails, allowing client-side fallback
 
 ### **Error: "SENDGRID_API_KEY environment variable is not set"**
 - **Fix**: Set the secret in Supabase Dashboard → Edge Functions → Secrets

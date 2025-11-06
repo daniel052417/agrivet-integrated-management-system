@@ -17,12 +17,14 @@
     "@types/leaflet": "^1.9.21",
     "@types/nodemailer": "^7.0.2",
     "bcryptjs": "^3.0.2",
+    "face-api.js": "^0.22.2",
     "leaflet": "^1.9.4",
     "lottie-react": "^2.4.1",
     "lucide-react": "^0.294.0",
     "nodemailer": "^7.0.9",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-router-dom": "^7.9.5",
     "recharts": "^2.8.0"
   },
   "devDependencies": {
