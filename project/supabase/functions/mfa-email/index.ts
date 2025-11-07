@@ -7,12 +7,34 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 
-// Supabase recommended CORS headers
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-}
+// Dynamic CORS headers - allows requests from Vercel and localhost
+const getCorsHeaders = (origin?: string) => {
+  // Allowed origins
+  const allowedOrigins = [
+    'http://localhost:5173',
+    'http://localhost:3000',
+    'http://localhost:5174',
+    'https://*.vercel.app', // Allow all Vercel preview deployments
+  ];
+  
+  // Check if origin is allowed
+  const isAllowed = !origin || 
+    allowedOrigins.some(allowed => {
+      if (allowed.includes('*')) {
+        // Wildcard matching for Vercel domains
+        const pattern = allowed.replace('*.', '');
+        return origin.includes(pattern);
+      }
+      return origin === allowed;
+    });
+  
+  return {
+    'Access-Control-Allow-Origin': isAllowed ? (origin || '*') : '*',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Credentials': 'true',
+  };
+};
 
 interface OTPEmailRequest {
   to: string;
@@ -24,10 +46,14 @@ interface OTPEmailRequest {
 }
 
 serve(async (req) => {
-  // Handle CORS preflight requests - MUST return 200 with CORS headers
+  // Get origin from request headers for CORS
+  const origin = req.headers.get('origin') || req.headers.get('Origin');
+  const corsHeaders = getCorsHeaders(origin || undefined);
+  
+  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { 
-      status: 204, // 204 No Content is better for OPTIONS
+      status: 204,
       headers: {
         ...corsHeaders,
         'Access-Control-Max-Age': '86400', // Cache preflight for 24 hours
@@ -67,11 +93,11 @@ serve(async (req) => {
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
           <title>Login Verification Code</title>
           <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
+            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background: #f8fafc; }
             .container { max-width: 600px; margin: 0 auto; padding: 20px; }
             .header { background: #2563eb; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
-            .content { background: #f8fafc; padding: 30px; border-radius: 0 0 8px 8px; }
-            .otp-box { background: white; border: 2px solid #2563eb; border-radius: 8px; padding: 20px; text-align: center; margin: 20px 0; }
+            .content { background: white; padding: 30px; border-radius: 0 0 8px 8px; border: 1px solid #e5e7eb; }
+            .otp-box { background: #f0f9ff; border: 2px solid #2563eb; border-radius: 8px; padding: 20px; text-align: center; margin: 20px 0; }
             .otp-code { font-size: 32px; font-weight: bold; color: #2563eb; letter-spacing: 8px; font-family: 'Courier New', monospace; }
             .warning { background: #fef3c7; border: 1px solid #f59e0b; padding: 15px; border-radius: 6px; margin: 20px 0; }
             .footer { text-align: center; margin-top: 30px; color: #6b7280; font-size: 14px; }
@@ -126,7 +152,9 @@ serve(async (req) => {
     console.log('📧 [MFA-EMAIL] Email prepared:', {
       to: emailContent.to,
       subject: emailContent.subject,
-      type
+      type,
+      hasSendGrid: !!SENDGRID_API_KEY,
+      hasGmail: !!(GMAIL_USER && GMAIL_APP_PASSWORD)
     });
 
     // Try to send email - first SendGrid, then Gmail SMTP, then fallback
@@ -304,30 +332,8 @@ async function sendViaGmailSMTP(
     .replace(/\s+/g, ' ') // Normalize whitespace
     .trim();
 
-  // Build email message in RFC 5322 format
-  const message = [
-    `From: "${companyName}" <${GMAIL_USER}>`,
-    `To: "${name}" <${emailContent.to}>`,
-    `Subject: ${emailContent.subject}`,
-    `MIME-Version: 1.0`,
-    `Content-Type: multipart/alternative; boundary="boundary123"`,
-    ``,
-    `--boundary123`,
-    `Content-Type: text/plain; charset=UTF-8`,
-    ``,
-    textContent,
-    ``,
-    `--boundary123`,
-    `Content-Type: text/html; charset=UTF-8`,
-    ``,
-    emailContent.html,
-    ``,
-    `--boundary123--`
-  ].join('\r\n');
-
   try {
     // Use Deno SMTP library for reliable email sending
-    // Import the SMTP client library
     const { SmtpClient } = await import('https://deno.land/x/denomailer@1.6.0/mod.ts');
     
     const client = new SmtpClient();
@@ -377,4 +383,3 @@ async function sendViaGmailSMTP(
     throw new Error(`Gmail SMTP error: ${error.message}`);
   }
 }
-
