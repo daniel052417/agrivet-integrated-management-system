@@ -2,6 +2,8 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import App from './App.tsx';
+import ErrorBoundary from './components/shared/ErrorBoundary';
+import PerformanceMonitor from './components/shared/PerformanceMonitor';
 import './index.css';
 
 // ✅ Polyfill for crypto.randomUUID (for older mobile browsers)
@@ -20,8 +22,11 @@ if (typeof crypto.randomUUID !== "function") {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <BrowserRouter>
-      <App />
-    </BrowserRouter>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <App />
+        <PerformanceMonitor enabled={import.meta.env.DEV} />
+      </BrowserRouter>
+    </ErrorBoundary>
   </StrictMode>
 );

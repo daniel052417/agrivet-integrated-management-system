@@ -1,5 +1,6 @@
 // lib/faceRegistrationService.ts
 import { supabase } from './supabase';
+import { logger } from '../utils/logger';
 import * as faceapi from 'face-api.js';
 
 export interface FaceDescriptor {
@@ -23,6 +24,18 @@ export interface StaffFaceData {
 class FaceRegistrationService {
   private modelsLoaded = false;
   private loadingPromise: Promise<void> | null = null;
+  private modelCacheKey = 'face-api-models-loaded';
+  
+  /**
+   * Mark models as cached in sessionStorage
+   */
+  private markModelsCached(): void {
+    try {
+      sessionStorage.setItem(this.modelCacheKey, 'true');
+    } catch {
+      // SessionStorage might not be available, ignore
+    }
+  }
 
   /**
    * Load face-api.js models
@@ -58,28 +71,29 @@ class FaceRegistrationService {
         const MODEL_URL = useCDN ? CDN_MODEL_URL : LOCAL_MODEL_URL;
         
         if (useCDN) {
-          console.log('⚠️ Local models not found, using CDN (slower but reliable)');
+          logger.warn('⚠️ Local models not found, using CDN (slower but reliable)');
         } else {
-          console.log('🔄 Loading face-api.js models from local:', MODEL_URL);
+          logger.info('🔄 Loading face-api.js models from local:', MODEL_URL);
         }
         
         // Load models sequentially to better identify which one fails
-        console.log('📦 Loading TinyFaceDetector...');
+        logger.info('📦 Loading TinyFaceDetector...');
         await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
-        console.log('✓ TinyFaceDetector loaded');
+        logger.info('✓ TinyFaceDetector loaded');
         
-        console.log('📦 Loading FaceLandmark68Net...');
+        logger.info('📦 Loading FaceLandmark68Net...');
         await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
-        console.log('✓ FaceLandmark68Net loaded');
+        logger.info('✓ FaceLandmark68Net loaded');
         
-        console.log('📦 Loading FaceRecognitionNet...');
+        logger.info('📦 Loading FaceRecognitionNet...');
         await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
-        console.log('✓ FaceRecognitionNet loaded');
+        logger.info('✓ FaceRecognitionNet loaded');
 
         this.modelsLoaded = true;
-        console.log('✅ All face-api.js models loaded successfully');
+        this.markModelsCached();
+        logger.info('✅ All face-api.js models loaded successfully');
       } catch (error: any) {
-        console.error('❌ Error loading face-api.js models:', error);
+        logger.error('❌ Error loading face-api.js models:', error);
         
         // Provide more helpful error message
         if (error.message && error.message.includes('tensor')) {

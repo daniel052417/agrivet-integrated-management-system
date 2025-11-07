@@ -127,3 +127,4 @@ ALTER TABLE verified_devices ENABLE ROW LEVEL SECURITY;
 
 
 
+
