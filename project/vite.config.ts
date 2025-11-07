@@ -83,8 +83,12 @@ export default defineConfig({
         chunkFileNames: 'js/[name]-[hash].js',
         entryFileNames: 'js/[name]-[hash].js',
         assetFileNames: (assetInfo) => {
-          const info = assetInfo.name.split('.');
-          const ext = info[info.length - 1];
+          // Handle undefined assetInfo.name
+          if (!assetInfo.name) {
+            return `assets/[name]-[hash][extname]`;
+          }
+          
+          // Test file extensions using the name
           if (/\.(mp4|webm|ogg|mp3|wav|flac|aac)(\?.*)?$/i.test(assetInfo.name)) {
             return `media/[name]-[hash][extname]`;
           }

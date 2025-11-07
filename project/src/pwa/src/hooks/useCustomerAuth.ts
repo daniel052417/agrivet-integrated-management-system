@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, createContext, useContext, ReactNode } from 'react'
 import { customerAuthService, Customer, SignUpData, SignInData, AuthResponse } from '../services/customerAuth'
 
 // ============================================================================
@@ -221,8 +221,6 @@ export const useCustomerAuth = () => {
 // ============================================================================
 // CUSTOMER AUTH CONTEXT (Optional - for global state management)
 // ============================================================================
-
-import { createContext, useContext, ReactNode } from 'react'
 
 interface CustomerAuthContextType {
   customer: Customer | null
