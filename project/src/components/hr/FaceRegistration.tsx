@@ -32,12 +32,31 @@ const FaceRegistration: React.FC<FaceRegistrationProps> = ({
   const streamRef = useRef<MediaStream | null>(null);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [faceDetected, setFaceDetected] = useState(false);
+  const autoStartAttemptedRef = useRef(false);
 
   useEffect(() => {
-    // Load models when component mounts
-    loadModels();
-    
+    let isMounted = true;
+
+    const initialize = async () => {
+      try {
+        await loadModels();
+
+        if (!isMounted || autoStartAttemptedRef.current) {
+          return;
+        }
+
+        autoStartAttemptedRef.current = true;
+        await startCamera();
+      } catch (err) {
+        // loadModels and startCamera already handle their own error states
+        console.error('Error during face registration initialization:', err);
+      }
+    };
+
+    initialize();
+
     return () => {
+      isMounted = false;
       // Cleanup: stop video stream when component unmounts
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop());
