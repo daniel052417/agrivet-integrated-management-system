@@ -215,6 +215,7 @@ const FaceRegistration: React.FC<FaceRegistrationProps> = ({
       if (videoRef.current && stream) {
         videoRef.current.srcObject = stream;
         streamRef.current = stream;
+        setStep('capturing');
         
         // Wait for video to be ready
         await new Promise<void>((resolve, reject) => {
@@ -227,7 +228,6 @@ const FaceRegistration: React.FC<FaceRegistrationProps> = ({
           
           const onLoadedMetadata = () => {
             video.play().then(() => {
-              setStep('capturing');
               resolve();
             }).catch(reject);
             video.removeEventListener('loadedmetadata', onLoadedMetadata);
@@ -239,7 +239,6 @@ const FaceRegistration: React.FC<FaceRegistrationProps> = ({
           setTimeout(() => {
             if (video.readyState >= 2) { // HAVE_CURRENT_DATA
               video.play().then(() => {
-                setStep('capturing');
                 resolve();
               }).catch(reject);
             } else {
