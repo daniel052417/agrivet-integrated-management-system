@@ -42,3 +42,5 @@ ANALYZE=false
 - Only use `SERVICE_ROLE_KEY` in secure server environments (Edge Functions)
 - Make sure to use different keys for different environments (dev, staging, production)
 
+
+

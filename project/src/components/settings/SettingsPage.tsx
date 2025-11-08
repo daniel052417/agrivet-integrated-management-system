@@ -10,6 +10,8 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { settingsService } from '../../lib/settingsService';
+import { branchManagementService, Branch, ManagerCandidate } from '../../lib/branchManagementService';
+import { posTerminalManagementService, POSTerminal, UserCandidate } from '../../lib/posTerminalManagementService';
 
 const SettingsPage: React.FC = () => {
   const [selectedTheme, setSelectedTheme] = useState('light');
@@ -100,14 +102,14 @@ const SettingsPage: React.FC = () => {
   const [enableEmployeeSelfService, setEnableEmployeeSelfService] = useState(true);
 
   // Branch management state
-  const [branches, setBranches] = useState<any[]>([]);
-  const [users, setUsers] = useState<any[]>([]);
-  const [editingBranch, setEditingBranch] = useState<any>(null);
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [managerCandidates, setManagerCandidates] = useState<ManagerCandidate[]>([]);
+  const [editingBranch, setEditingBranch] = useState<Branch | null>(null);
   const [showAddBranchModal, setShowAddBranchModal] = useState(false);
   const [branchFormData, setBranchFormData] = useState({
     name: '',
     code: '',
-    type: 'main',
+    type: 'main' as 'main' | 'satellite',
     address: '',
     city: '',
     province: '',
@@ -115,16 +117,23 @@ const SettingsPage: React.FC = () => {
     phone: '',
     email: '',
     operatingHours: {
-      monday: { start: '08:00', end: '18:00', isOpen: true },
-      tuesday: { start: '08:00', end: '18:00', isOpen: true },
-      wednesday: { start: '08:00', end: '18:00', isOpen: true },
-      thursday: { start: '08:00', end: '18:00', isOpen: true },
-      friday: { start: '08:00', end: '18:00', isOpen: true },
-      saturday: { start: '08:00', end: '18:00', isOpen: true },
-      sunday: { start: '08:00', end: '18:00', isOpen: false }
+      monday: { open: '08:00', close: '18:00', isOpen: true },
+      tuesday: { open: '08:00', close: '18:00', isOpen: true },
+      wednesday: { open: '08:00', close: '18:00', isOpen: true },
+      thursday: { open: '08:00', close: '18:00', isOpen: true },
+      friday: { open: '08:00', close: '18:00', isOpen: true },
+      saturday: { open: '08:00', close: '18:00', isOpen: true },
+      sunday: { open: '08:00', close: '18:00', isOpen: false }
     },
     managerId: '',
-    status: 'active'
+    status: 'active' as 'active' | 'inactive'
+  });
+  
+  // Branch settings state
+  const [branchSettings, setBranchSettings] = useState({
+    allowInterBranchTransfers: false,
+    shareInventoryAcrossBranches: false,
+    enableBranchSpecificPricing: false
   });
 
   // PWA settings state
@@ -139,42 +148,54 @@ const SettingsPage: React.FC = () => {
   const [pushNotificationsEnabled, setPushNotificationsEnabled] = useState(true);
   const [pwaVersion, setPwaVersion] = useState('1.0.5');
 
-  // POS Terminal settings state
-  const [posTerminals, setPosTerminals] = useState<any[]>([]);
-  const [posAccounts, setPosAccounts] = useState<any[]>([]);
-  const [editingTerminal, setEditingTerminal] = useState<any>(null);
+  // POS Terminal management state
+  const [posTerminals, setPosTerminals] = useState<POSTerminal[]>([]);
+  const [userCandidates, setUserCandidates] = useState<UserCandidate[]>([]);
+  const [editingTerminal, setEditingTerminal] = useState<POSTerminal | null>(null);
   const [showAddTerminalModal, setShowAddTerminalModal] = useState(false);
   const [terminalFormData, setTerminalFormData] = useState({
     terminal_name: '',
     terminal_code: '',
     branch_id: '',
-    status: 'active',
+    status: 'active' as 'active' | 'inactive',
     assigned_user_id: '',
     notes: ''
   });
   const [posSettings, setPosSettings] = useState({
+    // Standard POS Configuration
     defaultTaxRate: 12,
-    currencySymbol: '₱',
-    receiptWidth: 80,
-    autoPrintReceipt: true,
-    showItemImages: true,
-    enableQuickKeys: true,
-    enableBulkOperations: true,
-    enableInventoryTracking: true,
     lowStockThreshold: 10,
-    enablePriceOverrides: true,
-    requireManagerForOverrides: true,
-    enableCustomerSearch: true,
-    enableBarcodeGeneration: true,
-    enableOfflineMode: true,
-    syncInterval: 5,
+    receiptPrefix: 'RCP',
+    autoPrintReceipt: true,
+    enableInventoryDeduction: true,
     enableAuditLog: true,
     enableReceiptNumbering: true,
-    receiptNumberPrefix: 'RCP',
-    enableMultiPayment: true,
-    enablePartialPayments: true,
-    enableLayaway: false,
-    enableInstallments: false
+    
+    // POS User Permissions
+    allowPriceOverride: true,
+    requireManagerApprovalForPriceOverride: true,
+    restrictVoidTransactionsToAdmin: true,
+    requireLoginForTransactions: true,
+    requireShiftStartEnd: true,
+    requireCashCountAtEndShift: true,
+    
+    // Payments
+    allowedPaymentMethods: ['cash', 'gcash'] as string[],
+    enableMultiPayment: false,
+    
+    // Hardware Settings
+    receiptPrinter: '',
+    openDrawerOnPayment: true,
+    enableScannerSupport: true,
+    cameraForAttendanceTerminal: 'laptop' as 'usb' | 'laptop',
+    
+    // Connectivity
+    showInternetConnectionWarning: true,
+    disableTransactionsWhenOffline: false,
+    
+    // Advanced Settings
+    maxOfflineGracePeriod: 30, // minutes
+    autoLockPosAfterInactivity: 15 // minutes
   });
 
   const settingsSections = [
@@ -250,7 +271,16 @@ const SettingsPage: React.FC = () => {
   useEffect(() => {
     fetchSettings();
     fetchBranches();
-  }, []);
+    if (activeSection === 'branches') {
+      fetchAllBranches();
+      fetchManagerCandidates();
+      fetchBranchSettings();
+    }
+    if (activeSection === 'pos') {
+      fetchAllTerminals();
+      fetchUserCandidates();
+    }
+  }, [activeSection]);
 
   const fetchBranches = async () => {
     try {
@@ -264,6 +294,61 @@ const SettingsPage: React.FC = () => {
       setAvailableBranches(data || []);
     } catch (error) {
       console.error('Error fetching branches:', error);
+    }
+  };
+
+  const fetchAllBranches = async () => {
+    try {
+      setLoading(true);
+      const data = await branchManagementService.getAllBranches();
+      setBranches(data);
+    } catch (error: any) {
+      console.error('Error fetching all branches:', error);
+      setError(error.message || 'Failed to fetch branches');
+      setTimeout(() => setError(null), 5000);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchManagerCandidates = async () => {
+    try {
+      const data = await branchManagementService.getManagerCandidates();
+      setManagerCandidates(data);
+    } catch (error: any) {
+      console.error('Error fetching manager candidates:', error);
+    }
+  };
+
+  const fetchBranchSettings = async () => {
+    try {
+      const settings = await branchManagementService.getBranchSettings();
+      setBranchSettings(settings);
+    } catch (error: any) {
+      console.error('Error fetching branch settings:', error);
+    }
+  };
+
+  const fetchAllTerminals = async () => {
+    try {
+      setLoading(true);
+      const data = await posTerminalManagementService.getAllTerminals();
+      setPosTerminals(data);
+    } catch (error: any) {
+      console.error('Error fetching all terminals:', error);
+      setError(error.message || 'Failed to fetch terminals');
+      setTimeout(() => setError(null), 5000);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchUserCandidates = async () => {
+    try {
+      const data = await posTerminalManagementService.getUserCandidates();
+      setUserCandidates(data);
+    } catch (error: any) {
+      console.error('Error fetching user candidates:', error);
     }
   };
 
@@ -382,6 +467,46 @@ const SettingsPage: React.FC = () => {
       setMaintenanceMode((pwa.maintenanceMode ?? s.maintenance_mode) ?? maintenanceMode);
       setPushNotificationsEnabled((pwa.pushNotificationsEnabled ?? s.push_notifications_enabled) ?? pushNotificationsEnabled);
       if (s.pwa_version) setPwaVersion(s.pwa_version);
+
+      // Branch Settings (load if available)
+      const branchSettings = (s as any).branchSettings || {};
+      if (Object.keys(branchSettings).length > 0) {
+        setBranchSettings({
+          allowInterBranchTransfers: branchSettings.allowInterBranchTransfers || false,
+          shareInventoryAcrossBranches: branchSettings.shareInventoryAcrossBranches || false,
+          enableBranchSpecificPricing: branchSettings.enableBranchSpecificPricing || false
+        });
+      }
+
+      // POS Settings (load if available)
+      const pos = (s as any).pos || {};
+      if (Object.keys(pos).length > 0) {
+        setPosSettings({
+          defaultTaxRate: pos.defaultTaxRate ?? 12,
+          lowStockThreshold: pos.lowStockThreshold ?? 10,
+          receiptPrefix: pos.receiptPrefix ?? 'RCP',
+          autoPrintReceipt: pos.autoPrintReceipt ?? true,
+          enableInventoryDeduction: pos.enableInventoryDeduction ?? true,
+          enableAuditLog: pos.enableAuditLog ?? true,
+          enableReceiptNumbering: pos.enableReceiptNumbering ?? true,
+          allowPriceOverride: pos.allowPriceOverride ?? true,
+          requireManagerApprovalForPriceOverride: pos.requireManagerApprovalForPriceOverride ?? true,
+          restrictVoidTransactionsToAdmin: pos.restrictVoidTransactionsToAdmin ?? true,
+          requireLoginForTransactions: pos.requireLoginForTransactions ?? true,
+          requireShiftStartEnd: pos.requireShiftStartEnd ?? true,
+          requireCashCountAtEndShift: pos.requireCashCountAtEndShift ?? true,
+          allowedPaymentMethods: pos.allowedPaymentMethods ?? ['cash', 'gcash'],
+          enableMultiPayment: pos.enableMultiPayment ?? false,
+          receiptPrinter: pos.receiptPrinter ?? '',
+          openDrawerOnPayment: pos.openDrawerOnPayment ?? true,
+          enableScannerSupport: pos.enableScannerSupport ?? true,
+          cameraForAttendanceTerminal: pos.cameraForAttendanceTerminal ?? 'laptop',
+          showInternetConnectionWarning: pos.showInternetConnectionWarning ?? true,
+          disableTransactionsWhenOffline: pos.disableTransactionsWhenOffline ?? false,
+          maxOfflineGracePeriod: pos.maxOfflineGracePeriod ?? 30,
+          autoLockPosAfterInactivity: pos.autoLockPosAfterInactivity ?? 15
+        });
+      }
     } catch (error) {
       console.error('Error fetching settings:', error);
     }
@@ -475,10 +600,26 @@ const SettingsPage: React.FC = () => {
           pickupEnabled,
           maintenanceMode,
           pushNotificationsEnabled
-        }
+        },
+        pos: activeSection === 'pos' ? posSettings : undefined,
+        branchSettings: activeSection === 'branches' ? branchSettings : undefined
       };
 
+      // Remove undefined sections if not in the active section
+      if (activeSection !== 'branches') {
+        delete (settings as any).branchSettings;
+      }
+      if (activeSection !== 'pos') {
+        delete (settings as any).pos;
+      }
+
       await settingsService.updateSettings(settings);
+      
+      // Save branch settings separately if in branches section
+      if (activeSection === 'branches') {
+        await branchManagementService.updateBranchSettings(branchSettings);
+      }
+
       setSuccess('Settings saved successfully!');
       setTimeout(() => setSuccess(null), 3000);
     } catch (error: any) {
@@ -920,6 +1061,326 @@ const SettingsPage: React.FC = () => {
       </div>
     </div>
   );
+
+  // Branch Management Functions
+  const handleCreateBranch = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // Validate required fields
+      if (!branchFormData.name || !branchFormData.code || !branchFormData.address || !branchFormData.city || !branchFormData.province) {
+        throw new Error('Please fill in all required fields (Name, Code, Address, City, Province)');
+      }
+
+      // Convert form operating hours to database format (only include open days)
+      const dbOperatingHours: any = {};
+      Object.keys(branchFormData.operatingHours).forEach((day) => {
+        const dayData = branchFormData.operatingHours[day as keyof typeof branchFormData.operatingHours];
+        if (dayData.isOpen) {
+          dbOperatingHours[day] = {
+            open: dayData.open,
+            close: dayData.close
+          };
+        }
+      });
+
+      await branchManagementService.createBranch({
+        name: branchFormData.name,
+        code: branchFormData.code,
+        address: branchFormData.address,
+        city: branchFormData.city,
+        province: branchFormData.province,
+        postal_code: branchFormData.postalCode || undefined,
+        phone: branchFormData.phone || undefined,
+        email: branchFormData.email || undefined,
+        manager_id: branchFormData.managerId || undefined,
+        is_active: branchFormData.status === 'active',
+        operating_hours: Object.keys(dbOperatingHours).length > 0 ? dbOperatingHours : null,
+        branch_type: branchFormData.type
+      });
+
+      setSuccess('Branch created successfully!');
+      setShowAddBranchModal(false);
+      resetBranchForm();
+      await fetchAllBranches();
+      await fetchBranches(); // Refresh dropdown
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (error: any) {
+      setError(error.message || 'Failed to create branch');
+      setTimeout(() => setError(null), 5000);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUpdateBranch = async () => {
+    if (!editingBranch) return;
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Validate required fields
+      if (!branchFormData.name || !branchFormData.code || !branchFormData.address || !branchFormData.city || !branchFormData.province) {
+        throw new Error('Please fill in all required fields (Name, Code, Address, City, Province)');
+      }
+
+      // Convert form operating hours to database format (only include open days)
+      const dbOperatingHours: any = {};
+      Object.keys(branchFormData.operatingHours).forEach((day) => {
+        const dayData = branchFormData.operatingHours[day as keyof typeof branchFormData.operatingHours];
+        if (dayData.isOpen) {
+          dbOperatingHours[day] = {
+            open: dayData.open,
+            close: dayData.close
+          };
+        }
+      });
+
+      await branchManagementService.updateBranch({
+        id: editingBranch.id,
+        name: branchFormData.name,
+        code: branchFormData.code,
+        address: branchFormData.address,
+        city: branchFormData.city,
+        province: branchFormData.province,
+        postal_code: branchFormData.postalCode || undefined,
+        phone: branchFormData.phone || undefined,
+        email: branchFormData.email || undefined,
+        manager_id: branchFormData.managerId || undefined,
+        is_active: branchFormData.status === 'active',
+        operating_hours: Object.keys(dbOperatingHours).length > 0 ? dbOperatingHours : null,
+        branch_type: branchFormData.type
+      });
+
+      setSuccess('Branch updated successfully!');
+      setShowAddBranchModal(false);
+      setEditingBranch(null);
+      resetBranchForm();
+      await fetchAllBranches();
+      await fetchBranches(); // Refresh dropdown
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (error: any) {
+      setError(error.message || 'Failed to update branch');
+      setTimeout(() => setError(null), 5000);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteBranch = async (branchId: string) => {
+    if (!confirm('Are you sure you want to deactivate this branch? This will set it as inactive.')) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+      await branchManagementService.deleteBranch(branchId);
+      setSuccess('Branch deactivated successfully!');
+      await fetchAllBranches();
+      await fetchBranches(); // Refresh dropdown
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (error: any) {
+      setError(error.message || 'Failed to delete branch');
+      setTimeout(() => setError(null), 5000);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEditBranch = (branch: Branch) => {
+    setEditingBranch(branch);
+    
+    // Convert database operating hours (open/close) to form format (with isOpen flag for all days)
+    const dbHours = branch.operating_hours || {};
+    const formHours: any = {
+      monday: { open: '08:00', close: '18:00', isOpen: false },
+      tuesday: { open: '08:00', close: '18:00', isOpen: false },
+      wednesday: { open: '08:00', close: '18:00', isOpen: false },
+      thursday: { open: '08:00', close: '18:00', isOpen: false },
+      friday: { open: '08:00', close: '18:00', isOpen: false },
+      saturday: { open: '08:00', close: '18:00', isOpen: false },
+      sunday: { open: '08:00', close: '18:00', isOpen: false }
+    };
+    
+    // Populate form hours from database hours
+    Object.keys(formHours).forEach((day) => {
+      const dbDayData = dbHours[day as keyof typeof dbHours];
+      if (dbDayData && typeof dbDayData === 'object' && 'open' in dbDayData && 'close' in dbDayData) {
+        formHours[day] = {
+          open: dbDayData.open,
+          close: dbDayData.close,
+          isOpen: true
+        };
+      }
+    });
+    
+    setBranchFormData({
+      name: branch.name,
+      code: branch.code,
+      type: branch.branch_type,
+      address: branch.address,
+      city: branch.city,
+      province: branch.province,
+      postalCode: branch.postal_code || '',
+      phone: branch.phone || '',
+      email: branch.email || '',
+      operatingHours: formHours,
+      managerId: branch.manager_id || '',
+      status: branch.is_active ? 'active' : 'inactive'
+    });
+    setShowAddBranchModal(true);
+  };
+
+  const resetBranchForm = () => {
+    setBranchFormData({
+      name: '',
+      code: '',
+      type: 'main',
+      address: '',
+      city: '',
+      province: '',
+      postalCode: '',
+      phone: '',
+      email: '',
+      operatingHours: {
+        monday: { open: '08:00', close: '18:00', isOpen: true },
+        tuesday: { open: '08:00', close: '18:00', isOpen: true },
+        wednesday: { open: '08:00', close: '18:00', isOpen: true },
+        thursday: { open: '08:00', close: '18:00', isOpen: true },
+        friday: { open: '08:00', close: '18:00', isOpen: true },
+        saturday: { open: '08:00', close: '18:00', isOpen: true },
+        sunday: { open: '08:00', close: '18:00', isOpen: false }
+      },
+      managerId: '',
+      status: 'active'
+    });
+    setEditingBranch(null);
+  };
+
+  // POS Terminal Management Functions
+  const handleCreateTerminal = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // Validate required fields
+      if (!terminalFormData.terminal_name || !terminalFormData.terminal_code || !terminalFormData.branch_id) {
+        throw new Error('Please fill in all required fields (Terminal Name, Terminal Code, Branch)');
+      }
+
+      await posTerminalManagementService.createTerminal({
+        terminal_name: terminalFormData.terminal_name,
+        terminal_code: terminalFormData.terminal_code,
+        branch_id: terminalFormData.branch_id,
+        status: terminalFormData.status,
+        assigned_user_id: terminalFormData.assigned_user_id || undefined,
+        notes: terminalFormData.notes || undefined
+      });
+
+      setSuccess('Terminal created successfully!');
+      setShowAddTerminalModal(false);
+      resetTerminalForm();
+      await fetchAllTerminals();
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (error: any) {
+      setError(error.message || 'Failed to create terminal');
+      setTimeout(() => setError(null), 5000);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUpdateTerminal = async () => {
+    if (!editingTerminal) return;
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Validate required fields
+      if (!terminalFormData.terminal_name || !terminalFormData.terminal_code || !terminalFormData.branch_id) {
+        throw new Error('Please fill in all required fields (Terminal Name, Terminal Code, Branch)');
+      }
+
+      await posTerminalManagementService.updateTerminal({
+        id: editingTerminal.id,
+        terminal_name: terminalFormData.terminal_name,
+        terminal_code: terminalFormData.terminal_code,
+        branch_id: terminalFormData.branch_id,
+        status: terminalFormData.status,
+        assigned_user_id: terminalFormData.assigned_user_id || undefined,
+        notes: terminalFormData.notes || undefined
+      });
+
+      setSuccess('Terminal updated successfully!');
+      setShowAddTerminalModal(false);
+      setEditingTerminal(null);
+      resetTerminalForm();
+      await fetchAllTerminals();
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (error: any) {
+      setError(error.message || 'Failed to update terminal');
+      setTimeout(() => setError(null), 5000);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteTerminal = async (terminalId: string) => {
+    if (!confirm('Are you sure you want to deactivate this terminal? This will set it as inactive.')) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+      await posTerminalManagementService.deleteTerminal(terminalId);
+      setSuccess('Terminal deactivated successfully!');
+      await fetchAllTerminals();
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (error: any) {
+      setError(error.message || 'Failed to delete terminal');
+      setTimeout(() => setError(null), 5000);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEditTerminal = (terminal: POSTerminal) => {
+    setEditingTerminal(terminal);
+    setTerminalFormData({
+      terminal_name: terminal.terminal_name,
+      terminal_code: terminal.terminal_code,
+      branch_id: terminal.branch_id,
+      status: terminal.status,
+      assigned_user_id: terminal.assigned_user_id || '',
+      notes: terminal.notes || ''
+    });
+    setShowAddTerminalModal(true);
+  };
+
+  const resetTerminalForm = () => {
+    setTerminalFormData({
+      terminal_name: '',
+      terminal_code: '',
+      branch_id: '',
+      status: 'active',
+      assigned_user_id: '',
+      notes: ''
+    });
+    setEditingTerminal(null);
+  };
+
+  // Custom payment method removal handler
+  const removeCustomPaymentMethod = (method: string) => {
+    setPosSettings({
+      ...posSettings,
+      allowedPaymentMethods: posSettings.allowedPaymentMethods.filter(m => m !== method)
+    });
+  };
 
   const handleLogoutAllSessions = async () => {
     if (!confirm('Are you sure you want to logout all active sessions? This will force all users to login again and close all active POS sessions.')) {
@@ -2049,7 +2510,10 @@ const SettingsPage: React.FC = () => {
             <h3 className="text-lg font-semibold text-gray-900">Branch Locations</h3>
           </div>
           <button
-            onClick={() => setShowAddBranchModal(true)}
+            onClick={() => {
+              resetBranchForm();
+              setShowAddBranchModal(true);
+            }}
             className="flex items-center space-x-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
           >
             <Plus className="w-4 h-4" />
@@ -2058,26 +2522,71 @@ const SettingsPage: React.FC = () => {
         </div>
         
         <div className="space-y-4">
-          <div className="grid grid-cols-1 gap-4">
-            {/* Sample branch items */}
-            <div className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h4 className="font-medium text-gray-900">Main Branch</h4>
-                  <p className="text-sm text-gray-500">123 Business St, Manila</p>
-                  <p className="text-xs text-gray-400">Branch Code: MAIN</p>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <span className="px-2 py-1 text-xs font-medium text-green-700 bg-green-100 rounded-full">
-                    Active
-                  </span>
-                  <button className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg">
-                    <Edit3 className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
+          {loading && branches.length === 0 ? (
+            <div className="text-center py-8">
+              <RefreshCw className="w-8 h-8 animate-spin text-gray-400 mx-auto mb-2" />
+              <p className="text-gray-500">Loading branches...</p>
             </div>
-          </div>
+          ) : branches.length === 0 ? (
+            <div className="text-center py-8">
+              <Building className="w-12 h-12 text-gray-300 mx-auto mb-2" />
+              <p className="text-gray-500">No branches found. Click "Add Branch" to create one.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-4">
+              {branches.map((branch) => (
+                <div key={branch.id} className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center space-x-2 mb-1">
+                        <h4 className="font-medium text-gray-900">{branch.name}</h4>
+                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                          branch.branch_type === 'main' 
+                            ? 'bg-blue-100 text-blue-700' 
+                            : 'bg-gray-100 text-gray-700'
+                        }`}>
+                          {branch.branch_type}
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-500">{branch.address}, {branch.city}, {branch.province}</p>
+                      <p className="text-xs text-gray-400">Branch Code: {branch.code}</p>
+                      {branch.manager && (
+                        <p className="text-xs text-gray-400 mt-1">
+                          Manager: {branch.manager.first_name} {branch.manager.last_name}
+                        </p>
+                      )}
+                      {branch.phone && (
+                        <p className="text-xs text-gray-400">Phone: {branch.phone}</p>
+                      )}
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                        branch.is_active 
+                          ? 'bg-green-100 text-green-700' 
+                          : 'bg-red-100 text-red-700'
+                      }`}>
+                        {branch.is_active ? 'Active' : 'Inactive'}
+                      </span>
+                      <button
+                        onClick={() => handleEditBranch(branch)}
+                        className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg"
+                        title="Edit branch"
+                      >
+                        <Edit3 className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteBranch(branch.id)}
+                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                        title="Deactivate branch"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -2094,6 +2603,8 @@ const SettingsPage: React.FC = () => {
           <label className="flex items-center space-x-3">
             <input
               type="checkbox"
+              checked={branchSettings.allowInterBranchTransfers}
+              onChange={(e) => setBranchSettings({ ...branchSettings, allowInterBranchTransfers: e.target.checked })}
               className="rounded border-gray-300 text-orange-600 focus:ring-orange-500"
             />
             <span className="text-sm text-gray-700">Allow inter-branch transfers</span>
@@ -2102,6 +2613,8 @@ const SettingsPage: React.FC = () => {
           <label className="flex items-center space-x-3">
             <input
               type="checkbox"
+              checked={branchSettings.shareInventoryAcrossBranches}
+              onChange={(e) => setBranchSettings({ ...branchSettings, shareInventoryAcrossBranches: e.target.checked })}
               className="rounded border-gray-300 text-orange-600 focus:ring-orange-500"
             />
             <span className="text-sm text-gray-700">Share inventory across branches</span>
@@ -2110,24 +2623,383 @@ const SettingsPage: React.FC = () => {
           <label className="flex items-center space-x-3">
             <input
               type="checkbox"
+              checked={branchSettings.enableBranchSpecificPricing}
+              onChange={(e) => setBranchSettings({ ...branchSettings, enableBranchSpecificPricing: e.target.checked })}
               className="rounded border-gray-300 text-orange-600 focus:ring-orange-500"
             />
             <span className="text-sm text-gray-700">Enable branch-specific pricing</span>
           </label>
         </div>
       </div>
+
+      {/* Add/Edit Branch Modal */}
+      {showAddBranchModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+              <h3 className="text-xl font-semibold text-gray-900">
+                {editingBranch ? 'Edit Branch' : 'Add New Branch'}
+              </h3>
+              <button
+                onClick={() => {
+                  setShowAddBranchModal(false);
+                  resetBranchForm();
+                }}
+                className="p-2 text-gray-400 hover:text-gray-600 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* Basic Information */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Branch Name <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={branchFormData.name}
+                    onChange={(e) => setBranchFormData({ ...branchFormData, name: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                    placeholder="Main Branch"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Branch Code <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={branchFormData.code}
+                    onChange={(e) => setBranchFormData({ ...branchFormData, code: e.target.value.toUpperCase() })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                    placeholder="MAIN"
+                    maxLength={10}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Branch Type <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={branchFormData.type}
+                    onChange={(e) => setBranchFormData({ ...branchFormData, type: e.target.value as 'main' | 'satellite' })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                  >
+                    <option value="main">Main Branch</option>
+                    <option value="satellite">Satellite Branch</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Status
+                  </label>
+                  <select
+                    value={branchFormData.status}
+                    onChange={(e) => setBranchFormData({ ...branchFormData, status: e.target.value as 'active' | 'inactive' })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                  >
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Address Information */}
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Address <span className="text-red-500">*</span>
+                  </label>
+                  <textarea
+                    value={branchFormData.address}
+                    onChange={(e) => setBranchFormData({ ...branchFormData, address: e.target.value })}
+                    rows={2}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                    placeholder="123 Business Street"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      City <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={branchFormData.city}
+                      onChange={(e) => setBranchFormData({ ...branchFormData, city: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                      placeholder="Manila"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Province <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={branchFormData.province}
+                      onChange={(e) => setBranchFormData({ ...branchFormData, province: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                      placeholder="Metro Manila"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Postal Code
+                    </label>
+                    <input
+                      type="text"
+                      value={branchFormData.postalCode}
+                      onChange={(e) => setBranchFormData({ ...branchFormData, postalCode: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                      placeholder="1000"
+                      maxLength={10}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Contact Information */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Phone
+                  </label>
+                  <input
+                    type="tel"
+                    value={branchFormData.phone}
+                    onChange={(e) => setBranchFormData({ ...branchFormData, phone: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                    placeholder="+63 2 8123 4567"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Email
+                  </label>
+                  <input
+                    type="email"
+                    value={branchFormData.email}
+                    onChange={(e) => setBranchFormData({ ...branchFormData, email: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                    placeholder="branch@example.com"
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Manager
+                  </label>
+                  <select
+                    value={branchFormData.managerId}
+                    onChange={(e) => setBranchFormData({ ...branchFormData, managerId: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                  >
+                    <option value="">Select a manager (optional)</option>
+                    {managerCandidates.map((manager) => (
+                      <option key={manager.id} value={manager.id}>
+                        {manager.first_name} {manager.last_name} ({manager.email}) - {manager.role}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Operating Hours */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-3">
+                  Operating Hours
+                </label>
+                <div className="space-y-2 border border-gray-200 rounded-lg p-4">
+                  {(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as const).map((day) => (
+                    <div key={day} className="flex items-center space-x-4">
+                      <div className="w-24">
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={branchFormData.operatingHours[day].isOpen}
+                            onChange={(e) => {
+                              const newHours = { ...branchFormData.operatingHours };
+                              newHours[day] = { ...newHours[day], isOpen: e.target.checked };
+                              setBranchFormData({ ...branchFormData, operatingHours: newHours });
+                            }}
+                            className="rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                          />
+                          <span className="text-sm font-medium text-gray-700 capitalize">{day}</span>
+                        </label>
+                      </div>
+                      {branchFormData.operatingHours[day].isOpen && (
+                        <>
+                          <input
+                            type="time"
+                            value={branchFormData.operatingHours[day].open}
+                            onChange={(e) => {
+                              const newHours = { ...branchFormData.operatingHours };
+                              newHours[day] = { ...newHours[day], open: e.target.value };
+                              setBranchFormData({ ...branchFormData, operatingHours: newHours });
+                            }}
+                            className="px-3 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                          />
+                          <span className="text-gray-500">to</span>
+                          <input
+                            type="time"
+                            value={branchFormData.operatingHours[day].close}
+                            onChange={(e) => {
+                              const newHours = { ...branchFormData.operatingHours };
+                              newHours[day] = { ...newHours[day], close: e.target.value };
+                              setBranchFormData({ ...branchFormData, operatingHours: newHours });
+                            }}
+                            className="px-3 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                          />
+                        </>
+                      )}
+                      {!branchFormData.operatingHours[day].isOpen && (
+                        <span className="text-sm text-gray-400">Closed</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-6 py-4 flex items-center justify-end space-x-3">
+              <button
+                onClick={() => {
+                  setShowAddBranchModal(false);
+                  resetBranchForm();
+                }}
+                className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={editingBranch ? handleUpdateBranch : handleCreateBranch}
+                disabled={loading}
+                className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+              >
+                {loading ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Save className="w-4 h-4" />
+                )}
+                <span>{loading ? 'Saving...' : editingBranch ? 'Update Branch' : 'Create Branch'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 
   const renderPosTerminalManagement = () => (
     <div className="space-y-8">
-      {/* POS Terminal Settings Card */}
+      {/* Terminal List Card */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center space-x-3">
+            <div className="p-2 bg-teal-50 rounded-lg">
+              <Monitor className="w-5 h-5 text-teal-600" />
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900">POS Terminals</h3>
+          </div>
+          <button
+            onClick={() => {
+              resetTerminalForm();
+              setShowAddTerminalModal(true);
+            }}
+            className="flex items-center space-x-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add Terminal</span>
+          </button>
+        </div>
+        
+        <div className="space-y-4">
+          {loading && posTerminals.length === 0 ? (
+            <div className="text-center py-8">
+              <RefreshCw className="w-8 h-8 animate-spin text-gray-400 mx-auto mb-2" />
+              <p className="text-gray-500">Loading terminals...</p>
+            </div>
+          ) : posTerminals.length === 0 ? (
+            <div className="text-center py-8">
+              <Monitor className="w-12 h-12 text-gray-300 mx-auto mb-2" />
+              <p className="text-gray-500">No terminals found. Click "Add Terminal" to create one.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-4">
+              {posTerminals.map((terminal) => (
+                <div key={terminal.id} className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center space-x-2 mb-1">
+                        <h4 className="font-medium text-gray-900">{terminal.terminal_name}</h4>
+                        <span className="px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-700">
+                          {terminal.terminal_code}
+                        </span>
+                      </div>
+                      {terminal.branch && (
+                        <p className="text-sm text-gray-500">Branch: {terminal.branch.name} ({terminal.branch.code})</p>
+                      )}
+                      {terminal.assigned_user && (
+                        <p className="text-xs text-gray-400 mt-1">
+                          Assigned to: {terminal.assigned_user.first_name} {terminal.assigned_user.last_name} ({terminal.assigned_user.email})
+                        </p>
+                      )}
+                      {terminal.notes && (
+                        <p className="text-xs text-gray-400 mt-1">Notes: {terminal.notes}</p>
+                      )}
+                      {terminal.last_sync && (
+                        <p className="text-xs text-gray-400">Last Sync: {new Date(terminal.last_sync).toLocaleString()}</p>
+                      )}
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                        terminal.status === 'active' 
+                          ? 'bg-green-100 text-green-700' 
+                          : 'bg-red-100 text-red-700'
+                      }`}>
+                        {terminal.status}
+                      </span>
+                      <button
+                        onClick={() => handleEditTerminal(terminal)}
+                        className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg"
+                        title="Edit terminal"
+                      >
+                        <Edit3 className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteTerminal(terminal.id)}
+                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                        title="Deactivate terminal"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Standard POS Configuration Card */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
         <div className="flex items-center space-x-3 mb-6">
-          <div className="p-2 bg-teal-50 rounded-lg">
-            <Monitor className="w-5 h-5 text-teal-600" />
+          <div className="p-2 bg-blue-50 rounded-lg">
+            <Settings2 className="w-5 h-5 text-blue-600" />
           </div>
-          <h3 className="text-lg font-semibold text-gray-900">POS Terminal Settings</h3>
+          <h3 className="text-lg font-semibold text-gray-900">Standard POS Configuration</h3>
         </div>
         
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -2162,43 +3034,20 @@ const SettingsPage: React.FC = () => {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Receipt Number Prefix
+              Receipt Prefix
             </label>
             <input
               type="text"
-              value={posSettings.receiptNumberPrefix}
-              onChange={(e) => setPosSettings({...posSettings, receiptNumberPrefix: e.target.value})}
+              value={posSettings.receiptPrefix}
+              onChange={(e) => setPosSettings({...posSettings, receiptPrefix: e.target.value})}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
               placeholder="RCP"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Offline Sync Interval (minutes)
-            </label>
-            <input
-              type="number"
-              value={posSettings.syncInterval}
-              onChange={(e) => setPosSettings({...posSettings, syncInterval: Number(e.target.value)})}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-              min="1"
-              max="60"
+              maxLength={10}
             />
           </div>
         </div>
-      </div>
 
-      {/* POS Features Card */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-        <div className="flex items-center space-x-3 mb-6">
-          <div className="p-2 bg-blue-50 rounded-lg">
-            <Settings2 className="w-5 h-5 text-blue-600" />
-          </div>
-          <h3 className="text-lg font-semibold text-gray-900">POS Features</h3>
-        </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="mt-6 space-y-4">
           <label className="flex items-center space-x-3">
             <input
               type="checkbox"
@@ -2206,97 +3055,17 @@ const SettingsPage: React.FC = () => {
               onChange={(e) => setPosSettings({...posSettings, autoPrintReceipt: e.target.checked})}
               className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
             />
-            <span className="text-sm text-gray-700">Auto-print receipts</span>
+            <span className="text-sm text-gray-700">Enable Auto-Print Receipts</span>
           </label>
 
           <label className="flex items-center space-x-3">
             <input
               type="checkbox"
-              checked={posSettings.showItemImages}
-              onChange={(e) => setPosSettings({...posSettings, showItemImages: e.target.checked})}
+              checked={posSettings.enableInventoryDeduction}
+              onChange={(e) => setPosSettings({...posSettings, enableInventoryDeduction: e.target.checked})}
               className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
             />
-            <span className="text-sm text-gray-700">Show item images</span>
-          </label>
-
-          <label className="flex items-center space-x-3">
-            <input
-              type="checkbox"
-              checked={posSettings.enableQuickKeys}
-              onChange={(e) => setPosSettings({...posSettings, enableQuickKeys: e.target.checked})}
-              className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
-            />
-            <span className="text-sm text-gray-700">Enable quick keys</span>
-          </label>
-
-          <label className="flex items-center space-x-3">
-            <input
-              type="checkbox"
-              checked={posSettings.enableBulkOperations}
-              onChange={(e) => setPosSettings({...posSettings, enableBulkOperations: e.target.checked})}
-              className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
-            />
-            <span className="text-sm text-gray-700">Enable bulk operations</span>
-          </label>
-
-          <label className="flex items-center space-x-3">
-            <input
-              type="checkbox"
-              checked={posSettings.enableInventoryTracking}
-              onChange={(e) => setPosSettings({...posSettings, enableInventoryTracking: e.target.checked})}
-              className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
-            />
-            <span className="text-sm text-gray-700">Enable inventory tracking</span>
-          </label>
-
-          <label className="flex items-center space-x-3">
-            <input
-              type="checkbox"
-              checked={posSettings.enablePriceOverrides}
-              onChange={(e) => setPosSettings({...posSettings, enablePriceOverrides: e.target.checked})}
-              className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
-            />
-            <span className="text-sm text-gray-700">Enable price overrides</span>
-          </label>
-
-          <label className="flex items-center space-x-3">
-            <input
-              type="checkbox"
-              checked={posSettings.requireManagerForOverrides}
-              onChange={(e) => setPosSettings({...posSettings, requireManagerForOverrides: e.target.checked})}
-              className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
-            />
-            <span className="text-sm text-gray-700">Require manager for overrides</span>
-          </label>
-
-          <label className="flex items-center space-x-3">
-            <input
-              type="checkbox"
-              checked={posSettings.enableCustomerSearch}
-              onChange={(e) => setPosSettings({...posSettings, enableCustomerSearch: e.target.checked})}
-              className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
-            />
-            <span className="text-sm text-gray-700">Enable customer search</span>
-          </label>
-
-          <label className="flex items-center space-x-3">
-            <input
-              type="checkbox"
-              checked={posSettings.enableBarcodeGeneration}
-              onChange={(e) => setPosSettings({...posSettings, enableBarcodeGeneration: e.target.checked})}
-              className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
-            />
-            <span className="text-sm text-gray-700">Enable barcode generation</span>
-          </label>
-
-          <label className="flex items-center space-x-3">
-            <input
-              type="checkbox"
-              checked={posSettings.enableOfflineMode}
-              onChange={(e) => setPosSettings({...posSettings, enableOfflineMode: e.target.checked})}
-              className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
-            />
-            <span className="text-sm text-gray-700">Enable offline mode</span>
+            <span className="text-sm text-gray-700">Enable Inventory Deduction</span>
           </label>
 
           <label className="flex items-center space-x-3">
@@ -2306,7 +3075,7 @@ const SettingsPage: React.FC = () => {
               onChange={(e) => setPosSettings({...posSettings, enableAuditLog: e.target.checked})}
               className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
             />
-            <span className="text-sm text-gray-700">Enable audit log</span>
+            <span className="text-sm text-gray-700">Enable Audit Logs</span>
           </label>
 
           <label className="flex items-center space-x-3">
@@ -2316,7 +3085,79 @@ const SettingsPage: React.FC = () => {
               onChange={(e) => setPosSettings({...posSettings, enableReceiptNumbering: e.target.checked})}
               className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
             />
-            <span className="text-sm text-gray-700">Enable receipt numbering</span>
+            <span className="text-sm text-gray-700">Enable Receipt Numbering</span>
+          </label>
+        </div>
+      </div>
+
+      {/* POS User Permissions Card */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+        <div className="flex items-center space-x-3 mb-6">
+          <div className="p-2 bg-purple-50 rounded-lg">
+            <Shield className="w-5 h-5 text-purple-600" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900">POS User Permissions</h3>
+        </div>
+        
+        <div className="space-y-4">
+          <label className="flex items-center space-x-3">
+            <input
+              type="checkbox"
+              checked={posSettings.allowPriceOverride}
+              onChange={(e) => setPosSettings({...posSettings, allowPriceOverride: e.target.checked})}
+              className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+            />
+            <span className="text-sm text-gray-700">Allow Price Override</span>
+          </label>
+
+          <label className="flex items-center space-x-3">
+            <input
+              type="checkbox"
+              checked={posSettings.requireManagerApprovalForPriceOverride}
+              onChange={(e) => setPosSettings({...posSettings, requireManagerApprovalForPriceOverride: e.target.checked})}
+              className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+            />
+            <span className="text-sm text-gray-700">Require Manager Approval for Price Override</span>
+          </label>
+
+          <label className="flex items-center space-x-3">
+            <input
+              type="checkbox"
+              checked={posSettings.restrictVoidTransactionsToAdmin}
+              onChange={(e) => setPosSettings({...posSettings, restrictVoidTransactionsToAdmin: e.target.checked})}
+              className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+            />
+            <span className="text-sm text-gray-700">Restrict Void Transactions to Admin</span>
+          </label>
+
+          <label className="flex items-center space-x-3">
+            <input
+              type="checkbox"
+              checked={posSettings.requireLoginForTransactions}
+              onChange={(e) => setPosSettings({...posSettings, requireLoginForTransactions: e.target.checked})}
+              className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+            />
+            <span className="text-sm text-gray-700">Require Login for Transactions</span>
+          </label>
+
+          <label className="flex items-center space-x-3">
+            <input
+              type="checkbox"
+              checked={posSettings.requireShiftStartEnd}
+              onChange={(e) => setPosSettings({...posSettings, requireShiftStartEnd: e.target.checked})}
+              className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+            />
+            <span className="text-sm text-gray-700">Require Shift Start / End</span>
+          </label>
+
+          <label className="flex items-center space-x-3">
+            <input
+              type="checkbox"
+              checked={posSettings.requireCashCountAtEndShift}
+              onChange={(e) => setPosSettings({...posSettings, requireCashCountAtEndShift: e.target.checked})}
+              className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+            />
+            <span className="text-sm text-gray-700">Require Cash Count at End Shift</span>
           </label>
         </div>
       </div>
@@ -2331,47 +3172,407 @@ const SettingsPage: React.FC = () => {
         </div>
         
         <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-3">
+              Allowed Payment Methods
+            </label>
+            <div className="space-y-2">
+              <label className="flex items-center space-x-3">
+                <input
+                  type="checkbox"
+                  checked={posSettings.allowedPaymentMethods.includes('cash')}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setPosSettings({
+                        ...posSettings,
+                        allowedPaymentMethods: [...posSettings.allowedPaymentMethods, 'cash']
+                      });
+                    } else {
+                      setPosSettings({
+                        ...posSettings,
+                        allowedPaymentMethods: posSettings.allowedPaymentMethods.filter(m => m !== 'cash')
+                      });
+                    }
+                  }}
+                  className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+                />
+                <span className="text-sm text-gray-700">Cash</span>
+              </label>
+
+              <label className="flex items-center space-x-3">
+                <input
+                  type="checkbox"
+                  checked={posSettings.allowedPaymentMethods.includes('gcash')}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setPosSettings({
+                        ...posSettings,
+                        allowedPaymentMethods: [...posSettings.allowedPaymentMethods, 'gcash']
+                      });
+                    } else {
+                      setPosSettings({
+                        ...posSettings,
+                        allowedPaymentMethods: posSettings.allowedPaymentMethods.filter(m => m !== 'gcash')
+                      });
+                    }
+                  }}
+                  className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+                />
+                <span className="text-sm text-gray-700">GCash</span>
+              </label>
+
+              <label className="flex items-center space-x-3">
+                <input
+                  type="checkbox"
+                  checked={posSettings.allowedPaymentMethods.includes('combination')}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setPosSettings({
+                        ...posSettings,
+                        allowedPaymentMethods: [...posSettings.allowedPaymentMethods, 'combination']
+                      });
+                    } else {
+                      setPosSettings({
+                        ...posSettings,
+                        allowedPaymentMethods: posSettings.allowedPaymentMethods.filter(m => m !== 'combination')
+                      });
+                    }
+                  }}
+                  className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+                />
+                <span className="text-sm text-gray-700">Combination (Cash + GCash)</span>
+              </label>
+
+              {/* Custom payment methods */}
+              {posSettings.allowedPaymentMethods
+                .filter(m => !['cash', 'gcash', 'combination'].includes(m))
+                .map((method) => (
+                  <div key={method} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
+                    <span className="text-sm text-gray-700 capitalize">{method}</span>
+                    <button
+                      onClick={() => removeCustomPaymentMethod(method)}
+                      className="text-xs text-red-600 hover:text-red-700 font-medium"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+            </div>
+            
+            <div className="mt-4">
+              <button
+                onClick={() => {
+                  const customMethod = prompt('Enter custom payment method name:');
+                  if (customMethod && customMethod.trim() && !posSettings.allowedPaymentMethods.includes(customMethod.trim().toLowerCase())) {
+                    setPosSettings({
+                      ...posSettings,
+                      allowedPaymentMethods: [...posSettings.allowedPaymentMethods, customMethod.trim().toLowerCase()]
+                    });
+                  } else if (customMethod && posSettings.allowedPaymentMethods.includes(customMethod.trim().toLowerCase())) {
+                    alert('This payment method already exists.');
+                  }
+                }}
+                className="text-sm text-teal-600 hover:text-teal-700 font-medium"
+              >
+                + Add Custom Payment Method
+              </button>
+            </div>
+          </div>
+
+          <div className="pt-4 border-t border-gray-200">
+            <label className="flex items-center space-x-3">
+              <input
+                type="checkbox"
+                checked={posSettings.enableMultiPayment}
+                onChange={(e) => setPosSettings({...posSettings, enableMultiPayment: e.target.checked})}
+                className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+              />
+              <span className="text-sm text-gray-700">Enable Multiple Payments</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      {/* Hardware Settings Card */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+        <div className="flex items-center space-x-3 mb-6">
+          <div className="p-2 bg-orange-50 rounded-lg">
+            <Monitor className="w-5 h-5 text-orange-600" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900">Hardware Settings</h3>
+        </div>
+        
+        <div className="space-y-6">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Select Receipt Printer
+            </label>
+            <select
+              value={posSettings.receiptPrinter}
+              onChange={(e) => setPosSettings({...posSettings, receiptPrinter: e.target.value})}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+            >
+              <option value="">No printer selected</option>
+              <option value="default">Default Printer</option>
+              <option value="epson-tm-t20">Epson TM-T20</option>
+              <option value="epson-tm-t82">Epson TM-T82</option>
+              <option value="star-tsp100">Star TSP100</option>
+              <option value="custom">Custom Printer</option>
+            </select>
+          </div>
+
+          <div className="space-y-4">
+            <label className="flex items-center space-x-3">
+              <input
+                type="checkbox"
+                checked={posSettings.openDrawerOnPayment}
+                onChange={(e) => setPosSettings({...posSettings, openDrawerOnPayment: e.target.checked})}
+                className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+              />
+              <span className="text-sm text-gray-700">Open Drawer on Payment</span>
+            </label>
+
+            <label className="flex items-center space-x-3">
+              <input
+                type="checkbox"
+                checked={posSettings.enableScannerSupport}
+                onChange={(e) => setPosSettings({...posSettings, enableScannerSupport: e.target.checked})}
+                className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+              />
+              <span className="text-sm text-gray-700">Enable Scanner Support</span>
+            </label>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Select Camera for Attendance Terminal
+            </label>
+            <select
+              value={posSettings.cameraForAttendanceTerminal}
+              onChange={(e) => setPosSettings({...posSettings, cameraForAttendanceTerminal: e.target.value as 'usb' | 'laptop'})}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+            >
+              <option value="laptop">Laptop Camera</option>
+              <option value="usb">USB Camera</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* Connectivity Card */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+        <div className="flex items-center space-x-3 mb-6">
+          <div className="p-2 bg-indigo-50 rounded-lg">
+            <Activity className="w-5 h-5 text-indigo-600" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900">Connectivity</h3>
+        </div>
+        
+        <div className="space-y-4">
           <label className="flex items-center space-x-3">
             <input
               type="checkbox"
-              checked={posSettings.enableMultiPayment}
-              onChange={(e) => setPosSettings({...posSettings, enableMultiPayment: e.target.checked})}
+              checked={posSettings.showInternetConnectionWarning}
+              onChange={(e) => setPosSettings({...posSettings, showInternetConnectionWarning: e.target.checked})}
               className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
             />
-            <span className="text-sm text-gray-700">Enable multiple payment methods</span>
+            <span className="text-sm text-gray-700">Show Internet Connection Warning</span>
           </label>
 
           <label className="flex items-center space-x-3">
             <input
               type="checkbox"
-              checked={posSettings.enablePartialPayments}
-              onChange={(e) => setPosSettings({...posSettings, enablePartialPayments: e.target.checked})}
+              checked={posSettings.disableTransactionsWhenOffline}
+              onChange={(e) => setPosSettings({...posSettings, disableTransactionsWhenOffline: e.target.checked})}
               className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
             />
-            <span className="text-sm text-gray-700">Enable partial payments</span>
-          </label>
-
-          <label className="flex items-center space-x-3">
-            <input
-              type="checkbox"
-              checked={posSettings.enableLayaway}
-              onChange={(e) => setPosSettings({...posSettings, enableLayaway: e.target.checked})}
-              className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
-            />
-            <span className="text-sm text-gray-700">Enable layaway</span>
-          </label>
-
-          <label className="flex items-center space-x-3">
-            <input
-              type="checkbox"
-              checked={posSettings.enableInstallments}
-              onChange={(e) => setPosSettings({...posSettings, enableInstallments: e.target.checked})}
-              className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
-            />
-            <span className="text-sm text-gray-700">Enable installment payments</span>
+            <span className="text-sm text-gray-700">Disable Transactions When Offline</span>
           </label>
         </div>
       </div>
+
+      {/* Advanced Settings Card */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+        <div className="flex items-center space-x-3 mb-6">
+          <div className="p-2 bg-gray-50 rounded-lg">
+            <Settings className="w-5 h-5 text-gray-600" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900">Advanced Settings</h3>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Maximum Offline Grace Period (minutes)
+            </label>
+            <input
+              type="number"
+              value={posSettings.maxOfflineGracePeriod}
+              onChange={(e) => setPosSettings({...posSettings, maxOfflineGracePeriod: Number(e.target.value)})}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+              min="0"
+              max="120"
+            />
+            <p className="mt-1 text-xs text-gray-500">Allow transactions for this many minutes after losing internet connection</p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Auto-Lock POS after Inactivity (minutes)
+            </label>
+            <input
+              type="number"
+              value={posSettings.autoLockPosAfterInactivity}
+              onChange={(e) => setPosSettings({...posSettings, autoLockPosAfterInactivity: Number(e.target.value)})}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+              min="1"
+              max="60"
+            />
+            <p className="mt-1 text-xs text-gray-500">Automatically lock POS screen after period of inactivity</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Add/Edit Terminal Modal */}
+      {showAddTerminalModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+              <h3 className="text-xl font-semibold text-gray-900">
+                {editingTerminal ? 'Edit Terminal' : 'Add New Terminal'}
+              </h3>
+              <button
+                onClick={() => {
+                  setShowAddTerminalModal(false);
+                  resetTerminalForm();
+                }}
+                className="p-2 text-gray-400 hover:text-gray-600 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* Basic Information */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Terminal Name <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={terminalFormData.terminal_name}
+                    onChange={(e) => setTerminalFormData({ ...terminalFormData, terminal_name: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                    placeholder="Terminal 1"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Terminal Code <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={terminalFormData.terminal_code}
+                    onChange={(e) => setTerminalFormData({ ...terminalFormData, terminal_code: e.target.value.toUpperCase() })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                    placeholder="POS-001"
+                    maxLength={50}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Branch <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={terminalFormData.branch_id}
+                    onChange={(e) => setTerminalFormData({ ...terminalFormData, branch_id: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                  >
+                    <option value="">Select a branch</option>
+                    {availableBranches.map((branch) => (
+                      <option key={branch.id} value={branch.id}>
+                        {branch.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Status
+                  </label>
+                  <select
+                    value={terminalFormData.status}
+                    onChange={(e) => setTerminalFormData({ ...terminalFormData, status: e.target.value as 'active' | 'inactive' })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                  >
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                  </select>
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Assigned User
+                  </label>
+                  <select
+                    value={terminalFormData.assigned_user_id}
+                    onChange={(e) => setTerminalFormData({ ...terminalFormData, assigned_user_id: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                  >
+                    <option value="">Select a user (optional)</option>
+                    {userCandidates.map((user) => (
+                      <option key={user.id} value={user.id}>
+                        {user.first_name} {user.last_name} ({user.email}) - {user.role}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Notes
+                  </label>
+                  <textarea
+                    value={terminalFormData.notes}
+                    onChange={(e) => setTerminalFormData({ ...terminalFormData, notes: e.target.value })}
+                    rows={3}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                    placeholder="Additional notes about this terminal..."
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-6 py-4 flex items-center justify-end space-x-3">
+              <button
+                onClick={() => {
+                  setShowAddTerminalModal(false);
+                  resetTerminalForm();
+                }}
+                className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={editingTerminal ? handleUpdateTerminal : handleCreateTerminal}
+                disabled={loading}
+                className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+              >
+                {loading ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Save className="w-4 h-4" />
+                )}
+                <span>{loading ? 'Saving...' : editingTerminal ? 'Update Terminal' : 'Create Terminal'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 

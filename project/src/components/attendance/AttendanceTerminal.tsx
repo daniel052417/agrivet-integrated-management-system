@@ -63,6 +63,32 @@ const AttendanceTerminal: React.FC = () => {
            (window.matchMedia && window.matchMedia('(max-width: 768px)').matches);
   };
 
+  // Check camera permission status
+  const checkCameraPermission = async (): Promise<'granted' | 'denied' | 'prompt'> => {
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        return 'denied';
+      }
+
+      // Check permission status using Permissions API if available
+      if ('permissions' in navigator && 'query' in navigator.permissions) {
+        try {
+          const permissionStatus = await navigator.permissions.query({ name: 'camera' as PermissionName });
+          return permissionStatus.state as 'granted' | 'denied' | 'prompt';
+        } catch (permErr) {
+          // Permissions API might not support camera on all browsers
+          console.log('Permissions API not fully supported, will request directly');
+        }
+      }
+
+      // If Permissions API is not available, we'll try to request directly
+      return 'prompt';
+    } catch (err) {
+      console.error('Error checking camera permission:', err);
+      return 'prompt';
+    }
+  };
+
   // Start webcam with optimized settings for mobile/laptop/tablet
   const startWebcam = async () => {
     try {
@@ -70,58 +96,131 @@ const AttendanceTerminal: React.FC = () => {
       const isSecureContext = window.isSecureContext || 
                               location.protocol === 'https:' || 
                               location.hostname === 'localhost' || 
-                              location.hostname === '127.0.0.1';
+                              location.hostname === '127.0.0.1' ||
+                              location.hostname.includes('.vercel.app') ||
+                              location.hostname.includes('.netlify.app');
       
       if (!isSecureContext) {
         throw new Error('Camera access requires HTTPS. Please access this page over HTTPS or use localhost.');
       }
       
       // Check if getUserMedia is available
-      if (!navigator.mediaDevices) {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         // Try legacy API for older browsers
-        const getUserMedia = navigator.mediaDevices?.getUserMedia ||
-                            (navigator as any).getUserMedia ||
-                            (navigator as any).webkitGetUserMedia ||
-                            (navigator as any).mozGetUserMedia;
+        const legacyGetUserMedia = (navigator as any).getUserMedia ||
+                                  (navigator as any).webkitGetUserMedia ||
+                                  (navigator as any).mozGetUserMedia;
         
-        if (!getUserMedia) {
+        if (!legacyGetUserMedia) {
           throw new Error('Camera access is not supported in this browser. Please use a modern browser like Chrome, Firefox, or Safari.');
         }
+        
+        // Use legacy API as fallback
+        return new Promise<void>((resolve, reject) => {
+          legacyGetUserMedia.call(navigator, 
+            { video: { facingMode: 'user' }, audio: false },
+            (stream: MediaStream) => {
+              if (videoRef.current) {
+                videoRef.current.srcObject = stream;
+                streamRef.current = stream;
+                setIsWebcamActive(true);
+                setError(null);
+                resolve();
+              }
+            },
+            (err: any) => {
+              console.error('❌ Legacy getUserMedia error:', err);
+              reject(err);
+            }
+          );
+        });
       }
+
+      // Check permission status first
+      const permissionStatus = await checkCameraPermission();
       
-      // Check if getUserMedia method exists
-      if (!navigator.mediaDevices?.getUserMedia) {
-        throw new Error('Camera API is not available. Please ensure you are using a modern browser and the page is served over HTTPS.');
+      if (permissionStatus === 'denied') {
+        throw new Error('Camera access is blocked. Please enable camera permissions in your browser settings and refresh the page.');
       }
 
       // Optimize camera constraints based on device type
       const isMobile = isMobileDevice();
-      const videoConstraints: MediaTrackConstraints = {
-        // Prioritize front-facing camera (user-facing) for all devices
-        facingMode: { ideal: 'user' },
-        // Optimize resolution for different devices
-        width: isMobile 
-          ? { ideal: 640, max: 1280 }  // Lower resolution for mobile to improve performance
-          : { ideal: 1280, max: 1920 }, // Higher resolution for laptops/desktops
-        height: isMobile
-          ? { ideal: 480, max: 720 }
-          : { ideal: 720, max: 1080 },
-        // Additional constraints for better face detection
-        aspectRatio: { ideal: 4 / 3 }, // Standard aspect ratio for face recognition
+      
+      // Try with preferred constraints first
+      let videoConstraints: MediaTrackConstraints = {
+        facingMode: { ideal: 'user' }, // Front-facing camera
+        width: isMobile ? { ideal: 640 } : { ideal: 1280 },
+        height: isMobile ? { ideal: 480 } : { ideal: 720 },
       };
 
       console.log('📷 Requesting camera access with constraints:', videoConstraints);
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: videoConstraints,
-        audio: false // No audio needed for face recognition
-      });
+      let stream: MediaStream;
+      
+      try {
+        // First attempt with preferred constraints
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: videoConstraints,
+          audio: false
+        });
+      } catch (constraintError: any) {
+        // If constraints fail, try with minimal constraints
+        if (constraintError.name === 'OverconstrainedError' || constraintError.name === 'ConstraintNotSatisfiedError') {
+          console.log('⚠️ Preferred constraints failed, trying minimal constraints...');
+          videoConstraints = {
+            facingMode: 'user' // Minimal constraint
+          };
+          
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: videoConstraints,
+              audio: false
+            });
+          } catch (minimalError: any) {
+            // If minimal constraints also fail, try with no constraints at all
+            console.log('⚠️ Minimal constraints failed, trying with no constraints...');
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: true, // Most permissive
+              audio: false
+            });
+          }
+        } else {
+          throw constraintError;
+        }
+      }
 
-      if (videoRef.current) {
+      if (videoRef.current && stream) {
         videoRef.current.srcObject = stream;
         streamRef.current = stream;
-        setIsWebcamActive(true);
-        setError(null);
+        
+        // Wait for video to be ready
+        await new Promise<void>((resolve, reject) => {
+          if (!videoRef.current) {
+            reject(new Error('Video element not available'));
+            return;
+          }
+          
+          const video = videoRef.current;
+          
+          const onLoadedMetadata = () => {
+            setIsWebcamActive(true);
+            setError(null);
+            resolve();
+          };
+          
+          video.addEventListener('loadedmetadata', onLoadedMetadata);
+          
+          // Timeout fallback
+          setTimeout(() => {
+            if (video.readyState >= 2) { // HAVE_CURRENT_DATA
+              setIsWebcamActive(true);
+              setError(null);
+              resolve();
+            } else {
+              reject(new Error('Video failed to load'));
+            }
+          }, 5000);
+        });
         
         // Log camera info for debugging
         const videoTrack = stream.getVideoTracks()[0];
@@ -139,39 +238,35 @@ const AttendanceTerminal: React.FC = () => {
     } catch (err: any) {
       console.error('❌ Error accessing webcam:', err);
       
-      // Provide more specific error messages
-      let errorMessage = 'Unable to access camera. ';
+      // Provide more specific error messages with actionable guidance
+      let errorMessage = '';
+      let actionGuidance = '';
       
       if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        errorMessage += 'Please allow camera access in your browser settings and try again.';
+        errorMessage = 'Camera access was denied.';
+        actionGuidance = isMobileDevice() 
+          ? 'Please tap the camera icon in your browser\'s address bar and allow camera access, then try again.'
+          : 'Please click the camera icon in your browser\'s address bar, allow camera access, then try again.';
       } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
-        errorMessage += 'No camera found. Please ensure a camera is connected.';
+        errorMessage = 'No camera found.';
+        actionGuidance = 'Please ensure a camera is connected and not being used by another application.';
       } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
-        errorMessage += 'Camera is being used by another application. Please close other apps using the camera.';
+        errorMessage = 'Camera is not accessible.';
+        actionGuidance = 'The camera may be in use by another application. Please close other apps using the camera and try again.';
       } else if (err.name === 'OverconstrainedError' || err.name === 'ConstraintNotSatisfiedError') {
-        errorMessage += 'Camera does not support the required settings. Trying with basic settings...';
-        // Try with minimal constraints as fallback
-        try {
-          const fallbackStream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: 'user' },
-            audio: false
-          });
-          if (videoRef.current) {
-            videoRef.current.srcObject = fallbackStream;
-            streamRef.current = fallbackStream;
-            setIsWebcamActive(true);
-            setError(null);
-            return; // Success with fallback
-          }
-        } catch (fallbackErr) {
-          errorMessage = 'Camera access failed. Please check your device settings.';
-        }
+        errorMessage = 'Camera does not support the required settings.';
+        actionGuidance = 'Please try again. The system will automatically adjust camera settings.';
+      } else if (err.message?.includes('HTTPS')) {
+        errorMessage = err.message;
+        actionGuidance = '';
       } else {
-        errorMessage += err.message || 'Please check your camera permissions and try again.';
+        errorMessage = err.message || 'Unable to access camera.';
+        actionGuidance = 'Please ensure your browser supports camera access and try again.';
       }
       
-      setError(errorMessage);
+      setError(`${errorMessage} ${actionGuidance}`);
       setStatus('error');
+      setStatusMessage(`${errorMessage} ${actionGuidance}`);
     }
   };
 
@@ -227,8 +322,9 @@ const AttendanceTerminal: React.FC = () => {
 
   // Process attendance with face recognition
   const processAttendance = async (type: 'timein' | 'timeout') => {
-    if (!videoRef.current || !modelsLoaded) {
-      setError('Webcam or models not ready. Please wait for models to load.');
+    if (!modelsLoaded) {
+      setError('Face recognition models are still loading. Please wait...');
+      setStatus('error');
       return;
     }
 
@@ -240,8 +336,16 @@ const AttendanceTerminal: React.FC = () => {
     try {
       // Start webcam if not already active
       if (!isWebcamActive) {
+        setStatus('loading');
+        setStatusMessage('Requesting camera access... Please allow camera permission when prompted.');
         await startWebcam();
-        await new Promise(resolve => setTimeout(resolve, 500)); // Wait for webcam to initialize
+        
+        // Wait for webcam to initialize and video to be ready
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        if (!isWebcamActive) {
+          throw new Error('Camera failed to start. Please ensure camera permissions are granted.');
+        }
       }
 
       // Start face detection
@@ -432,7 +536,8 @@ const AttendanceTerminal: React.FC = () => {
                     <div className="text-center">
                       <Camera className="w-20 h-20 text-gray-400 mx-auto mb-4" />
                       <p className="text-gray-500 font-medium">Webcam Preview</p>
-                      <p className="text-sm text-gray-400 mt-2">Click Time In or Time Out to start</p>
+                      <p className="text-sm text-gray-400 mt-2">Click "Time In" or "Time Out" to start</p>
+                      <p className="text-xs text-gray-400 mt-1">Your browser will ask for camera permission</p>
                     </div>
                   )}
                 </div>
