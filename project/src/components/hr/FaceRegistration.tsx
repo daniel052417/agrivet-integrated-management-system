@@ -212,19 +212,22 @@ const FaceRegistration: React.FC<FaceRegistrationProps> = ({
         }
       }
 
-      if (videoRef.current && stream) {
-        videoRef.current.srcObject = stream;
+      if (stream) {
         streamRef.current = stream;
         setStep('capturing');
-        
+
+        // Wait for the next frame so the video element mounts
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+        if (!videoRef.current) {
+          throw new Error('Video element not available');
+        }
+
+        videoRef.current.srcObject = stream;
+
         // Wait for video to be ready
         await new Promise<void>((resolve, reject) => {
-          if (!videoRef.current) {
-            reject(new Error('Video element not available'));
-            return;
-          }
-          
-          const video = videoRef.current;
+          const video = videoRef.current!;
           
           const onLoadedMetadata = () => {
             video.play().then(() => {
