@@ -41,12 +41,18 @@ const FaceRegistration: React.FC<FaceRegistrationProps> = ({
       try {
         await loadModels();
 
-        if (!isMounted || autoStartAttemptedRef.current) {
+        if (!isMounted) {
           return;
         }
 
-        autoStartAttemptedRef.current = true;
-        await startCamera();
+        // Only auto-start camera if permission is already granted
+        const permissionStatus = await checkCameraPermission();
+        if (permissionStatus === 'granted' && !autoStartAttemptedRef.current) {
+          autoStartAttemptedRef.current = true;
+          await startCamera();
+        } else {
+          setStep('idle');
+        }
       } catch (err) {
         // loadModels and startCamera already handle their own error states
         console.error('Error during face registration initialization:', err);
