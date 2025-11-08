@@ -163,7 +163,7 @@ const FaceRegistration: React.FC<FaceRegistrationProps> = ({
       const permissionStatus = await checkCameraPermission();
       
       if (permissionStatus === 'denied') {
-        throw new Error('Camera access is blocked. Please enable camera permissions in your browser settings and refresh the page.');
+        console.warn('Camera permission currently reported as denied. Attempting to request access to trigger browser prompt.');
       }
 
       // Optimize camera constraints based on device type
@@ -290,7 +290,7 @@ const FaceRegistration: React.FC<FaceRegistrationProps> = ({
         actionGuidance = 'Please ensure your browser supports camera access and try again.';
       }
       
-      setError(`${errorMessage} ${actionGuidance}`);
+      setError(`${errorMessage} ${actionGuidance}`.trim());
       setStep('idle');
     }
   };
