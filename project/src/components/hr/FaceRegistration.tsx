@@ -74,6 +74,8 @@ const FaceRegistration: React.FC<FaceRegistrationProps> = ({
     try {
       setIsModelsLoading(true);
       await faceRegistrationService.loadModels();
+      // Test models after loading
+      await faceRegistrationService.testModels();
     } catch (err: any) {
       setError(`Failed to load face recognition models: ${err.message}`);
     } finally {
@@ -324,33 +326,31 @@ const FaceRegistration: React.FC<FaceRegistrationProps> = ({
       const video = videoRef.current;
       const canvas = canvasRef.current;
       
-      // Set canvas dimensions to match video
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
+      console.log('📸 Starting face capture from video...');
+      console.log('Video dimensions:', { width: video.videoWidth, height: video.videoHeight });
+      console.log('Video ready state:', video.readyState);
+
+      // IMPORTANT: Detect face DIRECTLY from video element
+      // This avoids canvas mirroring and image conversion issues
+      console.log('🔍 Detecting face directly from video stream...');
+      const faceData = await faceRegistrationService.detectFace(video);
       
-      // Draw current video frame to canvas
-      const ctx = canvas.getContext('2d');
-      if (!ctx) {
-        throw new Error('Could not get canvas context');
+      // 🔍 COMPREHENSIVE DEBUG LOGGING
+      console.log('═══════════════════════════════════════');
+      console.log('🔍 FACE DETECTION RESULT:');
+      console.log('═══════════════════════════════════════');
+      console.log('Face data object:', faceData);
+      console.log('Has face data?', !!faceData);
+      console.log('Has descriptor?', !!faceData?.descriptor);
+      console.log('Descriptor type:', faceData?.descriptor?.constructor.name);
+      console.log('Descriptor length:', faceData?.descriptor?.length);
+      
+      if (faceData?.descriptor) {
+        console.log('First 10 descriptor values:', Array.from(faceData.descriptor.slice(0, 10)));
+        console.log('Last 10 descriptor values:', Array.from(faceData.descriptor.slice(-10)));
+        console.log('All values are numbers?', Array.from(faceData.descriptor).every(v => typeof v === 'number' && !isNaN(v)));
       }
-      
-      ctx.drawImage(video, 0, 0);
-      
-      // Convert canvas to image data URL
-      const imageDataUrl = canvas.toDataURL('image/jpeg', 0.8);
-      setCapturedImage(imageDataUrl);
-
-      // Create image element for face detection
-      const img = new Image();
-      img.src = imageDataUrl;
-      
-      await new Promise((resolve, reject) => {
-        img.onload = resolve;
-        img.onerror = reject;
-      });
-
-      // Detect face
-      const faceData = await faceRegistrationService.detectFace(img);
+      console.log('═══════════════════════════════════════');
       
       if (!faceData) {
         setError('No face detected. Please ensure your face is clearly visible and well-lit.');
@@ -360,10 +360,39 @@ const FaceRegistration: React.FC<FaceRegistrationProps> = ({
         return;
       }
 
+      if (!faceData.descriptor) {
+        setError('Face detected but descriptor generation failed. Please try again.');
+        setStep('capturing');
+        setFaceDetected(false);
+        setIsLoading(false);
+        return;
+      }
+
       setFaceDetected(true);
+      
+      // Now capture the image for storage AFTER successful face detection
+      console.log('📸 Capturing image for storage...');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        throw new Error('Could not get canvas context');
+      }
+      
+      // Draw the video frame (mirrored to match the display)
+      ctx.save();
+      ctx.scale(-1, 1);
+      ctx.drawImage(video, -canvas.width, 0, canvas.width, canvas.height);
+      ctx.restore();
+      
+      const imageDataUrl = canvas.toDataURL('image/jpeg', 0.95);
+      setCapturedImage(imageDataUrl);
+      console.log('📸 Image captured for storage, size:', imageDataUrl.length, 'bytes');
       
       // Calculate confidence
       const confidence = faceRegistrationService.calculateConfidence(faceData.detection);
+      console.log('✅ Face confidence score:', confidence);
       
       if (confidence < 0.5) {
         setError('Face detection confidence is too low. Please try again with better lighting.');
@@ -373,12 +402,39 @@ const FaceRegistration: React.FC<FaceRegistrationProps> = ({
         return;
       }
 
+      // Convert descriptor to array
+      console.log('🔄 Converting descriptor to array...');
+      const descriptorArray = faceRegistrationService.descriptorToArray(faceData.descriptor);
+      
+      console.log('═══════════════════════════════════════');
+      console.log('🔍 DESCRIPTOR CONVERSION RESULT:');
+      console.log('═══════════════════════════════════════');
+      console.log('Converted array:', descriptorArray);
+      console.log('Array length:', descriptorArray.length);
+      console.log('Expected length: 128');
+      console.log('Length matches?', descriptorArray.length === 128);
+      console.log('First 10 values:', descriptorArray.slice(0, 10));
+      console.log('Last 10 values:', descriptorArray.slice(-10));
+      console.log('Contains null?', descriptorArray.includes(null as any));
+      console.log('Contains undefined?', descriptorArray.includes(undefined as any));
+      console.log('Contains NaN?', descriptorArray.some(v => isNaN(v)));
+      console.log('All valid numbers?', descriptorArray.every(v => typeof v === 'number' && !isNaN(v) && v !== null && v !== undefined));
+      console.log('═══════════════════════════════════════');
+
+      // Validate descriptor array
+      if (descriptorArray.length !== 128) {
+        throw new Error(`Invalid descriptor length: expected 128, got ${descriptorArray.length}`);
+      }
+
+      if (descriptorArray.some(v => v === null || v === undefined || isNaN(v))) {
+        throw new Error('Descriptor contains invalid values (null, undefined, or NaN). This may indicate corrupted model files. Try refreshing the page and clearing your browser cache.');
+      }
+
       // If staffId is provided (edit mode or after staff creation), save immediately
       if (staffId) {
-        await saveFaceDescriptor(faceData, imageDataUrl, confidence);
+        await saveFaceDescriptor(faceData, imageDataUrl, confidence, descriptorArray);
       } else {
         // For add mode, just prepare the data and call callback
-        const descriptorArray = faceRegistrationService.descriptorToArray(faceData.descriptor);
         const faceDataToSave: StaffFaceData = {
           staff_id: '', // Will be set when staff is created
           branch_id: branchId,
@@ -389,13 +445,19 @@ const FaceRegistration: React.FC<FaceRegistrationProps> = ({
           is_primary: true
         };
         
+        console.log('✅ Face data prepared for callback:', {
+          ...faceDataToSave,
+          face_descriptor: `[Array of ${faceDataToSave.face_descriptor.length} numbers]`,
+          face_image_url: `[${imageDataUrl.length} bytes]`
+        });
+        
         setStep('success');
         if (onFaceRegistered) {
           onFaceRegistered(faceDataToSave);
         }
       }
     } catch (err: any) {
-      console.error('Error capturing face:', err);
+      console.error('❌ Error capturing face:', err);
       setError(err.message || 'Failed to capture and process face');
       setStep('capturing');
       setFaceDetected(false);
@@ -407,7 +469,8 @@ const FaceRegistration: React.FC<FaceRegistrationProps> = ({
   const saveFaceDescriptor = async (
     faceData: any, 
     imageDataUrl: string, 
-    confidence: number
+    confidence: number,
+    descriptorArray: number[]
   ) => {
     if (!staffId) {
       setError('Staff ID is required to save face data');
@@ -418,7 +481,6 @@ const FaceRegistration: React.FC<FaceRegistrationProps> = ({
       setIsLoading(true);
       
       const currentUser = customAuth.getCurrentUser();
-      const descriptorArray = faceRegistrationService.descriptorToArray(faceData.descriptor);
       
       const faceDataToSave: StaffFaceData = {
         staff_id: staffId,
@@ -436,6 +498,13 @@ const FaceRegistration: React.FC<FaceRegistrationProps> = ({
         }
       };
 
+      console.log('💾 Saving face data to database...');
+      console.log('Face data to save:', {
+        ...faceDataToSave,
+        face_descriptor: `[Array of ${faceDataToSave.face_descriptor.length} numbers]`,
+        face_image_url: `[${imageDataUrl.length} bytes]`
+      });
+
       // If existing face data exists, update it; otherwise create new
       if (existingFaceData?.id) {
         await faceRegistrationService.updateFaceDescriptor(existingFaceData.id, faceDataToSave);
@@ -443,6 +512,7 @@ const FaceRegistration: React.FC<FaceRegistrationProps> = ({
         await faceRegistrationService.saveFaceDescriptor(faceDataToSave);
       }
 
+      console.log('✅ Face data saved successfully to database');
       setStep('success');
       setSuccess(true);
       
@@ -450,7 +520,7 @@ const FaceRegistration: React.FC<FaceRegistrationProps> = ({
         onFaceRegistered(faceDataToSave);
       }
     } catch (err: any) {
-      console.error('Error saving face descriptor:', err);
+      console.error('❌ Error saving face descriptor:', err);
       setError(err.message || 'Failed to save face data');
       setStep('capturing');
     } finally {
@@ -667,6 +737,3 @@ const FaceRegistration: React.FC<FaceRegistrationProps> = ({
 };
 
 export default FaceRegistration;
-
-
-

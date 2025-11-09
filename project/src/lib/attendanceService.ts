@@ -35,6 +35,26 @@ export interface StaffInfo {
 }
 
 class AttendanceService {
+  private normalizeTimestamp(timeInput?: string): string {
+    if (!timeInput) {
+      return new Date().toISOString();
+    }
+
+    const directParse = new Date(timeInput);
+    if (!isNaN(directParse.getTime())) {
+      return directParse.toISOString();
+    }
+
+    // Assume HH:mm or HH:mm:ss, combine with today's date in local timezone
+    const today = new Date();
+    const [hours, minutes, seconds] = timeInput.split(':');
+    today.setHours(parseInt(hours, 10) || 0);
+    today.setMinutes(parseInt(minutes, 10) || 0);
+    today.setSeconds(parseInt(seconds ?? '0', 10) || 0);
+    today.setMilliseconds(0);
+    return today.toISOString();
+  }
+
   /**
    * Get today's attendance record for a staff member
    */
@@ -43,7 +63,7 @@ class AttendanceService {
       const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
 
       const { data, error } = await supabase
-        .from('attendance_records')
+        .from('attendance')
         .select('*')
         .eq('staff_id', staffId)
         .eq('attendance_date', today)
@@ -70,18 +90,20 @@ class AttendanceService {
   async recordTimeIn(staffId: string, timeIn?: string): Promise<AttendanceRecord> {
     try {
       const today = new Date().toISOString().split('T')[0];
-      const timeInValue = timeIn || new Date().toTimeString().split(' ')[0]; // HH:MM:SS
 
       // Check if record already exists
       const existing = await this.getTodayAttendance(staffId);
 
       if (existing) {
         // Update existing record
+        const timeInIso = this.normalizeTimestamp(timeIn);
         const { data, error } = await supabase
-          .from('attendance_records')
+          .from('attendance')
           .update({
-            time_in: timeInValue,
-            status: 'present'
+            time_in: timeInIso,
+            status: 'present',
+            check_in_method: 'biometric',
+            updated_at: new Date().toISOString()
           })
           .eq('id', existing.id)
           .select()
@@ -91,15 +113,19 @@ class AttendanceService {
         return data;
       } else {
         // Create new record
+        const timeInIso = this.normalizeTimestamp(timeIn);
         const { data, error } = await supabase
-          .from('attendance_records')
+          .from('attendance')
           .insert({
             staff_id: staffId,
             attendance_date: today,
-            time_in: timeInValue,
+            time_in: timeInIso,
             status: 'present',
+            check_in_method: 'biometric',
             total_hours: 0,
-            overtime_hours: 0
+            overtime_hours: 0,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
           })
           .select()
           .single();
@@ -118,8 +144,7 @@ class AttendanceService {
    */
   async recordTimeOut(staffId: string, timeOut?: string): Promise<AttendanceRecord> {
     try {
-      const today = new Date().toISOString().split('T')[0];
-      const timeOutValue = timeOut || new Date().toTimeString().split(' ')[0]; // HH:MM:SS
+      const timeOutIso = this.normalizeTimestamp(timeOut);
 
       // Get today's record
       const existing = await this.getTodayAttendance(staffId);
@@ -129,19 +154,21 @@ class AttendanceService {
       }
 
       // Calculate total hours
-      const timeInDate = new Date(`${today}T${existing.time_in}`);
-      const timeOutDate = new Date(`${today}T${timeOutValue}`);
-      const totalMinutes = Math.floor((timeOutDate.getTime() - timeInDate.getTime()) / 60000);
+      const timeInDate = new Date(existing.time_in);
+      const timeOutDate = new Date(timeOutIso);
+      const totalMinutes = Math.max(0, Math.floor((timeOutDate.getTime() - timeInDate.getTime()) / 60000));
       const totalHours = totalMinutes / 60;
       const overtimeHours = Math.max(0, totalHours - 8); // Assuming 8 hours standard
 
       // Update record
       const { data, error } = await supabase
-        .from('attendance_records')
+        .from('attendance')
         .update({
-          time_out: timeOutValue,
+          time_out: timeOutIso,
           total_hours: parseFloat(totalHours.toFixed(2)),
-          overtime_hours: parseFloat(overtimeHours.toFixed(2))
+          overtime_hours: parseFloat(overtimeHours.toFixed(2)),
+          status: totalHours >= 8 ? 'present' : existing.status ?? 'present',
+          updated_at: new Date().toISOString()
         })
         .eq('id', existing.id)
         .select()

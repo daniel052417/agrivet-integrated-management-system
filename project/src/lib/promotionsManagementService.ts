@@ -1,21 +1,41 @@
 import { supabase } from './supabase';
 
 // Type definitions matching the component and database schema
+export interface PromotionBranchRow {
+  promotion_id?: string;
+  branch_id: string;
+  branch?: {
+    id: string;
+    name: string;
+  };
+}
+
+export interface PromotionImageRow {
+  id: string;
+  promotion_id?: string;
+  image_url: string;
+  storage_path?: string | null;
+  display_order: number;
+}
+
 export interface Promotion {
   id: string;
   title: string;
   description: string;
-  image_url?: string;
-  image_urls?: string[];
+  image_url?: string | null;
   promotion_type: 'new_item' | 'restock' | 'event';
   status: 'draft' | 'active' | 'upcoming' | 'expired' | 'archived';
   start_date: string;
   end_date: string;
   show_on_pwa: boolean;
+  show_on_landing_page?: boolean;
+  pin_to_top?: boolean;
+  auto_end?: boolean;
+  slideshow_autoplay?: boolean;
+  slideshow_speed?: number;
   share_to_facebook: boolean;
   total_views: number;
   total_clicks: number;
-  // Design & CTA fields (optional)
   layout_style?: string;
   text_alignment?: string;
   font_family?: string;
@@ -27,19 +47,23 @@ export interface Promotion {
   updated_by?: string;
   created_at: string;
   updated_at: string;
+  promotion_branches?: PromotionBranchRow[];
+  promotion_images?: PromotionImageRow[];
 }
 
 export interface CreatePromotionData {
   title: string;
   description: string;
-  image_url?: string;
-  image_urls?: string[];
   promotion_type: 'new_item' | 'restock' | 'event';
   start_date: string;
   end_date: string;
   show_on_pwa: boolean;
+  show_on_landing_page?: boolean;
+  pin_to_top?: boolean;
+  auto_end?: boolean;
+  slideshow_autoplay?: boolean;
+  slideshow_speed?: number;
   share_to_facebook: boolean;
-  // Design & CTA fields
   layout_style?: string;
   text_alignment?: string;
   font_family?: string;
@@ -47,6 +71,8 @@ export interface CreatePromotionData {
   text_color?: string;
   button_text?: string;
   button_link?: string;
+  branches?: string[];
+  image_urls?: string[];
 }
 
 export interface UpdatePromotionData extends Partial<CreatePromotionData> {
@@ -69,7 +95,21 @@ export class PromotionsManagementService {
     try {
       let query = supabase
         .from('promotions')
-        .select('*')
+        .select(`
+          *,
+          promotion_branches:promotion_branches(
+            promotion_id,
+            branch_id,
+            branch:branches(id, name)
+          ),
+          promotion_images:promotion_images(
+            id,
+            promotion_id,
+            image_url,
+            storage_path,
+            display_order
+          )
+        `)
         .order('created_at', { ascending: false });
 
       // Apply filters
@@ -95,7 +135,9 @@ export class PromotionsManagementService {
 
       const { data, error } = await query;
 
-      return { data: data || [], error };
+      const promotions: Promotion[] = (data ?? []) as Promotion[];
+
+      return { data: promotions, error };
     } catch (error) {
       console.error('Error fetching promotions:', error);
       return { data: [], error };
@@ -109,7 +151,21 @@ export class PromotionsManagementService {
     try {
       const { data, error } = await supabase
         .from('promotions')
-        .select('*')
+        .select(`
+          *,
+          promotion_branches:promotion_branches(
+            promotion_id,
+            branch_id,
+            branch:branches(id, name)
+          ),
+          promotion_images:promotion_images(
+            id,
+            promotion_id,
+            image_url,
+            storage_path,
+            display_order
+          )
+        `)
         .eq('id', id)
         .single();
 
@@ -128,17 +184,30 @@ export class PromotionsManagementService {
       // Get current user ID for created_by
       const { data: { user } } = await supabase.auth.getUser();
       
+      const {
+        branches = [],
+        image_urls = [],
+        ...promotionFields
+      } = promotionData;
+
       const { data, error } = await supabase
         .from('promotions')
         .insert({
-          ...promotionData,
+          ...promotionFields,
           created_by: user?.id,
           status: 'draft' // New promotions start as draft
         })
         .select()
         .single();
 
-      return { data, error };
+      if (error || !data) {
+        return { data, error };
+      }
+
+      await this.syncPromotionBranches(data.id, branches);
+      await this.syncPromotionImages(data.id, image_urls);
+
+      return this.getPromotion(data.id);
     } catch (error) {
       console.error('Error creating promotion:', error);
       return { data: null, error };
@@ -153,7 +222,10 @@ export class PromotionsManagementService {
       // Get current user ID for updated_by
       const { data: { user } } = await supabase.auth.getUser();
       
-      const { id, ...updateData } = promotionData;
+      const { id, branches = [], image_urls = [], ...updateData } = promotionData as UpdatePromotionData & {
+        branches?: string[];
+        image_urls?: string[];
+      };
       
       const { data, error } = await supabase
         .from('promotions')
@@ -166,7 +238,14 @@ export class PromotionsManagementService {
         .select()
         .single();
 
-      return { data, error };
+      if (error || !data) {
+        return { data, error };
+      }
+
+      await this.syncPromotionBranches(id, branches);
+      await this.syncPromotionImages(id, image_urls);
+
+      return this.getPromotion(id);
     } catch (error) {
       console.error('Error updating promotion:', error);
       return { data: null, error };
@@ -339,6 +418,80 @@ export class PromotionsManagementService {
         data: null, 
         error: { message: 'Failed to upload image. Please try again.' } 
       };
+    }
+  }
+
+  private static async syncPromotionBranches(promotionId: string, branchIds: string[]) {
+    try {
+      await supabase
+        .from('promotion_branches')
+        .delete()
+        .eq('promotion_id', promotionId);
+
+      if (!branchIds || branchIds.length === 0) {
+        return;
+      }
+
+      const rows = branchIds.map((branchId, index) => ({
+        promotion_id: promotionId,
+        branch_id: branchId,
+        display_order: index
+      }));
+
+      await supabase
+        .from('promotion_branches')
+        .insert(rows);
+    } catch (error) {
+      console.error('Error syncing promotion branches:', error);
+    }
+  }
+
+  private static async syncPromotionImages(promotionId: string, imageUrls: string[]) {
+    try {
+      await supabase
+        .from('promotion_images')
+        .delete()
+        .eq('promotion_id', promotionId);
+
+      if (!imageUrls || imageUrls.length === 0) {
+        await supabase
+          .from('promotions')
+          .update({ image_url: null })
+          .eq('id', promotionId);
+        return;
+      }
+
+      const rows = imageUrls.map((url, index) => ({
+        promotion_id: promotionId,
+        image_url: url,
+        display_order: index
+      }));
+
+      await supabase
+        .from('promotion_images')
+        .insert(rows);
+
+      await supabase
+        .from('promotions')
+        .update({ image_url: imageUrls[0] })
+        .eq('id', promotionId);
+    } catch (error) {
+      console.error('Error syncing promotion images:', error);
+    }
+  }
+
+  static async getBranches(): Promise<{ data: { id: string; name: string }[]; error: any }> {
+    try {
+      const { data, error } = await supabase
+        .from('branches')
+        .select('id, name')
+        .eq('is_active', true)
+        .order('name', { ascending: true });
+
+      return { data: data ?? [], error };
+    } catch (error) {
+      console.error('Error fetching branches:', error);
+      return { data: [], error };
     }
   }
 }

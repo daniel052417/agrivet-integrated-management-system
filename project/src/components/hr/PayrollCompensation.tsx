@@ -663,7 +663,7 @@ const computePagIBIG = (income: number) => {
   }
 
   return (
-    <div className="payroll-compensation space-y-6">
+    <div className="payroll-compensation space-y-6 p-6">
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>

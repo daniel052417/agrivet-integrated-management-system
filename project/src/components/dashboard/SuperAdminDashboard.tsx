@@ -24,9 +24,9 @@ import PromotionsManagement from '../marketing/PromotionsManagement';
 // import CampaignManagement from '../marketing/CampaignManagement';
 import InsightsAnalytics from '../marketing/InsightsAnalytics';
 // import TemplateManagement from '../marketing/TemplateManagement';
-import ClientNotifications from '../marketing/ClientNotifications';
+// import ClientNotifications from '../marketing/ClientNotifications';
 import FacebookIntegration from '../marketing/FacebookIntegration';
-import EventCenter from '../reports/EventCenter';
+// import EventCenter from '../reports/EventCenter';
 import ReportsAnalytics from '../reports/ReportsAnalytics';
 import SettingsPage from '../settings/SettingsPage';
 import LowStockAlerts from '../inventory/LowStockAlerts';
@@ -46,7 +46,7 @@ import AttendanceDashboard from '../hr/AttendanceDashboard';
 import LeaveManagement from '../hr/LeaveManagement';
 // import HRAnalytics from '../hr/HRAnalytics';
 import PayrollCompensation from '../hr/PayrollCompensation';
-import HRDashboard from '../hr/HRDashboard';
+// import HRDashboard from '../hr/HRDashboard';
 interface SuperAdminDashboardProps {
   user: CustomUser;
   onLogout: () => void;
@@ -133,8 +133,8 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, onLogou
           return <InsightsAnalytics />;
           // case 'template-management':
           //   return <TemplateManagement />;
-        case 'client-notifications':
-          return <ClientNotifications />;
+        // case 'client-notifications':
+        //   return <ClientNotifications />;
         case 'facebook-integration':
           return <FacebookIntegration />;
 
@@ -146,8 +146,8 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, onLogou
       // HR Section (Simplified)
       // case 'hr':
       //   return <HRDashboard />;
-      case 'hr-dashboard':
-        return <HRDashboard />;
+      // case 'hr-dashboard':
+      //   return <HRDashboard />;
       case 'attendance-dashboard':
         return <AttendanceDashboard />;
       case 'leave-management':

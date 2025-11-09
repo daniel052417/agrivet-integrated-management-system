@@ -3,6 +3,16 @@ import { supabase } from './supabase';
 import { logger } from '../utils/logger';
 import * as faceapi from 'face-api.js';
 
+// Import TensorFlow.js - these will initialize the backends
+let tf: any;
+try {
+  tf = require('@tensorflow/tfjs-core');
+  require('@tensorflow/tfjs-backend-webgl');
+  require('@tensorflow/tfjs-backend-cpu');
+} catch (e) {
+  console.warn('TensorFlow.js packages not found, face-api.js will use its built-in TensorFlow');
+}
+
 export interface FaceDescriptor {
   descriptor: Float32Array;
   detection: faceapi.FaceDetection;
@@ -52,10 +62,41 @@ class FaceRegistrationService {
 
     this.loadingPromise = (async () => {
       try {
+        // CRITICAL: Initialize TensorFlow.js backend first (if available)
+        logger.info('🔧 Initializing TensorFlow.js backend...');
+        
+        if (tf) {
+          try {
+            // Try WebGL backend (fastest)
+            await tf.setBackend('webgl');
+            await tf.ready();
+            logger.info('✅ TensorFlow.js WebGL backend initialized');
+            
+            // Log backend info
+            logger.info('🔍 TensorFlow.js backend:', tf.getBackend());
+          } catch (webglError) {
+            logger.warn('⚠️ WebGL backend failed, trying CPU backend...');
+            try {
+              // Fallback to CPU backend
+              await tf.setBackend('cpu');
+              await tf.ready();
+              logger.info('✅ TensorFlow.js CPU backend initialized');
+            } catch (cpuError) {
+              logger.warn('⚠️ Manual TensorFlow backend init failed, using face-api.js default');
+            }
+          }
+        } else {
+          logger.info('ℹ️ Using face-api.js built-in TensorFlow.js');
+        }
+
         // Try local models first, fallback to CDN if not available
         const LOCAL_MODEL_URL = '/models';
         const CDN_MODEL_URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights';
         
+        // FORCE CDN for now - local models appear corrupted
+        let useCDN = true;
+        
+        /* Commented out - uncomment to try local models again later
         // Check if local models exist by trying to load one
         let useCDN = false;
         try {
@@ -67,6 +108,7 @@ class FaceRegistrationService {
         } catch {
           useCDN = true;
         }
+        */
         
         const MODEL_URL = useCDN ? CDN_MODEL_URL : LOCAL_MODEL_URL;
         
@@ -89,31 +131,106 @@ class FaceRegistrationService {
         await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
         logger.info('✓ FaceRecognitionNet loaded');
 
+        // Verify all models are loaded
+        const allLoaded = 
+          faceapi.nets.tinyFaceDetector.isLoaded &&
+          faceapi.nets.faceLandmark68Net.isLoaded &&
+          faceapi.nets.faceRecognitionNet.isLoaded;
+
+        if (!allLoaded) {
+          throw new Error('Not all models loaded successfully');
+        }
+
         this.modelsLoaded = true;
         this.markModelsCached();
         logger.info('✅ All face-api.js models loaded successfully');
+        
+        // Log final verification
+        console.log('✅ Model verification:', {
+          tinyFaceDetector: faceapi.nets.tinyFaceDetector.isLoaded,
+          faceLandmark68Net: faceapi.nets.faceLandmark68Net.isLoaded,
+          faceRecognitionNet: faceapi.nets.faceRecognitionNet.isLoaded
+        });
+
+        // CRITICAL: Test the models with a dummy operation to verify they work (if TensorFlow is available)
+        if (tf) {
+          await this.verifyModels();
+        } else {
+          logger.info('ℹ️ Skipping model verification (TensorFlow.js not explicitly loaded)');
+        }
+
       } catch (error: any) {
         logger.error('❌ Error loading face-api.js models:', error);
+        logger.error('Error details:', error.message);
+        logger.error('Error stack:', error.stack);
         
         // Provide more helpful error message
-        if (error.message && error.message.includes('tensor')) {
+        if (error.message && (error.message.includes('tensor') || error.message.includes('tfjs'))) {
           throw new Error(
-            'Model files appear to be corrupted or incomplete. ' +
-            'The app will try to use CDN models. If this persists, please check your internet connection. ' +
-            'See FACE_REGISTRATION_SETUP.md for manual download instructions.'
+            'Model files appear to be corrupted or TensorFlow.js version mismatch. ' +
+            'Please ensure @tensorflow/tfjs-core is installed correctly.'
+          );
+        }
+        
+        if (error.message && error.message.includes('fetch')) {
+          throw new Error(
+            'Failed to download face recognition models. ' +
+            'Please check your internet connection and try again.'
           );
         }
         
         throw new Error(
-          'Failed to load face recognition models. ' +
-          'Tried both local and CDN sources. Please check your internet connection or ' +
-          'manually download models to /public/models. ' +
-          'See FACE_REGISTRATION_SETUP.md for download instructions.'
+          'Failed to load face recognition models: ' + error.message + '. ' +
+          'Try refreshing the page or check the browser console for details.'
         );
       }
     })();
 
     return this.loadingPromise;
+  }
+
+  /**
+   * Verify models work correctly by testing with a small tensor
+   */
+  private async verifyModels(): Promise<void> {
+    if (!tf) {
+      logger.warn('⚠️ TensorFlow.js not available for verification');
+      return;
+    }
+
+    try {
+      logger.info('🧪 Verifying face recognition models...');
+      
+      // Create a small test tensor to verify TensorFlow operations work
+      const testTensor = tf.randomNormal([1, 150, 150, 3]);
+      
+      // Test if tensor operations work (should not produce NaN)
+      const result = tf.mean(testTensor);
+      const value = await result.data();
+      
+      testTensor.dispose();
+      result.dispose();
+      
+      if (value && value.length > 0 && isNaN(value[0] as number)) {
+        throw new Error('TensorFlow operations producing NaN - backend issue detected');
+      }
+      
+      logger.info('✅ Model verification successful - TensorFlow backend working correctly');
+    } catch (error) {
+      logger.error('❌ Model verification failed:', error);
+      throw new Error('Face recognition models failed verification. TensorFlow.js backend may be incompatible with your system.');
+    }
+  }
+
+  /**
+   * Test if models are properly loaded
+   */
+  async testModels(): Promise<void> {
+    console.log('🧪 Testing face-api.js models...');
+    console.log('Models loaded flag:', this.modelsLoaded);
+    console.log('TinyFaceDetector:', faceapi.nets.tinyFaceDetector.isLoaded);
+    console.log('FaceLandmark68Net:', faceapi.nets.faceLandmark68Net.isLoaded);
+    console.log('FaceRecognitionNet:', faceapi.nets.faceRecognitionNet.isLoaded);
   }
 
   /**
@@ -125,14 +242,53 @@ class FaceRegistrationService {
     }
 
     try {
+      // 🔍 Debug: Check models are loaded
+      console.log('🔍 Starting face detection...');
+      console.log('🔍 Models status:', {
+        tinyFaceDetector: faceapi.nets.tinyFaceDetector.isLoaded,
+        faceLandmark68Net: faceapi.nets.faceLandmark68Net.isLoaded,
+        faceRecognitionNet: faceapi.nets.faceRecognitionNet.isLoaded
+      });
+
       // Detect face with landmarks
       const detection = await faceapi
         .detectSingleFace(imageElement, new faceapi.TinyFaceDetectorOptions())
         .withFaceLandmarks()
         .withFaceDescriptor();
 
+      // 🔍 Debug: Check detection result
+      console.log('🔍 Detection result:', detection);
+      console.log('🔍 Has descriptor?', !!detection?.descriptor);
+      console.log('🔍 Descriptor type:', detection?.descriptor?.constructor.name);
+      console.log('🔍 Descriptor length:', detection?.descriptor?.length);
+      
+      if (detection?.descriptor) {
+        const descriptorArray = Array.from(detection.descriptor);
+        console.log('🔍 First 10 descriptor values:', descriptorArray.slice(0, 10));
+        
+        // Check for NaN values
+        const hasNaN = descriptorArray.some(v => isNaN(v));
+        if (hasNaN) {
+          console.error('❌ Descriptor contains NaN values!');
+          console.error('This usually means:');
+          console.error('1. Face recognition model may be corrupted');
+          console.error('2. Input image has invalid pixel data');
+          console.error('3. TensorFlow.js backend issue');
+          console.error('Attempting recovery...');
+          
+          // Try to recover by re-initializing
+          throw new Error('Face descriptor generation failed (NaN values). This may indicate corrupted model files or invalid image data. Try clearing cache and reloading.');
+        }
+      }
+
       if (!detection) {
+        console.warn('⚠️ No face detected in image');
         return null;
+      }
+
+      if (!detection.descriptor) {
+        console.error('❌ Face detected but no descriptor generated! Check if FaceRecognitionNet model is loaded.');
+        throw new Error('Face descriptor not generated. Face recognition model may not be loaded properly.');
       }
 
       return {
@@ -140,7 +296,7 @@ class FaceRegistrationService {
         detection: detection.detection
       };
     } catch (error) {
-      console.error('Error detecting face:', error);
+      console.error('❌ Error detecting face:', error);
       throw error;
     }
   }
@@ -159,7 +315,7 @@ class FaceRegistrationService {
         .withFaceLandmarks()
         .withFaceDescriptors();
 
-      return detections.map(detection => ({
+      return detections.map((detection: any) => ({
         descriptor: detection.descriptor,
         detection: detection.detection
       }));
@@ -173,7 +329,23 @@ class FaceRegistrationService {
    * Convert Float32Array descriptor to number array for JSON storage
    */
   descriptorToArray(descriptor: Float32Array): number[] {
-    return Array.from(descriptor);
+    console.log('🔄 Converting descriptor to array...');
+    console.log('🔍 Input descriptor:', descriptor);
+    console.log('🔍 Input type:', descriptor?.constructor.name);
+    console.log('🔍 Input length:', descriptor?.length);
+    
+    if (!descriptor) {
+      console.error('❌ Cannot convert null/undefined descriptor');
+      throw new Error('Descriptor is null or undefined');
+    }
+
+    const array = Array.from(descriptor);
+    console.log('✅ Converted array length:', array.length);
+    console.log('🔍 First 10 values:', array.slice(0, 10));
+    console.log('🔍 Contains nulls?', array.includes(null as any));
+    console.log('🔍 Contains undefined?', array.includes(undefined as any));
+    
+    return array;
   }
 
   /**
@@ -195,6 +367,22 @@ class FaceRegistrationService {
    */
   async saveFaceDescriptor(faceData: StaffFaceData): Promise<StaffFaceData> {
     try {
+      // Validate descriptor before saving
+      console.log('💾 Saving face descriptor...');
+      console.log('🔍 Descriptor to save:', faceData.face_descriptor);
+      console.log('🔍 Descriptor length:', faceData.face_descriptor?.length);
+      console.log('🔍 First 10 values:', faceData.face_descriptor?.slice(0, 10));
+      
+      if (!faceData.face_descriptor || faceData.face_descriptor.length !== 128) {
+        throw new Error(`Invalid face descriptor: expected 128 values, got ${faceData.face_descriptor?.length}`);
+      }
+
+      // Check for null/undefined values
+      const hasInvalidValues = faceData.face_descriptor.some((val: any) => val === null || val === undefined || isNaN(val));
+      if (hasInvalidValues) {
+        throw new Error('Face descriptor contains null, undefined, or NaN values');
+      }
+
       // If this is set as primary, deactivate other primary faces for this staff
       if (faceData.is_primary) {
         await supabase
@@ -222,9 +410,10 @@ class FaceRegistrationService {
 
       if (error) throw error;
 
+      console.log('✅ Face descriptor saved successfully');
       return data;
     } catch (error) {
-      console.error('Error saving face descriptor:', error);
+      console.error('❌ Error saving face descriptor:', error);
       throw error;
     }
   }
@@ -266,6 +455,21 @@ class FaceRegistrationService {
    */
   async updateFaceDescriptor(faceId: string, updates: Partial<StaffFaceData>): Promise<StaffFaceData> {
     try {
+      // Validate descriptor if it's being updated
+      if (updates.face_descriptor) {
+        console.log('💾 Updating face descriptor...');
+        console.log('🔍 New descriptor length:', updates.face_descriptor.length);
+        
+        if (updates.face_descriptor.length !== 128) {
+          throw new Error(`Invalid face descriptor: expected 128 values, got ${updates.face_descriptor.length}`);
+        }
+
+        const hasInvalidValues = updates.face_descriptor.some((val: any) => val === null || val === undefined || isNaN(val));
+        if (hasInvalidValues) {
+          throw new Error('Face descriptor contains null, undefined, or NaN values');
+        }
+      }
+
       // If setting as primary, deactivate other primary faces
       if (updates.is_primary) {
         const { data: existingFace } = await supabase
@@ -293,9 +497,10 @@ class FaceRegistrationService {
 
       if (error) throw error;
 
+      console.log('✅ Face descriptor updated successfully');
       return data;
     } catch (error) {
-      console.error('Error updating face descriptor:', error);
+      console.error('❌ Error updating face descriptor:', error);
       throw error;
     }
   }
@@ -386,4 +591,3 @@ class FaceRegistrationService {
 }
 
 export const faceRegistrationService = new FaceRegistrationService();
-

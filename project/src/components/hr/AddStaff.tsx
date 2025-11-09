@@ -7,6 +7,32 @@ import { emailService } from '../../lib/emailService';
 import FaceRegistration from './FaceRegistration';
 import { faceRegistrationService, StaffFaceData } from '../../lib/faceRegistrationService';
 
+const WORK_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+const formatTimeForInput = (value?: string | null) => {
+  if (!value) return '';
+  if (/^\d{2}:\d{2}$/.test(value)) return value;
+  const match = value.match(/^(\d{2}:\d{2})/);
+  return match ? match[1] : '';
+};
+
+const normalizeTimePayload = (value?: string) => {
+  if (!value) return undefined;
+  if (/^\d{2}:\d{2}$/.test(value)) return `${value}:00`;
+  return value;
+};
+
+const formatDateForInput = (value?: string | null) => {
+  if (!value) return '';
+  const match = value.match(/^\d{4}-\d{2}-\d{2}/);
+  if (match) return match[0];
+  const parsed = new Date(value);
+  if (!isNaN(parsed.getTime())) {
+    return parsed.toISOString().slice(0, 10);
+  }
+  return value.slice(0, 10);
+};
+
 interface AddStaffProps {
   onBack?: () => void;
   initialData?: any; // Staff data for edit mode
@@ -39,6 +65,12 @@ interface StaffFormData {
     role: string;
     sendEmailInvite: boolean;
   };
+  use_default_schedule: boolean;
+  work_days: string[];
+  time_in: string;
+  time_out: string;
+  break_start: string;
+  break_end: string;
 }
 
 const AddStaff: React.FC<AddStaffProps> = ({ onBack, initialData }) => {
@@ -69,19 +101,92 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack, initialData }) => {
     salary: undefined,
     employment_type: 'Regular',
     salary_type: 'Monthly',
-    work_schedule: '',
+  work_schedule: '',
     payment_method: '',
     createUserAccount: false,
     accountDetails: {
       role: 'staff',
       sendEmailInvite: false,
-    }
+    },
+  use_default_schedule: true,
+  work_days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+  time_in: '',
+  time_out: '',
+  break_start: '',
+  break_end: ''
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [autoGenerateId, setAutoGenerateId] = useState(false);
   const [showSuccessAlert, setShowSuccessAlert] = useState(false);
   const [showErrorAlert, setShowErrorAlert] = useState(false);
   const [alertMessage, setAlertMessage] = useState('');
+
+  const handleUseDefaultScheduleToggle = (checked: boolean) => {
+    setForm(prev => ({
+      ...prev,
+      use_default_schedule: checked,
+      work_days: checked
+        ? ['Mon', 'Tue', 'Wed', 'Thu', 'Fri']
+        : (prev.work_days.length ? prev.work_days : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'])
+    }));
+    setErrors(prev => {
+      if (!prev.work_days && !prev.time_in && !prev.time_out) return prev;
+      const newErrors = { ...prev };
+      if (checked) {
+        delete newErrors.work_days;
+        delete newErrors.time_in;
+        delete newErrors.time_out;
+      }
+      return newErrors;
+    });
+  };
+
+  const handleWorkDayToggle = (day: string) => {
+    setForm(prev => {
+      const exists = prev.work_days.includes(day);
+      const updatedDays = exists
+        ? prev.work_days.filter(d => d !== day)
+        : [...prev.work_days, day].sort((a, b) => WORK_DAYS.indexOf(a) - WORK_DAYS.indexOf(b));
+      return { ...prev, work_days: updatedDays };
+    });
+    setErrors(prev => {
+      if (!prev.work_days) return prev;
+      const newErrors = { ...prev };
+      delete newErrors.work_days;
+      return newErrors;
+    });
+  };
+
+  const syncUserRoleAssignment = async (userId: string, roleId: string, roleName: string) => {
+    try {
+      await supabase
+        .from('user_roles')
+        .upsert({
+          user_id: userId,
+          role_id: roleId,
+          is_primary: true,
+          assigned_at: new Date().toISOString(),
+          is_active: true
+        }, { onConflict: 'user_id,role_id' });
+
+      await supabase
+        .from('user_roles')
+        .update({ is_primary: false })
+        .eq('user_id', userId)
+        .neq('role_id', roleId);
+
+      await supabase
+        .from('users')
+        .update({
+          role: roleName,
+          role_id: roleId,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', userId);
+    } catch (roleError) {
+      console.error('Error syncing user role:', roleError);
+    }
+  };
 
   useEffect(() => {
     loadBranches();
@@ -101,15 +206,15 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack, initialData }) => {
         email: initialData.email || '',
         phone: initialData.phone || '',
         address: initialData.address || '',
-        date_of_birth: initialData.date_of_birth || '',
+        date_of_birth: formatDateForInput(initialData.date_of_birth) || '',
         gender: initialData.gender || '',
         marital_status: initialData.marital_status || 'single',
         position: initialData.position || '',
         department: initialData.department || '',
-        hire_date: initialData.hire_date || new Date().toISOString().slice(0, 10),
+        hire_date: formatDateForInput(initialData.hire_date) || new Date().toISOString().slice(0, 10),
         is_active: initialData.is_active !== undefined ? initialData.is_active : true,
         employee_id: initialData.employee_id || '',
-        role: initialData.role || 'staff',
+        role: initialData.role || initialData.position || 'staff',
         branch_id: initialData.branch_id || undefined,
         salary: initialData.salary || undefined,
         employment_type: initialData.employment_type || 'Regular',
@@ -118,9 +223,17 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack, initialData }) => {
         payment_method: initialData.payment_method || '',
         createUserAccount: false,
         accountDetails: {
-          role: initialData.role || 'staff',
+          role: initialData.role || initialData.position || 'staff',
           sendEmailInvite: false,
-        }
+        },
+        use_default_schedule: initialData.use_default_schedule ?? true,
+        work_days: initialData.work_days && Array.isArray(initialData.work_days) && initialData.work_days.length > 0
+          ? initialData.work_days
+          : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+        time_in: formatTimeForInput(initialData.time_in),
+        time_out: formatTimeForInput(initialData.time_out),
+        break_start: formatTimeForInput(initialData.break_start),
+        break_end: formatTimeForInput(initialData.break_end)
       });
     }
   }, [initialData]);
@@ -160,6 +273,10 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack, initialData }) => {
 
   const checkForDuplicates = async (): Promise<Record<string, string>> => {
     const duplicateErrors: Record<string, string> = {};
+
+    if (isEditMode) {
+      return duplicateErrors;
+    }
 
     try {
       // Check for email duplication in staff table
@@ -272,6 +389,18 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack, initialData }) => {
       }
     }
 
+    if (!form.use_default_schedule) {
+      if (!form.work_days || form.work_days.length === 0) {
+        newErrors.work_days = 'Select at least one work day';
+      }
+      if (!form.time_in?.trim()) {
+        newErrors.time_in = 'Time in is required';
+      }
+      if (!form.time_out?.trim()) {
+        newErrors.time_out = 'Time out is required';
+      }
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -297,41 +426,60 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack, initialData }) => {
     }
 
     try {
-      // Generate employee ID if auto-generate is enabled
-      const finalEmployeeId = autoGenerateId ? generateEmployeeId() : form.employee_id;
+      // Generate employee ID if auto-generate is enabled (creation only)
+      const generatedEmployeeId = autoGenerateId ? generateEmployeeId() : form.employee_id;
+      const finalEmployeeId = isEditMode ? (initialData?.employee_id || form.employee_id) : generatedEmployeeId;
       
-      // Create or update staff member
-      const staffData: CreateStaffData = {
+      const selectedRoleRecord = roles.find(role => role.name === form.position || role.id === form.position);
+      const scheduleSummary = form.use_default_schedule
+        ? 'Default schedule'
+        : `${form.work_days.join(', ')} • ${(form.time_in || '--:--')} - ${(form.time_out || '--:--')}${form.break_start && form.break_end ? ` (Break ${form.break_start}-${form.break_end})` : ''}`;
+      const positionDisplay = selectedRoleRecord?.display_name || selectedRoleRecord?.name || form.position;
+      const roleName = selectedRoleRecord?.name || form.role;
+
+      let userAccountIdForSync = initialData?.user_account_id || null;
+      let roleSynced = false;
+
+      const baseStaffData = {
         first_name: form.first_name,
         last_name: form.last_name,
         middle_name: form.middle_name,
-        email: form.email,
         phone: form.phone,
         address: form.address,
         date_of_birth: form.date_of_birth,
         gender: form.gender,
         marital_status: form.marital_status,
-        position: form.position,
-        department: form.department,
+        position: positionDisplay || '',
         hire_date: form.hire_date,
         is_active: form.is_active,
-        employee_id: finalEmployeeId,
-        role: form.role,
+        role: roleName,
         branch_id: form.branch_id,
         salary: form.salary,
         employment_type: form.employment_type,
         salary_type: form.salary_type,
-        work_schedule: form.work_schedule,
-        payment_method: form.payment_method
+        work_schedule: scheduleSummary,
+        use_default_schedule: form.use_default_schedule,
+        work_days: form.use_default_schedule ? null : form.work_days,
+        time_in: form.use_default_schedule ? null : normalizeTimePayload(form.time_in),
+        time_out: form.use_default_schedule ? null : normalizeTimePayload(form.time_out),
+        break_start: form.use_default_schedule ? null : normalizeTimePayload(form.break_start),
+        break_end: form.use_default_schedule ? null : normalizeTimePayload(form.break_end)
       };
       
+      const createPayload: CreateStaffData = {
+        ...baseStaffData,
+        email: form.email,
+        employee_id: finalEmployeeId
+      };
+
       let createdStaff;
       if (isEditMode && initialData?.id) {
         // Update existing staff
-        createdStaff = await staffManagementApi.staff.updateStaff({
+        const updatePayload = {
           id: initialData.id,
-          ...staffData
-        });
+          ...baseStaffData
+        };
+        createdStaff = await staffManagementApi.staff.updateStaff(updatePayload);
         
         // Update face data if it was registered
         if (faceData && faceData.staff_id !== createdStaff.id) {
@@ -350,7 +498,7 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack, initialData }) => {
         }
       } else {
         // Create new staff
-        createdStaff = await staffManagementApi.staff.createStaff(staffData);
+        createdStaff = await staffManagementApi.staff.createStaff(createPayload);
         
         // Save face data if it was registered before staff creation
         if (faceData && !faceData.staff_id) {
@@ -364,9 +512,11 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack, initialData }) => {
           }
         }
       }
+
+      userAccountIdForSync = userAccountIdForSync || createdStaff?.user_account_id || null;
       
       // If user account creation is requested, create account with magic link
-      if (form.createUserAccount && form.accountDetails?.role) {
+      if (form.createUserAccount) {
         try {
           // Generate verification token (UUID)
           const activationToken = crypto.randomUUID();
@@ -381,7 +531,8 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack, initialData }) => {
               first_name: form.first_name,
               last_name: form.last_name,
               phone: form.phone || '',
-              role: form.accountDetails.role,
+              role: roleName || form.accountDetails.role,
+              role_id: selectedRoleRecord?.id || null,
               branch_id: form.branch_id,
               is_active: true,
               account_status: 'pending_activation',
@@ -405,14 +556,17 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack, initialData }) => {
             .eq('is_active', true);
 
           if (!allRolesError && allRoles && allRoles.length > 0) {
-            const targetRole = allRoles.find(role => 
-              role.name === form.accountDetails?.role || 
-              role.name === 'staff' || 
-              role.name === 'user'
-            );
+            const preferredRoleNames = [
+              selectedRoleRecord?.name,
+              form.accountDetails?.role,
+              'staff',
+              'user'
+            ].filter(Boolean) as string[];
 
-            const roleToAssign = targetRole || allRoles[0];
-            
+            const roleToAssign =
+              allRoles.find(role => preferredRoleNames.includes(role.name)) ||
+              allRoles[0];
+
             if (roleToAssign) {
               await supabase
                 .from('user_roles')
@@ -421,6 +575,8 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack, initialData }) => {
                   role_id: roleToAssign.id,
                   assigned_at: new Date().toISOString()
                 });
+              await syncUserRoleAssignment(userData.id, roleToAssign.id, roleToAssign.name);
+              roleSynced = true;
             }
           }
 
@@ -429,6 +585,8 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack, initialData }) => {
             .from('staff')
             .update({ user_account_id: userData.id })
             .eq('id', createdStaff.id);
+
+          userAccountIdForSync = userData.id;
 
           // Send activation email
           try {
@@ -455,6 +613,10 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack, initialData }) => {
         setAlertMessage('Staff member created successfully!');
       }
       
+      if (!roleSynced && userAccountIdForSync && selectedRoleRecord) {
+        await syncUserRoleAssignment(userAccountIdForSync, selectedRoleRecord.id, selectedRoleRecord.name);
+      }
+
       setShowSuccessAlert(true);
 
       // Reset form
@@ -484,7 +646,13 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack, initialData }) => {
         accountDetails: {
           role: 'staff',
           sendEmailInvite: false,
-        }
+        },
+        use_default_schedule: true,
+        work_days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+        time_in: '',
+        time_out: '',
+        break_start: '',
+        break_end: ''
       });
       setAutoGenerateId(false);
     } catch (error: any) {
@@ -498,6 +666,7 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack, initialData }) => {
 
 
   const checkEmailDuplicate = async (email: string) => {
+    if (isEditMode) return;
     if (!email.trim() || !ValidationService.isValidEmail(email)) return;
     
     try {
@@ -535,6 +704,7 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack, initialData }) => {
   };
 
   const checkEmployeeIdDuplicate = async (employeeId: string) => {
+    if (isEditMode) return;
     if (!employeeId.trim() || autoGenerateId) return;
     
     try {
@@ -693,6 +863,7 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack, initialData }) => {
                     type="email"
                     value={form.email}
                     onChange={(e) => {
+                      if (isEditMode) return;
                       setForm((prev: StaffFormData) => ({ ...prev, email: e.target.value }));
                       // Clear any existing email error when user starts typing
                       if (errors.email === 'A staff member with this email already exists') {
@@ -704,9 +875,10 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack, initialData }) => {
                       }
                     }}
                     onBlur={(e) => checkEmailDuplicate(e.target.value)}
+                    disabled={isEditMode}
                     className={`w-full pl-10 pr-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                       errors.email ? 'border-red-300' : 'border-gray-300'
-                    }`}
+                    } ${isEditMode ? 'bg-gray-100 text-gray-500' : ''}`}
                     placeholder="Enter email address"
                   />
                 </div>
@@ -836,8 +1008,8 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack, initialData }) => {
                       type="text"
                       value={form.employee_id}
                       onChange={(e) => {
+                        if (isEditMode) return;
                         setForm(prev => ({ ...prev, employee_id: e.target.value }));
-                        // Clear any existing employee ID error when user starts typing
                         if (errors.employee_id === 'A staff member with this employee ID already exists') {
                           setErrors(prev => {
                             const newErrors = { ...prev };
@@ -847,16 +1019,17 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack, initialData }) => {
                         }
                       }}
                       onBlur={(e) => checkEmployeeIdDuplicate(e.target.value)}
-                      disabled={autoGenerateId}
+                      disabled={autoGenerateId || isEditMode}
                       className={`w-full pl-10 pr-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                         errors.employee_id ? 'border-red-300' : 'border-gray-300'
-                      } ${autoGenerateId ? 'bg-gray-100' : ''}`}
-                      placeholder={autoGenerateId ? 'Auto-generated' : 'Enter employee ID'}
+                      } ${(autoGenerateId || isEditMode) ? 'bg-gray-100 text-gray-500' : ''}`}
+                      placeholder={autoGenerateId || isEditMode ? 'Auto-generated' : 'Enter employee ID'}
                     />
                   </div>
                   <button
                     type="button"
                     onClick={() => {
+                      if (isEditMode) return;
                       setAutoGenerateId(!autoGenerateId);
                       if (!autoGenerateId) {
                         setForm(prev => ({ ...prev, employee_id: generateEmployeeId() }));
@@ -864,7 +1037,8 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack, initialData }) => {
                         setForm(prev => ({ ...prev, employee_id: '' }));
                       }
                     }}
-                    className={`px-4 py-2 rounded-md transition-colors ${
+                    disabled={isEditMode}
+                    className={`px-4 py-2 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                       autoGenerateId 
                         ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' 
                         : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -884,7 +1058,18 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack, initialData }) => {
                 </label>
                 <select
                   value={form.position}
-                  onChange={(e) => setForm((prev: StaffFormData) => ({ ...prev, position: e.target.value }))}
+                  onChange={(e) => {
+                    const newPosition = e.target.value;
+                    setForm((prev: StaffFormData) => ({
+                      ...prev,
+                      position: newPosition,
+                      role: newPosition || prev.role,
+                      accountDetails: {
+                        ...prev.accountDetails,
+                        role: prev.createUserAccount && newPosition ? newPosition : prev.accountDetails.role
+                      }
+                    }));
+                  }}
                   className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                     errors.position ? 'border-red-300' : 'border-gray-300'
                   }`}
@@ -899,24 +1084,6 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack, initialData }) => {
                 {errors.position && (
                   <p className="mt-1 text-sm text-red-600">{errors.position}</p>
                 )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Department
-                </label>
-                <select
-                  value={form.department}
-                  onChange={(e) => setForm((prev: StaffFormData) => ({ ...prev, department: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">Select Department</option>
-                  <option value="Sales">Sales</option>
-                  <option value="Inventory">Inventory</option>
-                  <option value="HR">HR</option>
-                  <option value="Admin">Admin</option>
-                  <option value="Finance">Finance</option>
-                </select>
               </div>
 
               <div>
@@ -968,9 +1135,7 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack, initialData }) => {
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="Regular">Regular</option>
-                  <option value="Probationary">Probationary</option>
                   <option value="Part-time">Part-time</option>
-                  <option value="Contract">Contract</option>
                 </select>
               </div>
 
@@ -1010,37 +1175,154 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack, initialData }) => {
                 </select>
               </div>
 
-              <div>
+              <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Work Schedule
                 </label>
-                <div className="relative">
-                  <Clock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                  <input
-                    type="text"
-                    value={form.work_schedule}
-                    onChange={(e) => setForm((prev: StaffFormData) => ({ ...prev, work_schedule: e.target.value }))}
-                    className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="e.g., 8:00 AM - 5:00 PM, Mon-Fri"
-                  />
-                </div>
-              </div>
+                <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                  <div className="flex items-center justify-between flex-wrap gap-4">
+                    <div>
+                      <p className="text-sm font-medium text-gray-800">Use default company schedule</p>
+                      <p className="text-xs text-gray-500">Disable to customize this staff member&apos;s working days and hours.</p>
+                    </div>
+                    <label className="inline-flex items-center gap-2">
+                      <span className="text-sm text-gray-600">Default</span>
+                      <div className="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={form.use_default_schedule}
+                          onChange={(e) => handleUseDefaultScheduleToggle(e.target.checked)}
+                          className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-gray-200 rounded-full transition-colors peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-300 peer-checked:bg-blue-600"></div>
+                        <div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-5"></div>
+                      </div>
+                      <span className="text-sm text-gray-600">Custom</span>
+                    </label>
+                  </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Payment Method
-                </label>
-                <select
-                  value={form.payment_method}
-                  onChange={(e) => setForm((prev: StaffFormData) => ({ ...prev, payment_method: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">Select Payment Method</option>
-                  <option value="bank_transfer">Bank Transfer</option>
-                  <option value="cash">Cash</option>
-                  <option value="check">Check</option>
-                  <option value="payroll_card">Payroll Card</option>
-                </select>
+                  {form.use_default_schedule ? (
+                    <p className="mt-3 text-sm text-gray-600">
+                      This staff member will follow the default branch/company work schedule.
+                    </p>
+                  ) : (
+                    <div className="mt-4 space-y-5">
+                      <div>
+                        <p className="text-sm font-medium text-gray-800">Work Days</p>
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          {WORK_DAYS.map(day => {
+                            const active = form.work_days.includes(day);
+                            return (
+                              <label
+                                key={day}
+                                className={`px-3 py-1 rounded-full border cursor-pointer text-sm transition-colors ${active ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400'}`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  className="sr-only"
+                                  checked={active}
+                                  onChange={() => handleWorkDayToggle(day)}
+                                />
+                                {day}
+                              </label>
+                            );
+                          })}
+                        </div>
+                        {errors.work_days && (
+                          <p className="mt-2 text-sm text-red-600">{errors.work_days}</p>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Time In *
+                          </label>
+                          <div className="relative">
+                            <Clock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                            <input
+                              type="time"
+                              value={form.time_in}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                setForm(prev => ({ ...prev, time_in: value }));
+                                setErrors(prev => {
+                                  if (!prev.time_in) return prev;
+                                  const newErrors = { ...prev };
+                                  delete newErrors.time_in;
+                                  return newErrors;
+                                });
+                              }}
+                              className={`w-full pl-10 pr-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.time_in ? 'border-red-300' : 'border-gray-300'}`}
+                            />
+                          </div>
+                          {errors.time_in && (
+                            <p className="mt-2 text-sm text-red-600">{errors.time_in}</p>
+                          )}
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Time Out *
+                          </label>
+                          <div className="relative">
+                            <Clock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                            <input
+                              type="time"
+                              value={form.time_out}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                setForm(prev => ({ ...prev, time_out: value }));
+                                setErrors(prev => {
+                                  if (!prev.time_out) return prev;
+                                  const newErrors = { ...prev };
+                                  delete newErrors.time_out;
+                                  return newErrors;
+                                });
+                              }}
+                              className={`w-full pl-10 pr-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.time_out ? 'border-red-300' : 'border-gray-300'}`}
+                            />
+                          </div>
+                          {errors.time_out && (
+                            <p className="mt-2 text-sm text-red-600">{errors.time_out}</p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Break Start (optional)
+                          </label>
+                          <div className="relative">
+                            <Clock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                            <input
+                              type="time"
+                              value={form.break_start}
+                              onChange={(e) => setForm(prev => ({ ...prev, break_start: e.target.value }))}
+                              className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Break End (optional)
+                          </label>
+                          <div className="relative">
+                            <Clock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                            <input
+                              type="time"
+                              value={form.break_end}
+                              onChange={(e) => setForm(prev => ({ ...prev, break_end: e.target.value }))}
+                              className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -1152,7 +1434,17 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack, initialData }) => {
                 <input
                   type="checkbox"
                   checked={form.createUserAccount}
-                  onChange={(e) => setForm((prev: StaffFormData) => ({ ...prev, createUserAccount: e.target.checked }))}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setForm((prev: StaffFormData) => ({
+                      ...prev,
+                      createUserAccount: checked,
+                      accountDetails: {
+                        ...prev.accountDetails,
+                        role: checked && prev.position ? prev.position : prev.accountDetails.role
+                      }
+                    }));
+                  }}
                   className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                 />
                 <span className="ml-2 text-sm text-gray-700">Create user account for this staff member</span>
@@ -1220,7 +1512,11 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack, initialData }) => {
               ) : (
                 <Save className="w-4 h-4" />
               )}
-              <span>{loading ? 'Creating...' : 'Create Staff Member'}</span>
+              <span>
+                {loading
+                  ? (isEditMode ? 'Updating...' : 'Creating...')
+                  : (isEditMode ? 'Update Staff Member' : 'Create Staff Member')}
+              </span>
             </button>
           </div>
         </form>

@@ -1,11 +1,17 @@
 {
   "dependencies": {
     "@supabase/supabase-js": "^2.54.0",
+    "@tensorflow/tfjs": "^4.22.0",
+    "@tensorflow/tfjs-backend-cpu": "^4.20.0",
+    "@tensorflow/tfjs-backend-webgl": "^4.20.0",
+    "@tensorflow/tfjs-core": "^4.20.0",
+    "face-api.js": "^0.22.2",
     "lucide-react": "^0.537.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
   },
   "devDependencies": {
+    "@types/node": "^24.10.0",
     "@types/react": "^19.1.9",
     "@types/react-dom": "^19.1.7"
   }

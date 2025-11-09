@@ -371,7 +371,7 @@ const AttendanceDashboard: React.FC = () => {
   }
 
   return (
-    <div className="attendance-dashboard space-y-6">
+    <div className="attendance-dashboard space-y-6 p-6">
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>

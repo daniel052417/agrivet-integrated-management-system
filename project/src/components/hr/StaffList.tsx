@@ -341,7 +341,7 @@ const StaffList: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-6">
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
@@ -386,7 +386,7 @@ const StaffList: React.FC = () => {
       )}
 
       {/* Stats Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
           <div className="flex items-center">
             <div className="p-2 bg-blue-100 rounded-lg">
@@ -413,7 +413,7 @@ const StaffList: React.FC = () => {
           </div>
         </div>
 
-        <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+        {/* <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
           <div className="flex items-center">
             <div className="p-2 bg-orange-100 rounded-lg">
               <Clock className="w-5 h-5 text-orange-600" />
@@ -425,7 +425,7 @@ const StaffList: React.FC = () => {
               </p>
             </div>
           </div>
-        </div>
+        </div> */}
 
         <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
           <div className="flex items-center">
@@ -471,7 +471,7 @@ const StaffList: React.FC = () => {
             </div>
           </div>
 
-          <div>
+          {/* <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Department</label>
             <select
               value={departmentFilter}
@@ -483,7 +483,7 @@ const StaffList: React.FC = () => {
                 <option key={dept} value={dept}>{dept}</option>
               ))}
             </select>
-          </div>
+          </div> */}
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Branch</label>
@@ -523,9 +523,7 @@ const StaffList: React.FC = () => {
             >
               <option value="all">All Types</option>
               <option value="regular">Regular</option>
-              <option value="probationary">Probationary</option>
               <option value="part-time">Part-Time</option>
-              <option value="contractual">Contractual</option>
             </select>
           </div>
         </div>

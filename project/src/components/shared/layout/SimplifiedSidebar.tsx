@@ -164,7 +164,6 @@ const SimplifiedSidebar: React.FC<SimplifiedSidebarProps> = ({ user, activeSecti
       icon: Users, 
       category: 'HR',
       children: [
-        { id: 'hr-dashboard', label: 'HR Dashboard', icon: Users, category: 'Default' },
         { id: 'staff', label: 'Employee Management', icon: UserCheck, category: 'HR' },
         { id: 'attendance-dashboard', label: 'Attendance Dashboard', icon: Clock, category: 'HR' },
         // ✅ Only show Leave Management if enabled in settings
@@ -183,8 +182,8 @@ const SimplifiedSidebar: React.FC<SimplifiedSidebarProps> = ({ user, activeSecti
       children: [
         { id: 'marketing-overview', label: 'Overview', icon: BarChart3, category: 'Marketing' },
         { id: 'promotions-announcements', label: 'Promotions & Announcements', icon: Tag, category: 'Marketing'},
-        { id: 'insights-analytics', label: 'Insights & Analytics', icon: TrendingUp, category: 'Marketing' },
-        { id: 'client-notifications', label: 'Client Notifications', icon: Gift, category: 'Marketing' },
+        // { id: 'insights-analytics', label: 'Insights & Analytics', icon: TrendingUp, category: 'Marketing' },
+        // { id: 'client-notifications', label: 'Client Notifications', icon: Gift, category: 'Marketing' },
         { id: 'facebook-integration', label: 'Facebook Integration', icon: Users, category: 'Marketing' },
       ]
     },
