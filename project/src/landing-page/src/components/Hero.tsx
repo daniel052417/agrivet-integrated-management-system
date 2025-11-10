@@ -1,6 +1,6 @@
 import { ArrowRight } from 'lucide-react';
 import { motion } from 'framer-motion';
-import store from '../assets/store.jpg';
+import store from '../assets/Store.jpg';
 
 const Hero = () => {
   return (
