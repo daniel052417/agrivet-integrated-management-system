@@ -16,7 +16,9 @@ export const AuthDebugTest: React.FC = () => {
   const [logs, setLogs] = useState<string[]>([])
 
   const addLog = (message: string) => {
-    const timestamp = new Date().toLocaleTimeString()
+    const timestamp = new Date().toLocaleTimeString('en-PH', {
+      timeZone: 'Asia/Manila'
+    })
     setLogs(prev => [...prev, `[${timestamp}] ${message}`])
   }
 

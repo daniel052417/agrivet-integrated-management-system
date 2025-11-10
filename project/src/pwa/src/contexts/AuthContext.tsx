@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { useNavigate } from 'react-router-dom'
 import { authService, AuthUser } from '../services/authService'
 import { supabase } from '../services/supabase'
-import type { AuthChangeEvent, Session } from '@supabase/supabase-js'
+import type { AuthChangeEvent, Session, User } from '@supabase/supabase-js'
 interface AuthContextType {
   user: AuthUser | null
   isAuthenticated: boolean
@@ -10,7 +10,13 @@ interface AuthContextType {
   isGuest: boolean
   needsProfile: boolean
   pendingEmailVerification: boolean
-  login: (email: string, password: string) => Promise<{ success: boolean; error?: string; requiresVerification?: boolean }>
+  login: (email: string, password: string) => Promise<{
+    success: boolean
+    error?: string
+    requiresVerification?: boolean
+    requiresPasswordReset?: boolean
+    passwordResetEmailSent?: boolean
+  }>
   register: (data: {
     email: string
     password: string
@@ -74,26 +80,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           
           const result = await loadUserData(session.user.id)
           if (!result.found) {
-            console.log('⚠️ No customer record found – redirecting to profile completion')
-            setNeedsProfile(true)
-            
-            // Store temporary user data for profile completion
-            const tempUser: AuthUser = {
-              id: session.user.id,
-              email: session.user.email || '',
-              first_name: session.user.user_metadata?.first_name || '',
-              last_name: session.user.user_metadata?.last_name || '',
-              phone: session.user.user_metadata?.phone || '',
-              user_type: 'customer',
-              is_active: true,
-              email_verified: emailVerified,
-              created_at: session.user.created_at,
-              updated_at: session.user.updated_at || session.user.created_at
+            if (isGoogleSignIn(session.user)) {
+              console.log('⚠️ No customer record found – redirecting to profile completion (Google sign-in)')
+              setNeedsProfile(true)
+
+              // Store temporary user data for profile completion
+              const tempUser = buildTempUserFromSession(session.user, emailVerified)
+              setUser(tempUser)
+
+              // Navigate to profile completion
+              navigate('/complete-profile')
+            } else {
+              console.warn('⚠️ Missing customer record for non-Google sign-in; skipping profile completion redirect')
+              setNeedsProfile(false)
             }
-            setUser(tempUser)
-            
-            // Navigate to profile completion
-            navigate('/complete-profile')
           }
         }
       } catch (error) {
@@ -113,24 +113,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           
           const result = await loadUserData(session.user.id)
           if (!result.found) {
-            setNeedsProfile(true)
-            
-            // Store temporary user data for profile completion
-            const tempUser: AuthUser = {
-              id: session.user.id,
-              email: session.user.email || '',
-              first_name: session.user.user_metadata?.first_name || '',
-              last_name: session.user.user_metadata?.last_name || '',
-              phone: session.user.user_metadata?.phone || '',
-              user_type: 'customer',
-              is_active: true,
-              email_verified: emailVerified,
-              created_at: session.user.created_at,
-              updated_at: session.user.updated_at || session.user.created_at
+            if (isGoogleSignIn(session.user)) {
+              setNeedsProfile(true)
+
+              // Store temporary user data for profile completion
+              const tempUser = buildTempUserFromSession(session.user, emailVerified)
+              setUser(tempUser)
+
+              navigate('/complete-profile')
+            } else {
+              console.warn('⚠️ Missing customer record for non-Google sign-in; skipping profile completion redirect')
+              setNeedsProfile(false)
             }
-            setUser(tempUser)
-            
-            navigate('/complete-profile')
           }
         } else if (event === 'SIGNED_OUT') {
           setUser(null)
@@ -183,6 +177,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       setUser(authUser)
       setIsGuest(false)
+      setNeedsProfile(false)
       localStorage.setItem('agrivet_user_cache', JSON.stringify(authUser))
       return { found: true, data: authUser }
     } catch (err) {
@@ -190,6 +185,28 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       return { found: false }
     }
   }
+
+  const isGoogleSignIn = (sessionUser: User | null | undefined) => {
+    if (!sessionUser) return false
+    if (sessionUser.app_metadata?.provider === 'google') return true
+    if (Array.isArray(sessionUser.identities)) {
+      return sessionUser.identities.some(identity => identity.provider === 'google')
+    }
+    return false
+  }
+
+  const buildTempUserFromSession = (sessionUser: User, emailVerified: boolean): AuthUser => ({
+    id: sessionUser.id,
+    email: sessionUser.email || '',
+    first_name: sessionUser.user_metadata?.first_name || sessionUser.user_metadata?.given_name || '',
+    last_name: sessionUser.user_metadata?.last_name || sessionUser.user_metadata?.family_name || '',
+    phone: sessionUser.user_metadata?.phone || sessionUser.user_metadata?.phone_number || '',
+    user_type: 'customer',
+    is_active: true,
+    email_verified: emailVerified,
+    created_at: sessionUser.created_at,
+    updated_at: sessionUser.updated_at || sessionUser.created_at
+  })
 
   const markProfileComplete = () => {
     setNeedsProfile(false)
@@ -223,6 +240,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             success: false, 
             error: 'Please verify your email before logging in. Check your inbox for the verification link.',
             requiresVerification: true
+          }
+        }
+
+        if (response.requiresPasswordReset) {
+          return {
+            success: false,
+            error: response.error || 'We sent you an email to set up your password.',
+            requiresPasswordReset: true,
+            passwordResetEmailSent: response.passwordResetEmailSent
           }
         }
         return { success: false, error: response.error }

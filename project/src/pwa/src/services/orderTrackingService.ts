@@ -301,7 +301,13 @@ class OrderTrackingService {
     try {
       const readyTime = estimatedReadyTime || new Date(Date.now() + 30 * 60 * 1000).toISOString() // 30 minutes from now
 
-      return await this.updateOrderStatus(orderId, 'ready', `Order is ready for pickup. Estimated ready time: ${new Date(readyTime).toLocaleString()}`)
+      return await this.updateOrderStatus(
+        orderId,
+        'ready',
+        `Order is ready for pickup. Estimated ready time: ${new Date(readyTime).toLocaleString('en-PH', {
+          timeZone: 'Asia/Manila'
+        })}`
+      )
 
     } catch (error) {
       console.error('Error marking order as ready:', error)

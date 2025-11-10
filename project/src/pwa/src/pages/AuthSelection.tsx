@@ -23,6 +23,7 @@ import LoadingSpinner from '../components/common/LoadingSpinner'
 import ErrorMessage from '../components/common/ErrorMessage'
 import googleLogo from '../assets/google.png'
 import { authService } from '../services/authService'
+import { supabase } from '../services/supabase'
 
 const AuthSelection: React.FC = () => {
   const navigate = useNavigate()
@@ -33,10 +34,16 @@ const AuthSelection: React.FC = () => {
   
   const [authMethod, setAuthMethod] = useState<'login' | 'register' | 'guest' | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [infoMessage, setInfoMessage] = useState<string | null>(null)
   const [showVerificationPrompt, setShowVerificationPrompt] = useState(false)
   const [registeredEmail, setRegisteredEmail] = useState('')
   const [resendingEmail, setResendingEmail] = useState(false)
   const [resendSuccess, setResendSuccess] = useState(false)
+  const [passwordResetNotice, setPasswordResetNotice] = useState<{ email: string; sent: boolean }>({
+    email: '',
+    sent: false
+  })
+  const [isResendingPasswordEmail, setIsResendingPasswordEmail] = useState(false)
   
   // Login form state
   const [loginForm, setLoginForm] = useState({
@@ -62,6 +69,9 @@ const AuthSelection: React.FC = () => {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
+    setInfoMessage(null)
+    setPasswordResetNotice({ email: '', sent: false })
+    setIsResendingPasswordEmail(false)
 
     console.log('🔐 AuthSelection: Starting login process...', {
       email: loginForm.email,
@@ -83,6 +93,15 @@ const AuthSelection: React.FC = () => {
         setError('Please verify your email before logging in. Check your inbox for the verification link.')
         setShowVerificationPrompt(true)
         setRegisteredEmail(loginForm.email)
+      } else if (result.requiresPasswordReset) {
+        setInfoMessage(
+          result.error ||
+          'Check your email for instructions to set a password and then try signing in again.'
+        )
+        setPasswordResetNotice({
+          email: loginForm.email,
+          sent: !!result.passwordResetEmailSent
+        })
       } else if (result.success) {
         console.log('✅ AuthSelection: Login successful, navigating to catalog')
         navigate('/catalog')
@@ -200,11 +219,39 @@ const AuthSelection: React.FC = () => {
     }
   }
 
+  const handleResendPasswordReset = async () => {
+    if (!passwordResetNotice.email) return
+
+    setIsResendingPasswordEmail(true)
+    setError(null)
+
+    try {
+      const { error: resendError } = await supabase.auth.resetPasswordForEmail(passwordResetNotice.email, {
+        redirectTo: `${window.location.origin}/auth/password-reset`
+      })
+
+      if (resendError) {
+        throw resendError
+      }
+
+      setPasswordResetNotice(prev => ({ ...prev, sent: true }))
+      setInfoMessage(`Password reset email sent to ${passwordResetNotice.email}. It may take a minute to arrive—also check spam or promotions folders.`)
+    } catch (error) {
+      console.error('❌ AuthSelection: Failed to resend password reset email:', error)
+      setError(error instanceof Error ? error.message : 'Failed to resend password reset email.')
+    } finally {
+      setIsResendingPasswordEmail(false)
+    }
+  }
+
   const resetForm = () => {
     setAuthMethod(null)
     setError(null)
+    setInfoMessage(null)
     setShowVerificationPrompt(false)
     setRegisteredEmail('')
+    setPasswordResetNotice({ email: '', sent: false })
+    setIsResendingPasswordEmail(false)
     resetLoginForm()
     resetRegisterForm()
   }
@@ -439,6 +486,38 @@ const AuthSelection: React.FC = () => {
               </p>
             </div>
 
+            {infoMessage && (
+              <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800 space-y-3">
+                <div className="flex items-start space-x-2">
+                  <Mail className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <p className="font-medium text-blue-900">Check your email</p>
+                    <p>{infoMessage}</p>
+                    {passwordResetNotice.email && (
+                      <p className="text-xs text-blue-700 mt-1">
+                        We sent the link to <strong>{passwordResetNotice.email}</strong>. It can take a minute—check your spam or promotions folders if you don’t see it.
+                      </p>
+                    )}
+                  </div>
+                </div>
+                {passwordResetNotice.email && (
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={handleResendPasswordReset}
+                      disabled={isResendingPasswordEmail}
+                      className="inline-flex items-center justify-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isResendingPasswordEmail ? 'Sending...' : 'Resend password email'}
+                    </button>
+                    <span className="text-xs text-blue-600">
+                      Reset form opens at <code>/auth/password-reset</code>
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+
             {error && (
               <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-start space-x-2">
                 <XCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
@@ -526,6 +605,9 @@ const AuthSelection: React.FC = () => {
                   onClick={() => {
                     setAuthMethod('register')
                     setError(null)
+                    setInfoMessage(null)
+                    setPasswordResetNotice({ email: '', sent: false })
+                    setIsResendingPasswordEmail(false)
                   }}
                   className="text-green-600 hover:underline font-medium"
                 >

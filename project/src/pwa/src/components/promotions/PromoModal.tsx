@@ -189,11 +189,13 @@ const PromoModal: React.FC<PromoModalProps> = ({
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
                         <span>
-                          Valid until {new Date(promotion.validUntil).toLocaleDateString('en-US', { 
-                            month: 'short', 
-                            day: 'numeric', 
-                            year: 'numeric' 
-                          })}
+                        Valid until{' '}
+                        {new Date(promotion.validUntil).toLocaleDateString('en-PH', {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric',
+                          timeZone: 'Asia/Manila'
+                        })}
                         </span>
                       </div>
 

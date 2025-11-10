@@ -5,6 +5,7 @@ import EmailService from './emailService'
 import InventoryService from './inventoryService'
 import OrderTrackingService from './orderTrackingService'
 import NewOrderAlertService from '../../../lib/alerts/newOrderAlertService'
+import { formatManilaDate } from '../utils/dateTime'
 
 interface OrderServiceConfig {
   supabaseUrl: string
@@ -289,7 +290,7 @@ class OrderService {
               orderNumber: order.order_number,
               orderTotal: cart.total,
               customerName: `${customerInfo.firstName} ${customerInfo.lastName}`,
-              orderDate: new Date().toLocaleDateString(),
+              orderDate: formatManilaDate(new Date()),
               branchName: 'Tiongson Agrivet',
               message: emailMessage,
               paymentMethod: paymentMethod,
@@ -443,7 +444,7 @@ class OrderService {
             orderNumber: order.order_number,
             orderTotal: order.total_amount,
             customerName: order.customer_name || 'Customer',
-            orderDate: new Date(order.created_at).toLocaleDateString(),
+            orderDate: formatManilaDate(order.created_at),
             branchName: 'Tiongson Agrivet',
             estimatedReadyTime: order.estimated_ready_time,
             paymentMethod: order.payment_method,

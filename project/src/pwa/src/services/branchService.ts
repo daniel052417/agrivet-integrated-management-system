@@ -111,10 +111,11 @@ class BranchService {
       const availability = branches.map(branch => {
         const now = new Date()
         const currentDay = now.getDay() // 0 = Sunday, 1 = Monday, etc.
-        const currentTime = now.toLocaleTimeString('en-US', { 
-          hour12: false, 
-          hour: '2-digit', 
-          minute: '2-digit' 
+        const currentTime = now.toLocaleTimeString('en-PH', {
+          hour12: false,
+          hour: '2-digit',
+          minute: '2-digit',
+          timeZone: 'Asia/Manila'
         })
 
         const isOpen = this.isBranchOpenNow(branch, currentDay, currentTime)

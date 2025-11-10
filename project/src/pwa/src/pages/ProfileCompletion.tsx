@@ -130,7 +130,8 @@ const ProfileCompletion: React.FC<ProfileCompletionProps> = (props) => {
             city: formData.city,
             province: formData.province,
             postal_code: formData.postalCode,
-            customer_type: formData.customerType
+            customer_type: formData.customerType,
+            source: 'profile-completion'
           })
         })
 

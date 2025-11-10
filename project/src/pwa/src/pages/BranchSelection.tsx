@@ -197,10 +197,11 @@ const BranchSelection: React.FC = () => {
 
     const now = new Date()
     const currentDay = now.getDay()
-    const currentTime = now.toLocaleTimeString('en-US', { 
-      hour12: false, 
-      hour: '2-digit', 
-      minute: '2-digit' 
+    const currentTime = now.toLocaleTimeString('en-PH', {
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: 'Asia/Manila'
     })
 
     const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']

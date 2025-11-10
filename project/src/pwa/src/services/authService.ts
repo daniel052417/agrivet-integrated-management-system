@@ -32,6 +32,8 @@ export interface AuthResponse {
   session: any | null
   error: string | null
   requiresProfileCompletion?: boolean 
+  requiresPasswordReset?: boolean
+  passwordResetEmailSent?: boolean
 }
 
 class AuthService {
@@ -92,7 +94,8 @@ class AuthService {
           first_name: data.first_name,
           last_name: data.last_name,
           phone: data.phone
-        }
+        },
+        source: 'pwa-registration'
       })
 
       if (!customerResult.success) {
@@ -177,6 +180,18 @@ class AuthService {
 
       if (authError) {
         console.error('❌ AuthService: Supabase Auth error:', authError)
+
+        if (this.isInvalidCredentialsError(authError)) {
+          const resetResult = await this.initiatePasswordResetFlow(credentials.email)
+          return {
+            user: null,
+            session: null,
+            error: resetResult.message,
+            requiresPasswordReset: resetResult.requiresPasswordReset,
+            passwordResetEmailSent: resetResult.emailSent
+          }
+        }
+
         return {
           user: null,
           session: null,
@@ -259,6 +274,17 @@ class AuthService {
       }
     } catch (error) {
       console.error('❌ AuthService: Login caught an error:', error)
+      if (this.isInvalidCredentialsError(error)) {
+        const resetResult = await this.initiatePasswordResetFlow(credentials.email)
+        return {
+          user: null,
+          session: null,
+          error: resetResult.message,
+          requiresPasswordReset: resetResult.requiresPasswordReset,
+          passwordResetEmailSent: resetResult.emailSent
+        }
+      }
+
       return {
         user: null,
         session: null,
@@ -553,6 +579,12 @@ class AuthService {
     email: string
     user_metadata: any
     raw_user_meta_data: any
+    address?: string | null
+    city?: string | null
+    province?: string | null
+    postal_code?: string | null
+    customer_type?: string
+    source?: string
   }): Promise<{ success: boolean; customer?: any; error?: string }> {
     try {
       console.log('📞 Edge Function: Calling create-customer function...')
@@ -586,6 +618,43 @@ class AuthService {
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Edge Function call failed' 
+      }
+    }
+  }
+
+  private isInvalidCredentialsError(error: unknown): boolean {
+    if (!error) return false
+    const message = (error as { message?: string })?.message?.toLowerCase() ?? ''
+    return message.includes('invalid login credentials')
+  }
+
+  private async initiatePasswordResetFlow(email: string): Promise<{ emailSent: boolean; requiresPasswordReset: boolean; message: string }> {
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/auth/password-reset`
+      })
+
+      if (error) {
+        console.error('❌ AuthService: Failed to send password reset email:', error)
+        return {
+          emailSent: false,
+          requiresPasswordReset: false,
+          message: error.message || 'Invalid email or password'
+        }
+      }
+
+      console.log('✉️ AuthService: Password reset email sent')
+      return {
+        emailSent: true,
+        requiresPasswordReset: true,
+        message: 'We couldn’t sign you in. If you originally used Google, check your email to set a password.'
+      }
+    } catch (err) {
+      console.error('❌ AuthService: Error initiating password reset flow:', err)
+      return {
+        emailSent: false,
+        requiresPasswordReset: false,
+        message: 'Invalid email or password'
       }
     }
   }

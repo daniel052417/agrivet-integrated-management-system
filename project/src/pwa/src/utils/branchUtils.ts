@@ -26,10 +26,11 @@ export const getNextOpeningTime = (branch: Branch): string => {
       
       // If it's today, check if we're past the opening time
       if (i === 0) {
-        const currentTime = now.toLocaleTimeString('en-US', { 
-          hour12: false, 
-          hour: '2-digit', 
-          minute: '2-digit' 
+        const currentTime = now.toLocaleTimeString('en-PH', {
+          hour12: false,
+          hour: '2-digit',
+          minute: '2-digit',
+          timeZone: 'Asia/Manila'
         })
         
         if (currentTime < openTime) {
@@ -73,10 +74,11 @@ export const isBranchClosed = (branch: Branch): boolean => {
 
   const now = new Date()
   const currentDay = now.getDay()
-  const currentTime = now.toLocaleTimeString('en-US', { 
-    hour12: false, 
-    hour: '2-digit', 
-    minute: '2-digit' 
+  const currentTime = now.toLocaleTimeString('en-PH', {
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'Asia/Manila'
   })
 
   const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']

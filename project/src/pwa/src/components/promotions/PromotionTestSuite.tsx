@@ -371,7 +371,16 @@ const PromotionTestSuite: React.FC = () => {
                       <div>Type: {promotion.discountType}</div>
                       <div>Value: {promotion.discountValue}</div>
                       <div>Audience: {promotion.targetAudience}</div>
-                      <div>Valid: {new Date(promotion.validFrom).toLocaleDateString()} - {new Date(promotion.validUntil).toLocaleDateString()}</div>
+                      <div>
+                        Valid:{' '}
+                        {new Date(promotion.validFrom).toLocaleDateString('en-PH', {
+                          timeZone: 'Asia/Manila'
+                        })}{' '}
+                        -{' '}
+                        {new Date(promotion.validUntil).toLocaleDateString('en-PH', {
+                          timeZone: 'Asia/Manila'
+                        })}
+                      </div>
                     </div>
                   </div>
                 ))}
