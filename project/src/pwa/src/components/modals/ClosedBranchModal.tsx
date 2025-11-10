@@ -25,6 +25,18 @@ const ClosedBranchModal: React.FC<ClosedBranchModalProps> = ({
   const [isVisible, setIsVisible] = useState(false)
   const [animationLoaded, setAnimationLoaded] = useState(false)
   const [animationError, setAnimationError] = useState(false)
+  const [isMobile, setIsMobile] = useState(false)
+
+  useEffect(() => {
+    // Check if mobile on mount and resize
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 640)
+    }
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
+    
+    return () => window.removeEventListener('resize', checkMobile)
+  }, [])
 
   useEffect(() => {
     if (isOpen) {
@@ -73,7 +85,7 @@ const ClosedBranchModal: React.FC<ClosedBranchModalProps> = ({
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 overflow-hidden">
       {/* Backdrop */}
       <div 
         className={`absolute inset-0 bg-black transition-opacity duration-300 ${
@@ -84,27 +96,28 @@ const ClosedBranchModal: React.FC<ClosedBranchModalProps> = ({
       
       {/* Modal - Mobile Optimized */}
       <div 
-        className={`relative w-full max-w-md max-h-[90vh] overflow-y-auto transform transition-all duration-300 ${
+        className={`relative w-[calc(100vw-16px)] sm:w-full sm:max-w-md max-h-[95vh] sm:max-h-[90vh] overflow-y-auto overflow-x-hidden transform transition-all duration-300 ${
           isVisible 
             ? 'scale-100 opacity-100 translate-y-0' 
             : 'scale-95 opacity-0 translate-y-4'
         }`}
       >
-        <div className={`bg-white rounded-xl sm:rounded-2xl shadow-2xl overflow-hidden transition-all duration-1000 ${
+        <div className={`bg-white rounded-lg sm:rounded-2xl shadow-2xl overflow-hidden transition-all duration-1000 w-full ${
           animationLoaded ? 'shadow-green-200' : ''
         }`}>
           {/* Close Button - Compact on Mobile */}
           <button
             onClick={onClose}
-            className="absolute top-3 right-3 sm:top-4 sm:right-4 z-10 p-1.5 sm:p-2 rounded-full bg-gray-100 hover:bg-gray-200 transition-colors duration-200"
+            className="absolute top-2 right-2 sm:top-4 sm:right-4 z-10 p-2 sm:p-2 rounded-full bg-gray-100 hover:bg-gray-200 active:bg-gray-300 transition-colors duration-200 touch-manipulation"
+            aria-label="Close modal"
           >
             <X className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
           </button>
 
           {/* Content - Responsive Padding */}
-          <div className="p-6 sm:p-8 text-center">
+          <div className="p-4 sm:p-8 text-center w-full box-border overflow-x-hidden">
             {/* Lottie Animation - Smaller on Mobile */}
-            <div className="mb-4 sm:mb-6 -mt-2 sm:-mt-4">
+            <div className="mb-3 sm:mb-6">
               <div className={`transition-opacity duration-500 ${animationLoaded ? 'opacity-100' : 'opacity-0'}`}>
                 {!animationError ? (
                   <Lottie
@@ -119,8 +132,8 @@ const ClosedBranchModal: React.FC<ClosedBranchModalProps> = ({
                       setAnimationLoaded(true) // Show content even if animation fails
                     }}
                     style={{ 
-                      width: window.innerWidth < 640 ? 150 : 200, // Smaller on mobile
-                      height: window.innerWidth < 640 ? 150 : 200, 
+                      width: isMobile ? 120 : 200, // Smaller on mobile
+                      height: isMobile ? 120 : 200, 
                       margin: '0 auto',
                       filter: 'drop-shadow(0 4px 8px rgba(0, 0, 0, 0.1))'
                     }}
@@ -130,29 +143,29 @@ const ClosedBranchModal: React.FC<ClosedBranchModalProps> = ({
                   />
                 ) : (
                   // Fallback icon if animation fails - Smaller on Mobile
-                  <div className="w-32 h-32 sm:w-50 sm:h-50 mx-auto flex items-center justify-center">
-                    <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gray-200 rounded-full flex items-center justify-center">
-                      <Lock className="w-8 h-8 sm:w-10 sm:h-10 text-gray-600" />
+                  <div className="w-24 h-24 sm:w-40 sm:h-40 mx-auto flex items-center justify-center">
+                    <div className="w-12 h-12 sm:w-20 sm:h-20 bg-gray-200 rounded-full flex items-center justify-center">
+                      <Lock className="w-6 h-6 sm:w-10 sm:h-10 text-gray-600" />
                     </div>
                   </div>
                 )}
               </div>
               {!animationLoaded && !animationError && (
-                <div className="w-32 h-32 sm:w-50 sm:h-50 mx-auto flex items-center justify-center">
-                  <div className="w-10 h-10 sm:w-12 sm:h-12 border-4 border-agrivet-green border-t-transparent rounded-full animate-spin"></div>
+                <div className="w-24 h-24 sm:w-40 sm:h-40 mx-auto flex items-center justify-center">
+                  <div className="w-8 h-8 sm:w-12 sm:h-12 border-[3px] sm:border-4 border-agrivet-green border-t-transparent rounded-full animate-spin"></div>
                 </div>
               )}
             </div>
 
             {/* Heading - Responsive Text */}
-            <h2 className={`text-2xl sm:text-3xl font-bold text-gray-900 mb-2 sm:mb-3 transition-all duration-700 delay-300 ${
+            <h2 className={`text-xl sm:text-3xl font-bold text-gray-900 mb-2 sm:mb-3 transition-all duration-700 delay-300 ${
               animationLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'
             }`}>
               Branch is closed!
             </h2>
 
             {/* Subtext - Responsive Text */}
-            <p className={`text-sm sm:text-lg text-gray-600 mb-6 sm:mb-8 transition-all duration-700 delay-500 ${
+            <p className={`text-xs sm:text-lg text-gray-600 mb-4 sm:mb-8 leading-relaxed transition-all duration-700 delay-500 ${
               animationLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'
             }`}>
               This branch is currently unavailable. Please try again at{' '}
@@ -162,21 +175,21 @@ const ClosedBranchModal: React.FC<ClosedBranchModalProps> = ({
             </p>
 
             {/* Branch Name - Compact */}
-            <div className={`flex items-center justify-center mb-6 sm:mb-8 text-gray-500 transition-all duration-700 delay-700 ${
+            <div className={`flex items-center justify-center mb-4 sm:mb-8 text-gray-500 transition-all duration-700 delay-700 ${
               animationLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'
             }`}>
-              <MapPin className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-2 flex-shrink-0" />
-              <span className="text-xs sm:text-sm truncate max-w-[250px]">{branchName}</span>
+              <MapPin className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1.5 sm:mr-2 flex-shrink-0" />
+              <span className="text-xs sm:text-sm truncate max-w-[200px] sm:max-w-[250px]">{branchName}</span>
             </div>
 
-            {/* Buttons - Compact on Mobile */}
+            {/* Buttons - Compact on Mobile with Better Touch Targets */}
             <div className={`space-y-2.5 sm:space-y-3 transition-all duration-700 delay-900 ${
               animationLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'
             }`}>
               {/* Set Reminder Button */}
               <button
                 onClick={onSetReminder}
-                className="w-full flex items-center justify-center px-4 py-2.5 sm:px-6 sm:py-3 border-2 border-agrivet-green text-agrivet-green rounded-lg sm:rounded-xl font-medium text-sm sm:text-base hover:bg-agrivet-green hover:text-white transition-all duration-200 group"
+                className="w-full flex items-center justify-center px-4 py-3 sm:px-6 sm:py-3.5 border-2 border-agrivet-green text-agrivet-green rounded-lg sm:rounded-xl font-medium text-sm sm:text-base hover:bg-agrivet-green hover:text-white active:bg-green-50 active:scale-[0.98] transition-all duration-200 group touch-manipulation min-h-[44px]"
               >
                 <Clock className="w-4 h-4 sm:w-5 sm:h-5 mr-2 group-hover:animate-pulse flex-shrink-0" />
                 <span>Set Reminder</span>
@@ -185,10 +198,10 @@ const ClosedBranchModal: React.FC<ClosedBranchModalProps> = ({
               {/* Find Another Open Branch Button */}
               <button
                 onClick={onFindAnotherBranch}
-                className="w-full flex items-center justify-center px-4 py-2.5 sm:px-6 sm:py-3 bg-agrivet-green text-white rounded-lg sm:rounded-xl font-medium text-sm sm:text-base hover:bg-green-600 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105"
+                className="w-full flex items-center justify-center px-4 py-3 sm:px-6 sm:py-3.5 bg-agrivet-green text-white rounded-lg sm:rounded-xl font-medium text-sm sm:text-base hover:bg-green-600 active:bg-green-700 active:scale-[0.98] transition-all duration-200 shadow-lg hover:shadow-xl touch-manipulation min-h-[44px] overflow-hidden"
               >
                 <MapPin className="w-4 h-4 sm:w-5 sm:h-5 mr-2 flex-shrink-0" />
-                <span className="truncate">Find Another Open Branch</span>
+                <span className="truncate min-w-0">Find Another Open Branch</span>
               </button>
 
               {/* Browse Anyway Button */}
@@ -202,10 +215,10 @@ const ClosedBranchModal: React.FC<ClosedBranchModalProps> = ({
             </div>
 
             {/* Additional Info - Compact Text */}
-            <div className={`mt-5 sm:mt-6 pt-5 sm:pt-6 border-t border-gray-100 transition-all duration-700 delay-1100 ${
+            <div className={`mt-4 sm:mt-6 pt-4 sm:pt-6 border-t border-gray-100 transition-all duration-700 delay-1100 ${
               animationLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'
             }`}>
-              <p className="text-xs sm:text-sm text-gray-500 leading-relaxed">
+              <p className="text-[11px] sm:text-sm text-gray-500 leading-relaxed px-1">
                 You can still browse our products and place an order for pickup when this branch is available.
               </p>
             </div>

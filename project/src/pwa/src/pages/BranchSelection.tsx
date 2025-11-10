@@ -9,7 +9,6 @@ import { useAuth } from '../contexts/AuthContext'
 import { Branch } from '../types'
 import { branchService } from '../services/branchService'
 import { supabase } from '../services/supabase'
-import LoadingSpinner from '../components/common/LoadingSpinner'
 import ErrorMessage from '../components/common/ErrorMessage'
 import ClosedBranchModal from '../components/modals/ClosedBranchModal'
 import { getNextOpeningTime, isBranchClosed } from '../utils/branchUtils'
@@ -435,18 +434,18 @@ const BranchSelection: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50">
+    <div className={`min-h-screen bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50 ${showClosedModal ? 'overflow-hidden' : ''}`}>
       {/* Enhanced Header with Branding */}
-      <div className="bg-white/80 backdrop-blur-sm shadow-lg border-b border-green-100 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-4 py-6">
-          <div className="flex items-center justify-between mb-4">
+      <div className={`bg-white/80 backdrop-blur-sm shadow-lg border-b border-green-100 sticky top-0 z-10 ${showClosedModal ? 'pointer-events-none' : ''}`}>
+        <div className="max-w-7xl mx-auto px-3 py-4 md:px-4 md:py-6">
+          <div className="flex items-center justify-between mb-3 md:mb-4">
             {/* Back Button */}
             <button
               onClick={handleBackToHome}
-              className="flex items-center space-x-2 text-gray-600 hover:text-green-600 transition-colors group"
+              className="flex items-center space-x-1.5 md:space-x-2 text-gray-600 hover:text-green-600 transition-colors group"
             >
-              <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
-              <span className="font-medium">Back to Home</span>
+              <ArrowLeft className="w-4 h-4 md:w-5 md:h-5 group-hover:-translate-x-1 transition-transform" />
+              <span className="font-medium text-sm md:text-base">Back to Home</span>
             </button>
 
             {/* Logo/Brand */}
@@ -464,13 +463,13 @@ const BranchSelection: React.FC = () => {
 
             {/* User Info (if authenticated) */}
             {isAuthenticated && user && (
-              <div className="flex items-center space-x-2 px-4 py-2 bg-green-50 rounded-lg">
-                <div className="w-8 h-8 bg-green-200 rounded-full flex items-center justify-center">
-                  <span className="text-green-700 font-semibold text-sm">
+              <div className="hidden sm:flex items-center space-x-2 px-3 py-1.5 md:px-4 md:py-2 bg-green-50 rounded-lg">
+                <div className="w-7 h-7 md:w-8 md:h-8 bg-green-200 rounded-full flex items-center justify-center">
+                  <span className="text-green-700 font-semibold text-xs md:text-sm">
                     {user.email?.charAt(0).toUpperCase()}
                   </span>
                 </div>
-                <span className="text-sm font-medium text-gray-700">
+                <span className="text-xs md:text-sm font-medium text-gray-700">
                   {user.email?.split('@')[0]}
                 </span>
               </div>
@@ -479,10 +478,10 @@ const BranchSelection: React.FC = () => {
 
           {/* Title Section */}
           <div className="text-center">
-            <h2 className="text-3xl font-bold text-gray-900 mb-2">
+            <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-1.5 md:mb-2">
               Choose Your <span className="text-transparent bg-clip-text bg-gradient-to-r from-green-500 to-emerald-600">Branch</span>
             </h2>
-            <p className="text-gray-600 text-lg">
+            <p className="text-gray-600 text-base md:text-lg px-2">
               Select the AgriVet branch where you'd like to pick up your order
             </p>
           </div>
@@ -497,24 +496,24 @@ const BranchSelection: React.FC = () => {
         <div className="absolute bottom-0 left-1/2 w-72 h-72 bg-teal-200 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob animation-delay-4000"></div>
 
         {/* Branches Grid */}
-        <div className="relative max-w-6xl mx-auto px-4 py-12">
+        <div className="relative max-w-6xl mx-auto px-3 py-6 md:px-4 md:py-12">
           {/* Section Header */}
-          <div className="mb-8 text-center">
-            <div className="inline-flex items-center space-x-2 px-4 py-2 bg-white/80 backdrop-blur-sm rounded-full shadow-md mb-4">
-              <MapPin className="w-5 h-5 text-green-600" />
-              <span className="text-sm font-semibold text-gray-700">
+          <div className="mb-4 md:mb-8 text-center">
+            <div className="inline-flex items-center space-x-1.5 md:space-x-2 px-3 py-1.5 md:px-4 md:py-2 bg-white/80 backdrop-blur-sm rounded-full shadow-md mb-3 md:mb-4">
+              <MapPin className="w-4 h-4 md:w-5 md:h-5 text-green-600" />
+              <span className="text-xs md:text-sm font-semibold text-gray-700">
                 {branches.length} Branches Available
               </span>
             </div>
-            <h3 className="text-2xl font-bold text-gray-900 mb-2">
+            <h3 className="text-xl md:text-2xl font-bold text-gray-900 mb-1.5 md:mb-2">
               Our Locations in Talisay City
             </h3>
-            <p className="text-gray-600">
+            <p className="text-gray-600 text-sm md:text-base px-2">
               All branches offer the same quality products and expert service
             </p>
           </div>
 
-          <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-4 md:gap-6 lg:gap-8 md:grid-cols-2 lg:grid-cols-3">
             {branches.map((branch) => {
               const status = getSmartBranchStatus(branch)
               const StatusIcon = status.statusIcon
@@ -525,64 +524,64 @@ const BranchSelection: React.FC = () => {
               return (
                 <div
                   key={branch.id}
-                  className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border-2 border-white/50 p-6 hover:shadow-2xl hover:scale-105 hover:border-green-300 transition-all duration-300 cursor-pointer group relative overflow-hidden"
+                  className="bg-white/90 backdrop-blur-sm rounded-xl md:rounded-2xl shadow-lg border-2 border-white/50 p-4 md:p-6 hover:shadow-2xl md:hover:scale-105 hover:border-green-300 transition-all duration-300 cursor-pointer group relative overflow-hidden active:scale-[0.98]"
                   onClick={() => handleBranchSelect(branch)}
                 >
                   {/* Decorative Gradient */}
-                  <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-green-400/10 to-emerald-500/10 rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform duration-500"></div>
+                  <div className="absolute top-0 right-0 w-24 h-24 md:w-32 md:h-32 bg-gradient-to-br from-green-400/10 to-emerald-500/10 rounded-full -mr-12 -mt-12 md:-mr-16 md:-mt-16 md:group-hover:scale-150 transition-transform duration-500"></div>
 
                   {/* Branch Header */}
-                  <div className="relative flex items-start justify-between mb-6">
+                  <div className="relative flex items-start justify-between mb-4 md:mb-6">
                     <div className="flex-1">
-                      <div className="flex items-center space-x-2 mb-2">
-                        <h3 className="text-xl font-bold text-gray-900 group-hover:text-green-600 transition-colors">
+                      <div className="flex items-center flex-wrap gap-1.5 md:gap-2 mb-1.5 md:mb-2">
+                        <h3 className="text-lg md:text-xl font-bold text-gray-900 group-hover:text-green-600 transition-colors">
                           {branch.name}
                         </h3>
-                        <span className={`text-xs font-medium px-2 py-1 rounded-full border ${branchTypeBadge.color}`}>
+                        <span className={`text-[10px] md:text-xs font-medium px-1.5 py-0.5 md:px-2 md:py-1 rounded-full border ${branchTypeBadge.color}`}>
                           {branchTypeBadge.text}
                         </span>
                       </div>
                       
-                      <div className="flex items-center space-x-1 mb-2">
+                      <div className="flex items-center space-x-1 mb-1.5 md:mb-2">
                         <Building className="w-3 h-3 text-gray-400" />
-                        <span className="text-xs text-gray-500 font-medium">{branch.code}</span>
+                        <span className="text-[10px] md:text-xs text-gray-500 font-medium">{branch.code}</span>
                       </div>
                       
                       {/* Address */}
-                      <div className="flex items-start text-gray-600 mb-3">
-                        <MapPin className="w-4 h-4 mr-2 mt-0.5 flex-shrink-0 text-green-600" />
-                        <div className="text-sm leading-relaxed">
+                      <div className="flex items-start text-gray-600 mb-2 md:mb-3">
+                        <MapPin className="w-3.5 h-3.5 md:w-4 md:h-4 mr-1.5 md:mr-2 mt-0.5 flex-shrink-0 text-green-600" />
+                        <div className="text-xs md:text-sm leading-relaxed">
                           <p>{branch.address}</p>
                           <p>{branch.city}, {branch.province}</p>
                           {branch.postal_code && (
-                            <p className="text-xs text-gray-500">{branch.postal_code}</p>
+                            <p className="text-[10px] md:text-xs text-gray-500">{branch.postal_code}</p>
                           )}
                         </div>
                       </div>
                       
                       {/* Operating Hours */}
-                      <div className="text-gray-600 mb-3">
+                      <div className="text-gray-600 mb-2 md:mb-3">
                         <div className="flex items-center mb-1">
-                          <Clock className="w-4 h-4 mr-2 flex-shrink-0 text-green-600" />
-                          <span className="text-sm font-medium">Operating Hours</span>
+                          <Clock className="w-3.5 h-3.5 md:w-4 md:h-4 mr-1.5 md:mr-2 flex-shrink-0 text-green-600" />
+                          <span className="text-xs md:text-sm font-medium">Operating Hours</span>
                         </div>
-                        <div className="ml-6">
-                          <div className="text-sm">
+                        <div className="ml-5 md:ml-6">
+                          <div className="text-xs md:text-sm">
                             {typeof operatingHours === 'string' ? (
                               <span className="text-gray-500">{operatingHours}</span>
                             ) : operatingHours.isSimplified ? (
                               <>
-                                <div className="text-sm font-medium text-gray-900">
+                                <div className="text-xs md:text-sm font-medium text-gray-900">
                                   {operatingHours.hours}
                                 </div>
-                                <div className="text-xs text-gray-500">
+                                <div className="text-[10px] md:text-xs text-gray-500">
                                   {operatingHours.days.join(', ')}
                                 </div>
                               </>
                             ) : (
-                              <div className="space-y-1">
+                              <div className="space-y-0.5 md:space-y-1">
                                 {operatingHours.detailedHours?.map((hours: string, index: number) => (
-                                  <div key={index} className="text-xs text-gray-600">
+                                  <div key={index} className="text-[10px] md:text-xs text-gray-600">
                                     {hours}
                                   </div>
                                 ))}
@@ -594,11 +593,11 @@ const BranchSelection: React.FC = () => {
 
                       {/* Contact Info */}
                       {branch.phone && (
-                        <div className="flex items-center text-gray-600 mb-2">
-                          <Phone className="w-4 h-4 mr-2 flex-shrink-0 text-green-600" />
+                        <div className="flex items-center text-gray-600 mb-1.5 md:mb-2">
+                          <Phone className="w-3.5 h-3.5 md:w-4 md:h-4 mr-1.5 md:mr-2 flex-shrink-0 text-green-600" />
                           <a 
                             href={`tel:${branch.phone}`}
-                            className="text-sm hover:text-green-600 transition-colors"
+                            className="text-xs md:text-sm hover:text-green-600 transition-colors"
                             onClick={(e) => e.stopPropagation()}
                           >
                             {branch.phone}
@@ -607,11 +606,11 @@ const BranchSelection: React.FC = () => {
                       )}
 
                       {branch.email && (
-                        <div className="flex items-center text-gray-600 mb-4">
-                          <Mail className="w-4 h-4 mr-2 flex-shrink-0 text-green-600" />
+                        <div className="flex items-center text-gray-600 mb-3 md:mb-4">
+                          <Mail className="w-3.5 h-3.5 md:w-4 md:h-4 mr-1.5 md:mr-2 flex-shrink-0 text-green-600" />
                           <a 
                             href={`mailto:${branch.email}`}
-                            className="text-sm hover:text-green-600 transition-colors"
+                            className="text-xs md:text-sm hover:text-green-600 transition-colors break-all"
                             onClick={(e) => e.stopPropagation()}
                           >
                             {branch.email}
@@ -622,26 +621,26 @@ const BranchSelection: React.FC = () => {
                   </div>
 
                   {/* Smart Status Badge */}
-                  <div className={`inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium mb-4 ${status.bgColor} ${status.borderColor} border-2 shadow-sm`}>
-                    <StatusIcon className={`w-4 h-4 mr-2 ${status.statusColor}`} />
+                  <div className={`inline-flex items-center px-2.5 py-1 md:px-3 md:py-1.5 rounded-full text-xs md:text-sm font-medium mb-3 md:mb-4 ${status.bgColor} ${status.borderColor} border-2 shadow-sm`}>
+                    <StatusIcon className={`w-3.5 h-3.5 md:w-4 md:h-4 mr-1.5 md:mr-2 ${status.statusColor}`} />
                     <span className={status.statusColor}>{status.statusText}</span>
                   </div>
 
                   {/* Payment Options */}
-                  <div className="mb-6">
-                    <h4 className="text-sm font-medium text-gray-900 mb-3 flex items-center">
-                      <CreditCard className="w-4 h-4 mr-2 text-green-600" />
+                  <div className="mb-4 md:mb-6">
+                    <h4 className="text-xs md:text-sm font-medium text-gray-900 mb-2 md:mb-3 flex items-center">
+                      <CreditCard className="w-3.5 h-3.5 md:w-4 md:h-4 mr-1.5 md:mr-2 text-green-600" />
                       Payment Options
                     </h4>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-wrap gap-1.5 md:gap-2">
                       {paymentOptions.map((option: any, index: number) => {
                         const OptionIcon = option.icon
                         return (
                           <div
                             key={index}
-                            className={`flex items-center space-x-1.5 text-xs px-3 py-1.5 rounded-full ${option.bgColor} border border-transparent hover:border-current transition-all`}
+                            className={`flex items-center space-x-1 md:space-x-1.5 text-[10px] md:text-xs px-2 py-1 md:px-3 md:py-1.5 rounded-full ${option.bgColor} border border-transparent hover:border-current transition-all`}
                           >
-                            <OptionIcon className={`w-3.5 h-3.5 ${option.color}`} />
+                            <OptionIcon className={`w-3 h-3 md:w-3.5 md:h-3.5 ${option.color}`} />
                             <span className={`${option.color} font-medium`}>{option.text}</span>
                           </div>
                         )
@@ -650,10 +649,10 @@ const BranchSelection: React.FC = () => {
                   </div>
 
                   {/* Select Button */}
-                  <div className="pt-4 border-t border-gray-100">
-                    <button className="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white font-semibold py-3 rounded-xl hover:shadow-lg hover:scale-105 transition-all duration-300 flex items-center justify-center space-x-2">
+                  <div className="pt-3 md:pt-4 border-t border-gray-100">
+                    <button className="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white font-semibold py-2.5 md:py-3 text-sm md:text-base rounded-lg md:rounded-xl hover:shadow-lg md:hover:scale-105 transition-all duration-300 flex items-center justify-center space-x-2 active:scale-95">
                       <span>Select This Branch</span>
-                      <ArrowLeft className="w-4 h-4 rotate-180" />
+                      <ArrowLeft className="w-3.5 h-3.5 md:w-4 md:h-4 rotate-180" />
                     </button>
                   </div>
                 </div>
@@ -663,17 +662,17 @@ const BranchSelection: React.FC = () => {
 
           {/* Empty State */}
           {branches.length === 0 && (
-            <div className="text-center py-12 bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg max-w-md mx-auto">
-              <div className="w-20 h-20 bg-gradient-to-br from-green-100 to-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Building className="w-10 h-10 text-green-600" />
+            <div className="text-center py-8 md:py-12 bg-white/80 backdrop-blur-sm rounded-xl md:rounded-2xl shadow-lg max-w-md mx-auto px-4">
+              <div className="w-16 h-16 md:w-20 md:h-20 bg-gradient-to-br from-green-100 to-emerald-100 rounded-full flex items-center justify-center mx-auto mb-3 md:mb-4">
+                <Building className="w-8 h-8 md:w-10 md:h-10 text-green-600" />
               </div>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No Branches Available</h3>
-              <p className="text-gray-600 mb-4">
+              <h3 className="text-base md:text-lg font-medium text-gray-900 mb-1.5 md:mb-2">No Branches Available</h3>
+              <p className="text-gray-600 mb-3 md:mb-4 text-sm md:text-base">
                 We're currently setting up branches in your area. Please check back later.
               </p>
               <button
                 onClick={loadBranches}
-                className="btn-outline"
+                className="btn-outline text-sm md:text-base"
               >
                 Refresh
               </button>
@@ -683,39 +682,39 @@ const BranchSelection: React.FC = () => {
       </div>
 
       {/* Enhanced Footer Info */}
-      <div className="bg-white/80 backdrop-blur-sm border-t border-green-100 mt-12">
-        <div className="max-w-6xl mx-auto px-4 py-12">
-          <div className="text-center mb-8">
-            <h3 className="text-2xl font-bold text-gray-900 mb-2">
+      <div className="bg-white/80 backdrop-blur-sm border-t border-green-100 mt-6 md:mt-12">
+        <div className="max-w-6xl mx-auto px-3 py-6 md:px-4 md:py-12">
+          <div className="text-center mb-4 md:mb-8">
+            <h3 className="text-xl md:text-2xl font-bold text-gray-900 mb-1.5 md:mb-2">
               Why Choose <span className="text-transparent bg-clip-text bg-gradient-to-r from-green-500 to-emerald-600">Tiongson AgriVet</span>?
             </h3>
-            <p className="text-gray-600">Your trusted agricultural partner since 2014</p>
+            <p className="text-gray-600 text-sm md:text-base">Your trusted agricultural partner since 2014</p>
           </div>
-          <div className="grid gap-8 md:grid-cols-3">
-            <div className="flex flex-col items-center p-6 bg-gradient-to-br from-green-50 to-emerald-50 rounded-2xl border border-green-100">
-              <div className="w-16 h-16 bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl flex items-center justify-center mb-4 shadow-lg">
-                <CheckCircle className="w-8 h-8 text-white" />
+          <div className="grid gap-4 md:gap-6 lg:gap-8 md:grid-cols-3">
+            <div className="flex flex-col items-center p-4 md:p-6 bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl md:rounded-2xl border border-green-100">
+              <div className="w-12 h-12 md:w-16 md:h-16 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl md:rounded-2xl flex items-center justify-center mb-3 md:mb-4 shadow-lg">
+                <CheckCircle className="w-6 h-6 md:w-8 md:h-8 text-white" />
               </div>
-              <h4 className="font-bold text-gray-900 mb-2 text-lg">Quality Products</h4>
-              <p className="text-sm text-gray-600 text-center">
+              <h4 className="font-bold text-gray-900 mb-1.5 md:mb-2 text-base md:text-lg">Quality Products</h4>
+              <p className="text-xs md:text-sm text-gray-600 text-center">
                 Premium agricultural supplies and veterinary products from trusted brands
               </p>
             </div>
-            <div className="flex flex-col items-center p-6 bg-gradient-to-br from-blue-50 to-cyan-50 rounded-2xl border border-blue-100">
-              <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-cyan-600 rounded-2xl flex items-center justify-center mb-4 shadow-lg">
-                <Truck className="w-8 h-8 text-white" />
+            <div className="flex flex-col items-center p-4 md:p-6 bg-gradient-to-br from-blue-50 to-cyan-50 rounded-xl md:rounded-2xl border border-blue-100">
+              <div className="w-12 h-12 md:w-16 md:h-16 bg-gradient-to-br from-blue-500 to-cyan-600 rounded-xl md:rounded-2xl flex items-center justify-center mb-3 md:mb-4 shadow-lg">
+                <Truck className="w-6 h-6 md:w-8 md:h-8 text-white" />
               </div>
-              <h4 className="font-bold text-gray-900 mb-2 text-lg">Convenient Pickup</h4>
-              <p className="text-sm text-gray-600 text-center">
+              <h4 className="font-bold text-gray-900 mb-1.5 md:mb-2 text-base md:text-lg">Convenient Pickup</h4>
+              <p className="text-xs md:text-sm text-gray-600 text-center">
                 Order online and pick up at your preferred branch location
               </p>
             </div>
-            <div className="flex flex-col items-center p-6 bg-gradient-to-br from-purple-50 to-pink-50 rounded-2xl border border-purple-100">
-              <div className="w-16 h-16 bg-gradient-to-br from-purple-500 to-pink-600 rounded-2xl flex items-center justify-center mb-4 shadow-lg">
-                <Users className="w-8 h-8 text-white" />
+            <div className="flex flex-col items-center p-4 md:p-6 bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl md:rounded-2xl border border-purple-100">
+              <div className="w-12 h-12 md:w-16 md:h-16 bg-gradient-to-br from-purple-500 to-pink-600 rounded-xl md:rounded-2xl flex items-center justify-center mb-3 md:mb-4 shadow-lg">
+                <Users className="w-6 h-6 md:w-8 md:h-8 text-white" />
               </div>
-              <h4 className="font-bold text-gray-900 mb-2 text-lg">Expert Support</h4>
-              <p className="text-sm text-gray-600 text-center">
+              <h4 className="font-bold text-gray-900 mb-1.5 md:mb-2 text-base md:text-lg">Expert Support</h4>
+              <p className="text-xs md:text-sm text-gray-600 text-center">
                 Knowledgeable staff ready to help with all your agricultural needs
               </p>
             </div>

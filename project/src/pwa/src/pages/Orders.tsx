@@ -326,106 +326,109 @@ const Orders: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-4xl mx-auto px-4 py-8">
+      <div className="max-w-4xl mx-auto px-3 py-4 sm:px-4 sm:py-8">
         {/* Header */}
-        <div className="mb-8">
+        <div className="mb-4 sm:mb-8">
           <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 flex items-center">
-                <Package className="w-8 h-8 mr-3 text-agrivet-green" />
-                My Orders
+            <div className="flex-1 min-w-0">
+              <h1 className="text-xl sm:text-3xl font-bold text-gray-900 flex items-center">
+                <Package className="w-5 h-5 sm:w-8 sm:h-8 mr-2 sm:mr-3 text-agrivet-green flex-shrink-0" />
+                <span className="truncate">My Orders</span>
               </h1>
-              <p className="text-gray-600 mt-2">Track and manage your orders</p>
+              <p className="text-gray-600 mt-1 sm:mt-2 text-xs sm:text-base">Track and manage your orders</p>
             </div>
             <button
               onClick={loadOrders}
               disabled={loading}
-              className="flex items-center space-x-2 text-agrivet-green hover:text-agrivet-green/80 transition-colors disabled:opacity-50"
+              className="flex items-center space-x-1 sm:space-x-2 text-agrivet-green hover:text-agrivet-green/80 transition-colors disabled:opacity-50 ml-2 flex-shrink-0"
             >
-              <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
-              <span>Refresh</span>
+              <RefreshCw className={`w-4 h-4 sm:w-5 sm:h-5 ${loading ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">Refresh</span>
             </button>
           </div>
         </div>
 
         {/* Orders List */}
         {orders.length === 0 ? (
-          <div className="text-center py-12">
-            <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">No Orders Yet</h3>
-            <p className="text-gray-600 mb-6">Start shopping to see your orders here</p>
+          <div className="text-center py-8 sm:py-12">
+            <Package className="w-12 h-12 sm:w-16 sm:h-16 text-gray-300 mx-auto mb-3 sm:mb-4" />
+            <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-1.5 sm:mb-2">No Orders Yet</h3>
+            <p className="text-gray-600 mb-4 sm:mb-6 text-sm sm:text-base">Start shopping to see your orders here</p>
             <button
               onClick={() => navigate('/catalog')}
-              className="bg-agrivet-green text-white px-6 py-3 rounded-lg hover:bg-agrivet-green/90 transition-colors"
+              className="bg-agrivet-green text-white px-4 py-2 sm:px-6 sm:py-3 rounded-lg hover:bg-agrivet-green/90 transition-colors text-sm sm:text-base"
             >
               Start Shopping
             </button>
           </div>
         ) : (
-          <div className="space-y-8">
+          <div className="space-y-4 sm:space-y-8">
             {/* Active Orders */}
             {orders.filter(isActiveOrder).length > 0 && (
               <div>
-                <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
-                  <Clock className="w-5 h-5 mr-2 text-blue-500" />
-                  Active Orders
-                  <span className="ml-2 text-sm font-normal text-gray-500">
+                <h2 className="text-base sm:text-xl font-semibold text-gray-900 mb-3 sm:mb-4 flex items-center">
+                  <Clock className="w-4 h-4 sm:w-5 sm:h-5 mr-1.5 sm:mr-2 text-blue-500 flex-shrink-0" />
+                  <span>Active Orders</span>
+                  <span className="ml-1.5 sm:ml-2 text-xs sm:text-sm font-normal text-gray-500">
                     ({orders.filter(isActiveOrder).length})
                   </span>
                 </h2>
-                <div className="space-y-4">
+                <div className="space-y-3 sm:space-y-4">
                   {orders.filter(isActiveOrder).map((order) => (
                     <div
                       key={order.id}
-                      className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow cursor-pointer"
+                      className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 sm:p-6 hover:shadow-md transition-shadow cursor-pointer active:scale-[0.98]"
                       onClick={() => {
                         setSelectedOrder(order)
                         setShowOrderModal(true)
                       }}
                     >
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center flex-wrap gap-2 mb-3">
-                            <h3 className="text-lg font-semibold text-gray-900">
+                      <div className="flex items-start justify-between gap-2 sm:gap-0">
+                        <div className="flex-1 min-w-0">
+                          {/* Header Row - Horizontal Layout */}
+                          <div className="flex items-center flex-wrap gap-1.5 sm:gap-2 mb-2 sm:mb-3">
+                            <h3 className="text-sm sm:text-lg font-semibold text-gray-900 truncate">
                               {order.order_number}
                             </h3>
-                            <div className="flex items-center space-x-1 text-sm text-gray-500">
+                            <div className="flex items-center space-x-1 text-xs sm:text-sm text-gray-500">
                               {getOrderTypeIcon(order.order_type)}
                               <span>{getOrderTypeText(order.order_type)}</span>
                             </div>
-                            <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(order.status, order.order_type)}`}>
+                            <span className={`px-2 py-0.5 sm:px-3 sm:py-1 rounded-full text-[10px] sm:text-xs font-medium ${getStatusColor(order.status, order.order_type)}`}>
                               {getStatusText(order.status, order.order_type)}
                             </span>
                             {order.order_type === 'delivery' && order.status === 'in_transit' && (
-                              <span className="px-2 py-1 bg-orange-50 text-orange-700 text-xs rounded-full flex items-center">
-                                <Truck className="w-3 h-3 mr-1 animate-pulse" />
-                                Arriving soon
+                              <span className="px-1.5 py-0.5 sm:px-2 sm:py-1 bg-orange-50 text-orange-700 text-[10px] sm:text-xs rounded-full flex items-center">
+                                <Truck className="w-2.5 h-2.5 sm:w-3 sm:h-3 mr-0.5 sm:mr-1 animate-pulse" />
+                                <span className="hidden sm:inline">Arriving soon</span>
+                                <span className="sm:hidden">Soon</span>
                               </span>
                             )}
                           </div>
                           
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-gray-600 mb-3">
-                            <div className="flex items-center space-x-2">
-                              <Calendar className="w-4 h-4 flex-shrink-0" />
-                              <span>{formatRelativeTime(order.created_at)}</span>
+                          {/* Info Row - Horizontal Layout */}
+                          <div className="flex items-center flex-wrap gap-x-3 gap-y-1.5 text-xs sm:text-sm text-gray-600 mb-2 sm:mb-3">
+                            <div className="flex items-center space-x-1">
+                              <Calendar className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
+                              <span className="truncate">{formatRelativeTime(order.created_at)}</span>
                             </div>
-                            <div className="flex items-center space-x-2">
-                              <Package className="w-4 h-4 flex-shrink-0" />
+                            <div className="flex items-center space-x-1">
+                              <Package className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
                               <span>{order.order_items?.length || 0} item{(order.order_items?.length || 0) !== 1 ? 's' : ''}</span>
                             </div>
                           </div>
 
                           {/* Delivery Information Preview */}
                           {order.order_type === 'delivery' && (
-                            <div className="bg-blue-50 rounded-lg p-3 text-sm">
-                              <div className="flex items-start space-x-2 mb-2">
-                                <MapPin className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" />
+                            <div className="bg-blue-50 rounded-lg p-2 sm:p-3 text-xs sm:text-sm mb-2 sm:mb-0">
+                              <div className="flex items-start space-x-1.5 sm:space-x-2 mb-1 sm:mb-2">
+                                <MapPin className="w-3 h-3 sm:w-4 sm:h-4 text-blue-600 flex-shrink-0 mt-0.5" />
                                 <span className="text-gray-700 line-clamp-2">{order.delivery_address}</span>
                               </div>
                               {order.delivery_tracking_number && (
-                                <div className="flex items-center space-x-2 text-xs text-gray-600">
-                                  <Truck className="w-3 h-3" />
-                                  <span className="font-mono">{order.delivery_tracking_number}</span>
+                                <div className="flex items-center space-x-1.5 sm:space-x-2 text-[10px] sm:text-xs text-gray-600">
+                                  <Truck className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
+                                  <span className="font-mono truncate">{order.delivery_tracking_number}</span>
                                 </div>
                               )}
                             </div>
@@ -433,25 +436,26 @@ const Orders: React.FC = () => {
 
                           {/* Pickup Information Preview */}
                           {order.order_type === 'pickup' && order.estimated_ready_time && (
-                            <div className="bg-green-50 rounded-lg p-3 text-sm flex items-center space-x-2">
-                              <Clock className="w-4 h-4 text-green-600 flex-shrink-0" />
-                              <span className="text-gray-700">
-                                Ready by {formatDate(order.estimated_ready_time)}
-                              </span>
+                            <div className="bg-green-50 rounded-lg p-2 sm:p-3 text-xs sm:text-sm flex items-center space-x-1.5 sm:space-x-2 mb-2 sm:mb-0">
+                              <Clock className="w-3 h-3 sm:w-4 sm:h-4 text-green-600 flex-shrink-0" />
+                              <span className="text-gray-700 truncate">Ready by {formatDate(order.estimated_ready_time)}</span>
                             </div>
                           )}
 
-                          <div className="mt-3 pt-3 border-t border-gray-100">
-                            <span className="text-lg font-bold text-gray-900">
-                              {formatPrice(order.total_amount)}
-                            </span>
-                            <span className="text-sm text-gray-500 ml-2">
-                              • {order.payment_status === 'paid' ? 'Paid' : 'Pending Payment'}
-                            </span>
+                          {/* Price Row - Horizontal Layout */}
+                          <div className="mt-2 sm:mt-3 pt-2 sm:pt-3 border-t border-gray-100 flex items-center justify-between flex-wrap gap-1">
+                            <div className="flex items-center flex-wrap gap-1.5 sm:gap-2">
+                              <span className="text-base sm:text-lg font-bold text-gray-900">
+                                {formatPrice(order.total_amount)}
+                              </span>
+                              <span className="text-xs sm:text-sm text-gray-500">
+                                • {order.payment_status === 'paid' ? 'Paid' : 'Pending'}
+                              </span>
+                            </div>
                           </div>
                         </div>
 
-                        <div className="flex items-start space-x-2 ml-4">
+                        <div className="flex items-start space-x-1 sm:space-x-2 ml-2 sm:ml-4 flex-shrink-0">
                           {canCancelOrder(order) && (
                             <button
                               onClick={(e) => {
@@ -459,13 +463,13 @@ const Orders: React.FC = () => {
                                 handleCancelOrder(order.id)
                               }}
                               disabled={cancellingOrder === order.id}
-                              className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
+                              className="p-1.5 sm:p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50 touch-manipulation"
                               title="Cancel Order"
                             >
                               {cancellingOrder === order.id ? (
-                                <Loader2 className="w-5 h-5 animate-spin" />
+                                <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" />
                               ) : (
-                                <XCircle className="w-5 h-5" />
+                                <XCircle className="w-4 h-4 sm:w-5 sm:h-5" />
                               )}
                             </button>
                           )}
@@ -480,45 +484,47 @@ const Orders: React.FC = () => {
             {/* Recent/Completed Orders */}
             {orders.filter(isCompletedOrder).length > 0 && (
               <div>
-                <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
-                  <CheckCircle className="w-5 h-5 mr-2 text-green-500" />
-                  Recent Orders
-                  <span className="ml-2 text-sm font-normal text-gray-500">
+                <h2 className="text-base sm:text-xl font-semibold text-gray-900 mb-3 sm:mb-4 flex items-center">
+                  <CheckCircle className="w-4 h-4 sm:w-5 sm:h-5 mr-1.5 sm:mr-2 text-green-500 flex-shrink-0" />
+                  <span>Recent Orders</span>
+                  <span className="ml-1.5 sm:ml-2 text-xs sm:text-sm font-normal text-gray-500">
                     ({orders.filter(isCompletedOrder).length})
                   </span>
                 </h2>
-                <div className="space-y-4">
+                <div className="space-y-3 sm:space-y-4">
                   {orders.filter(isCompletedOrder).map((order) => (
                     <div
                       key={order.id}
-                      className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow cursor-pointer opacity-90"
+                      className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 sm:p-6 hover:shadow-md transition-shadow cursor-pointer opacity-90 active:scale-[0.98]"
                       onClick={() => {
                         setSelectedOrder(order)
                         setShowOrderModal(true)
                       }}
                     >
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center flex-wrap gap-2 mb-3">
-                            <h3 className="text-lg font-semibold text-gray-900">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          {/* Header Row - Horizontal Layout */}
+                          <div className="flex items-center flex-wrap gap-1.5 sm:gap-2 mb-2 sm:mb-3">
+                            <h3 className="text-sm sm:text-lg font-semibold text-gray-900 truncate">
                               {order.order_number}
                             </h3>
-                            <div className="flex items-center space-x-1 text-sm text-gray-500">
+                            <div className="flex items-center space-x-1 text-xs sm:text-sm text-gray-500">
                               {getOrderTypeIcon(order.order_type)}
                               <span>{getOrderTypeText(order.order_type)}</span>
                             </div>
-                            <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(order.status, order.order_type)}`}>
+                            <span className={`px-2 py-0.5 sm:px-3 sm:py-1 rounded-full text-[10px] sm:text-xs font-medium ${getStatusColor(order.status, order.order_type)}`}>
                               {getStatusText(order.status, order.order_type)}
                             </span>
                           </div>
                           
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm text-gray-600">
-                            <div className="flex items-center space-x-2">
-                              <Calendar className="w-4 h-4 flex-shrink-0" />
-                              <span>{formatRelativeTime(order.created_at)}</span>
+                          {/* Info Row - Horizontal Layout */}
+                          <div className="flex items-center flex-wrap gap-x-3 gap-y-1.5 text-xs sm:text-sm text-gray-600">
+                            <div className="flex items-center space-x-1">
+                              <Calendar className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
+                              <span className="truncate">{formatRelativeTime(order.created_at)}</span>
                             </div>
-                            <div className="flex items-center space-x-2">
-                              <Package className="w-4 h-4 flex-shrink-0" />
+                            <div className="flex items-center space-x-1">
+                              <Package className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
                               <span>{order.order_items?.length || 0} item{(order.order_items?.length || 0) !== 1 ? 's' : ''}</span>
                             </div>
                             <span className="font-semibold text-gray-900">
@@ -537,16 +543,16 @@ const Orders: React.FC = () => {
 
         {/* Order Details Modal */}
         {showOrderModal && selectedOrder && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-              <div className="p-6">
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 sm:p-4 z-50 overflow-hidden">
+            <div className="bg-white rounded-lg max-w-2xl w-[calc(100vw-16px)] sm:w-full max-h-[95vh] sm:max-h-[90vh] overflow-y-auto overflow-x-hidden">
+              <div className="p-4 sm:p-6">
                 {/* Modal Header */}
-                <div className="flex items-center justify-between mb-6">
-                  <div>
-                    <h2 className="text-2xl font-bold text-gray-900">
+                <div className="flex items-center justify-between mb-4 sm:mb-6">
+                  <div className="flex-1 min-w-0 pr-2">
+                    <h2 className="text-lg sm:text-2xl font-bold text-gray-900 truncate">
                       {selectedOrder.order_number}
                     </h2>
-                    <p className="text-sm text-gray-500 mt-1">
+                    <p className="text-xs sm:text-sm text-gray-500 mt-0.5 sm:mt-1">
                       Placed {formatDate(selectedOrder.created_at)}
                     </p>
                   </div>
@@ -555,39 +561,40 @@ const Orders: React.FC = () => {
                       setShowOrderModal(false)
                       setSelectedOrder(null)
                     }}
-                    className="text-gray-400 hover:text-gray-600 transition-colors"
+                    className="text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0 p-1 touch-manipulation"
+                    aria-label="Close modal"
                   >
-                    <XCircle className="w-6 h-6" />
+                    <XCircle className="w-5 h-5 sm:w-6 sm:h-6" />
                   </button>
                 </div>
 
                 {/* Order Status */}
-                <div className="mb-6 bg-gray-50 rounded-lg p-4">
-                  <div className="flex items-center space-x-3 mb-4">
+                <div className="mb-4 sm:mb-6 bg-gray-50 rounded-lg p-3 sm:p-4">
+                  <div className="flex items-center space-x-2 sm:space-x-3 mb-3 sm:mb-4">
                     {getStatusIcon(selectedOrder.status, selectedOrder.order_type)}
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center space-x-1.5 sm:space-x-2 flex-wrap">
                         {getOrderTypeIcon(selectedOrder.order_type)}
-                        <span className="text-sm font-medium text-gray-700">
+                        <span className="text-xs sm:text-sm font-medium text-gray-700">
                           {getOrderTypeText(selectedOrder.order_type)} Order
                         </span>
                       </div>
-                      <span className={`inline-block mt-1 px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(selectedOrder.status, selectedOrder.order_type)}`}>
+                      <span className={`inline-block mt-1 px-2 py-0.5 sm:px-3 sm:py-1 rounded-full text-xs sm:text-sm font-medium ${getStatusColor(selectedOrder.status, selectedOrder.order_type)}`}>
                         {getStatusText(selectedOrder.status, selectedOrder.order_type)}
                       </span>
                     </div>
                   </div>
                   
-                  <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div className="grid grid-cols-2 gap-3 sm:gap-4 text-xs sm:text-sm">
                     <div>
                       <span className="font-medium text-gray-700">Payment:</span>
-                      <p className="text-gray-600 capitalize mt-1">
+                      <p className="text-gray-600 capitalize mt-0.5 sm:mt-1 truncate">
                         {selectedOrder.payment_status === 'paid' ? '✓ Paid' : 'Pending'}
                       </p>
                     </div>
                     <div>
                       <span className="font-medium text-gray-700">Method:</span>
-                      <p className="text-gray-600 capitalize mt-1">
+                      <p className="text-gray-600 capitalize mt-0.5 sm:mt-1 truncate">
                         {selectedOrder.payment_method}
                       </p>
                     </div>
@@ -596,24 +603,24 @@ const Orders: React.FC = () => {
 
                 {/* Delivery Status Timeline */}
                 {selectedOrder.order_type === 'delivery' && (
-                  <div className="mb-6">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-                      <Truck className="w-5 h-5 mr-2 text-blue-500" />
-                      Delivery Status
+                  <div className="mb-4 sm:mb-6">
+                    <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-3 sm:mb-4 flex items-center">
+                      <Truck className="w-4 h-4 sm:w-5 sm:h-5 mr-1.5 sm:mr-2 text-blue-500 flex-shrink-0" />
+                      <span>Delivery Status</span>
                     </h3>
-                    <div className="bg-blue-50 rounded-lg p-4 space-y-4">
+                    <div className="bg-blue-50 rounded-lg p-3 sm:p-4 space-y-3 sm:space-y-4">
                       {/* Delivery Method & Tracking */}
-                      <div className="grid grid-cols-2 gap-4 text-sm pb-4 border-b border-blue-100">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 text-xs sm:text-sm pb-3 sm:pb-4 border-b border-blue-100">
                         <div>
                           <span className="font-medium text-gray-700">Delivery Method:</span>
-                          <p className="text-gray-900 capitalize mt-1 font-semibold">
+                          <p className="text-gray-900 capitalize mt-0.5 sm:mt-1 font-semibold truncate">
                             {selectedOrder.delivery_method === 'maxim' ? 'Maxim' : selectedOrder.delivery_method || 'Standard'}
                           </p>
                         </div>
                         {selectedOrder.delivery_tracking_number && (
                           <div>
                             <span className="font-medium text-gray-700">Tracking Number:</span>
-                            <p className="text-gray-900 font-mono text-xs mt-1 bg-white px-2 py-1 rounded">
+                            <p className="text-gray-900 font-mono text-[10px] sm:text-xs mt-0.5 sm:mt-1 bg-white px-1.5 sm:px-2 py-0.5 sm:py-1 rounded truncate">
                               {selectedOrder.delivery_tracking_number}
                             </p>
                           </div>
@@ -622,15 +629,15 @@ const Orders: React.FC = () => {
 
                       {/* Address */}
                       <div>
-                        <div className="flex items-start space-x-2 mb-2">
-                          <MapPin className="w-4 h-4 text-blue-600 flex-shrink-0 mt-1" />
-                          <div className="flex-1">
-                            <span className="font-medium text-gray-700 block mb-1">Delivery Address:</span>
-                            <p className="text-gray-900">{selectedOrder.delivery_address}</p>
+                        <div className="flex items-start space-x-1.5 sm:space-x-2 mb-1.5 sm:mb-2">
+                          <MapPin className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-600 flex-shrink-0 mt-0.5 sm:mt-1" />
+                          <div className="flex-1 min-w-0">
+                            <span className="font-medium text-gray-700 block mb-0.5 sm:mb-1 text-xs sm:text-sm">Delivery Address:</span>
+                            <p className="text-gray-900 text-xs sm:text-sm break-words">{selectedOrder.delivery_address}</p>
                           </div>
                         </div>
                         {selectedOrder.delivery_landmark && (
-                          <p className="text-sm text-gray-600 ml-6">
+                          <p className="text-xs sm:text-sm text-gray-600 ml-5 sm:ml-6">
                             Landmark: {selectedOrder.delivery_landmark}
                           </p>
                         )}
@@ -638,19 +645,19 @@ const Orders: React.FC = () => {
 
                       {/* Contact */}
                       {selectedOrder.delivery_contact_number && (
-                        <div className="flex items-center space-x-2">
-                          <Phone className="w-4 h-4 text-blue-600" />
-                          <span className="font-medium text-gray-700">Contact:</span>
-                          <p className="text-gray-900">{selectedOrder.delivery_contact_number}</p>
+                        <div className="flex items-center space-x-1.5 sm:space-x-2 flex-wrap">
+                          <Phone className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-600 flex-shrink-0" />
+                          <span className="font-medium text-gray-700 text-xs sm:text-sm">Contact:</span>
+                          <p className="text-gray-900 text-xs sm:text-sm truncate">{selectedOrder.delivery_contact_number}</p>
                         </div>
                       )}
 
                       {/* Delivery Fee */}
                       {selectedOrder.delivery_fee && (
-                        <div className="pt-3 border-t border-blue-100">
+                        <div className="pt-2 sm:pt-3 border-t border-blue-100">
                           <div className="flex justify-between items-center">
-                            <span className="text-sm font-medium text-gray-700">Delivery Fee:</span>
-                            <span className="text-gray-900 font-semibold">
+                            <span className="text-xs sm:text-sm font-medium text-gray-700">Delivery Fee:</span>
+                            <span className="text-gray-900 font-semibold text-xs sm:text-sm">
                               {formatPrice(selectedOrder.delivery_fee)}
                             </span>
                           </div>
@@ -662,26 +669,26 @@ const Orders: React.FC = () => {
 
                 {/* Pickup Information */}
                 {selectedOrder.order_type === 'pickup' && (
-                  <div className="mb-6">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-                      <Home className="w-5 h-5 mr-2 text-green-500" />
-                      Pickup Information
+                  <div className="mb-4 sm:mb-6">
+                    <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-3 sm:mb-4 flex items-center">
+                      <Home className="w-4 h-4 sm:w-5 sm:h-5 mr-1.5 sm:mr-2 text-green-500 flex-shrink-0" />
+                      <span>Pickup Information</span>
                     </h3>
-                    <div className="bg-green-50 rounded-lg p-4">
-                      <div className="text-sm space-y-3">
-                        <div className="flex items-start space-x-2">
-                          <MapPin className="w-4 h-4 text-green-600 flex-shrink-0 mt-0.5" />
-                          <div>
-                            <span className="font-medium text-gray-700 block">Pickup Location:</span>
-                            <p className="text-gray-600 mt-1">Visit our store to collect your order</p>
+                    <div className="bg-green-50 rounded-lg p-3 sm:p-4">
+                      <div className="text-xs sm:text-sm space-y-2 sm:space-y-3">
+                        <div className="flex items-start space-x-1.5 sm:space-x-2">
+                          <MapPin className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-green-600 flex-shrink-0 mt-0.5" />
+                          <div className="flex-1 min-w-0">
+                            <span className="font-medium text-gray-700 block text-xs sm:text-sm">Pickup Location:</span>
+                            <p className="text-gray-600 mt-0.5 sm:mt-1 text-xs sm:text-sm">Visit our store to collect your order</p>
                           </div>
                         </div>
                         {selectedOrder.estimated_ready_time && (
-                          <div className="flex items-start space-x-2 pt-3 border-t border-green-100">
-                            <Clock className="w-4 h-4 text-green-600 flex-shrink-0 mt-0.5" />
-                            <div>
-                              <span className="font-medium text-gray-700 block">Estimated Ready:</span>
-                              <p className="text-gray-900 mt-1">
+                          <div className="flex items-start space-x-1.5 sm:space-x-2 pt-2 sm:pt-3 border-t border-green-100">
+                            <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-green-600 flex-shrink-0 mt-0.5" />
+                            <div className="flex-1 min-w-0">
+                              <span className="font-medium text-gray-700 block text-xs sm:text-sm">Estimated Ready:</span>
+                              <p className="text-gray-900 mt-0.5 sm:mt-1 text-xs sm:text-sm break-words">
                                 {formatDate(selectedOrder.estimated_ready_time)}
                               </p>
                             </div>
@@ -693,22 +700,22 @@ const Orders: React.FC = () => {
                 )}
 
                 {/* Order Items */}
-                <div className="mb-6">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Order Items</h3>
-                  <div className="space-y-3">
+                <div className="mb-4 sm:mb-6">
+                  <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-3 sm:mb-4">Order Items</h3>
+                  <div className="space-y-2 sm:space-y-3">
                     {selectedOrder.order_items?.map((item) => (
-                      <div key={item.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                        <div className="flex-1">
-                          <h4 className="font-medium text-gray-900">{item.product_name}</h4>
-                          <p className="text-sm text-gray-600">
+                      <div key={item.id} className="flex items-center justify-between p-2 sm:p-3 bg-gray-50 rounded-lg">
+                        <div className="flex-1 min-w-0 pr-2">
+                          <h4 className="font-medium text-gray-900 text-sm sm:text-base truncate">{item.product_name}</h4>
+                          <p className="text-xs sm:text-sm text-gray-600">
                             {item.quantity} {item.unit_label} × {formatPrice(item.unit_price)}
                           </p>
                           {item.product_sku && (
-                            <p className="text-xs text-gray-500 mt-1">SKU: {item.product_sku}</p>
+                            <p className="text-[10px] sm:text-xs text-gray-500 mt-0.5 sm:mt-1">SKU: {item.product_sku}</p>
                           )}
                         </div>
-                        <div className="text-right">
-                          <p className="font-semibold text-gray-900">{formatPrice(item.line_total)}</p>
+                        <div className="text-right flex-shrink-0">
+                          <p className="font-semibold text-gray-900 text-sm sm:text-base">{formatPrice(item.line_total)}</p>
                         </div>
                       </div>
                     ))}
@@ -746,12 +753,12 @@ const Orders: React.FC = () => {
                 </div>
 
                 {/* Customer Info */}
-                <div className="mb-6">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-                    <User className="w-5 h-5 mr-2 text-gray-500" />
-                    Customer Information
+                <div className="mb-4 sm:mb-6">
+                  <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-3 sm:mb-4 flex items-center">
+                    <User className="w-4 h-4 sm:w-5 sm:h-5 mr-1.5 sm:mr-2 text-gray-500 flex-shrink-0" />
+                    <span>Customer Information</span>
                   </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm bg-gray-50 rounded-lg p-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 text-xs sm:text-sm bg-gray-50 rounded-lg p-3 sm:p-4">
                     <div>
                       <span className="font-medium text-gray-700">Name:</span>
                       <p className="text-gray-900 mt-1">{selectedOrder.customer_name}</p>
@@ -773,10 +780,10 @@ const Orders: React.FC = () => {
 
                 {/* Special Instructions */}
                 {selectedOrder.special_instructions && (
-                  <div className="mb-6">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-2">Special Instructions</h3>
-                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-                      <p className="text-gray-700 text-sm">
+                  <div className="mb-4 sm:mb-6">
+                    <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-1.5 sm:mb-2">Special Instructions</h3>
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-2 sm:p-3">
+                      <p className="text-gray-700 text-xs sm:text-sm">
                         {selectedOrder.special_instructions}
                       </p>
                     </div>
@@ -784,8 +791,8 @@ const Orders: React.FC = () => {
                 )}
 
                 {/* Order Timeline */}
-                <div className="mb-6">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Order Timeline</h3>
+                <div className="mb-4 sm:mb-6">
+                  <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-3 sm:mb-4">Order Timeline</h3>
                   <div className="space-y-3">
                     <div className="flex items-start space-x-3">
                       <div className="w-2 h-2 bg-blue-500 rounded-full mt-1.5"></div>
@@ -818,13 +825,13 @@ const Orders: React.FC = () => {
                 </div>
 
                 {/* Actions */}
-                <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">
+                <div className="flex flex-col sm:flex-row justify-end gap-2 sm:gap-3 sm:space-x-3 pt-3 sm:pt-4 border-t border-gray-200">
                   <button
                     onClick={() => {
                       setShowOrderModal(false)
                       setSelectedOrder(null)
                     }}
-                    className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                    className="px-4 py-2.5 sm:py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors text-sm sm:text-base touch-manipulation min-h-[44px] sm:min-h-0"
                   >
                     Close
                   </button>
@@ -836,7 +843,7 @@ const Orders: React.FC = () => {
                         handleCancelOrder(selectedOrder.id)
                       }}
                       disabled={cancellingOrder === selectedOrder.id}
-                      className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center space-x-2"
+                      className="px-4 py-2.5 sm:py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center justify-center space-x-2 text-sm sm:text-base touch-manipulation min-h-[44px] sm:min-h-0"
                     >
                       {cancellingOrder === selectedOrder.id ? (
                         <>
