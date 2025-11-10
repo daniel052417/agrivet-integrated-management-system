@@ -263,7 +263,7 @@ const ProductsPage = () => {
   const handleBuyNow = (productId: string) => {
     // Store product ID in sessionStorage for the branch selection page
     sessionStorage.setItem('selectedProductId', productId);
-    window.location.href = 'http://localhost:3001/branch-selection';
+    window.location.href = 'https://tiongsononline.vercel.app/branch-selection';
   };
 
   // ✅ IMPROVED: Flexible category emoji matching

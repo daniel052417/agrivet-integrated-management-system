@@ -1,9 +1,8 @@
 import { ArrowRight } from 'lucide-react';
 import { motion } from 'framer-motion';
 import store from '../assets/store.jpg';
-import { useNavigate } from 'react-router-dom';
+
 const Hero = () => {
-  const navigate = useNavigate();
   return (
     <section className="relative min-h-screen flex items-center justify-center overflow-hidden bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50">
       {/* Animated Background Elements */}
@@ -94,7 +93,7 @@ const Hero = () => {
                 whileTap={{ scale: 0.95 }}
                 className="group flex items-center justify-center space-x-2 px-8 py-4 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl hover:shadow-xl transition-all duration-200"
               >
-                <span onClick={() => window.location.href = 'http://localhost:3001/branch-selection'} className="font-semibold">Shop Now</span>
+                <span onClick={() => window.location.href = 'https://tiongsononline.vercel.app/branch-selection'} className="font-semibold">Shop Now</span>
                 <ArrowRight
                   size={20}
                   className="group-hover:translate-x-1 transition-transform duration-200"
