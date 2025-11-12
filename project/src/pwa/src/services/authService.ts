@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import { getAuthRedirectUrl } from '../utils/authUtils'
+import { getManilaTimestamp } from '../utils/dateTime'
 
 export interface AuthUser {
   id: string
@@ -263,8 +264,8 @@ class AuthService {
       await supabase
         .from('customers')
         .update({ 
-          last_purchase_date: new Date().toISOString(),
-          updated_at: new Date().toISOString()
+          last_purchase_date: getManilaTimestamp(),
+          updated_at: getManilaTimestamp()
         })
         .eq('user_id', authData.user.id)
 
@@ -485,8 +486,8 @@ class AuthService {
       await supabase
         .from('customers')
         .update({
-          last_purchase_date: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
+          last_purchase_date: getManilaTimestamp(),
+          updated_at: getManilaTimestamp(),
         })
         .eq('id', existingCustomer.id)
   

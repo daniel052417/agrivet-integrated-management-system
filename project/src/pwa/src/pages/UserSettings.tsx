@@ -20,6 +20,7 @@ import {
 import { useAuth } from '../contexts/AuthContext'
 import { useBranch } from '../contexts/BranchContext'
 import { supabase } from '../services/supabase'
+import { getManilaTimestamp } from '../utils/dateTime'
 import LoadingSpinner from '../components/common/LoadingSpinner'
 import ErrorMessage from '../components/common/ErrorMessage'
 
@@ -180,7 +181,7 @@ const UserSettings: React.FC = () => {
             first_name: settings.firstName,
             last_name: settings.lastName,
             phone: settings.phone,
-            updated_at: new Date().toISOString()
+            updated_at: getManilaTimestamp()
           })
           .eq('id', customer.id)
 
@@ -193,7 +194,7 @@ const UserSettings: React.FC = () => {
           .from('customers')
           .update({
             preferred_branch_id: settings.preferredBranchId,
-            updated_at: new Date().toISOString()
+            updated_at: getManilaTimestamp()
           })
           .eq('id', customer.id)
 

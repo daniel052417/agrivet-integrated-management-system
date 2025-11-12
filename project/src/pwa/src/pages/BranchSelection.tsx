@@ -9,6 +9,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { Branch } from '../types'
 import { branchService } from '../services/branchService'
 import { supabase } from '../services/supabase'
+import { getManilaTimestamp } from '../utils/dateTime'
 import ErrorMessage from '../components/common/ErrorMessage'
 import ClosedBranchModal from '../components/modals/ClosedBranchModal'
 import { getNextOpeningTime, isBranchClosed } from '../utils/branchUtils'
@@ -82,7 +83,7 @@ const BranchSelection: React.FC = () => {
           .from('customers')
           .update({
             preferred_branch_id: branch.id,
-            updated_at: new Date().toISOString()
+            updated_at: getManilaTimestamp()
           })
           .eq('user_id', user.id)
 

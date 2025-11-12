@@ -10,6 +10,38 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+/**
+ * Get current timestamp in Manila timezone as ISO string
+ * Manila, Philippines is UTC+8
+ */
+function getManilaTimestamp(): string {
+  const now = new Date()
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  })
+  
+  const parts = formatter.formatToParts(now)
+  const year = parseInt(parts.find(p => p.type === 'year')!.value)
+  const month = parseInt(parts.find(p => p.type === 'month')!.value) - 1
+  const day = parseInt(parts.find(p => p.type === 'day')!.value)
+  const hour = parseInt(parts.find(p => p.type === 'hour')!.value)
+  const minute = parseInt(parts.find(p => p.type === 'minute')!.value)
+  const second = parseInt(parts.find(p => p.type === 'second')!.value)
+  
+  const manilaAsUTC = new Date(Date.UTC(year, month, day, hour, minute, second))
+  const manilaOffset = 8 * 60 * 60 * 1000 // 8 hours in milliseconds
+  const utcTime = new Date(manilaAsUTC.getTime() - manilaOffset)
+  
+  return utcTime.toISOString()
+}
+
 interface ResponseBody {
   success: boolean
   customer?: Record<string, unknown>
@@ -110,7 +142,7 @@ serve(async (req) => {
           province: province ?? existingCustomer.province,
           postal_code: postalCode ?? existingCustomer.postal_code,
           customer_type: customerType ?? existingCustomer.customer_type,
-          updated_at: new Date().toISOString()
+          updated_at: getManilaTimestamp()
         })
         .eq('id', existingCustomer.id)
         .select('*')
@@ -128,7 +160,7 @@ serve(async (req) => {
     }
 
     const { customerNumber, customerCode } = generateCustomerIdentifiers()
-    const now = new Date().toISOString()
+    const now = getManilaTimestamp()
 
     const { data: customer, error } = await supabaseClient
       .from('customers')

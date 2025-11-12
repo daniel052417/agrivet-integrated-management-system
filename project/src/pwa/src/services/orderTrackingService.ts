@@ -1,5 +1,6 @@
 import { OrderTracking } from '../types'
 import { supabase } from './supabase'
+import { getManilaTimestamp, getManilaTimestampWithOffset } from '../utils/dateTime'
 
 interface OrderTrackingServiceConfig {
   supabaseUrl: string
@@ -61,9 +62,9 @@ class OrderTrackingService {
         current_location: currentLocation || 'Preparing',
         estimated_delivery: estimatedDelivery || null,
         status: status || 'pending',
-        last_update: new Date().toISOString(),
+        last_update: getManilaTimestamp(),
         update_notes: updateNotes || null,
-        created_at: new Date().toISOString()
+        created_at: getManilaTimestamp()
       }
 
       const { data: tracking, error } = await supabase
@@ -111,7 +112,7 @@ class OrderTrackingService {
       const { trackingId, currentLocation, status, updateNotes, actualDelivery } = request
 
       const updateData: any = {
-        last_update: new Date().toISOString()
+        last_update: getManilaTimestamp()
       }
 
       if (currentLocation) {
@@ -299,7 +300,7 @@ class OrderTrackingService {
    */
   async markOrderReady(orderId: string, estimatedReadyTime?: string): Promise<{ success: boolean; error?: string }> {
     try {
-      const readyTime = estimatedReadyTime || new Date(Date.now() + 30 * 60 * 1000).toISOString() // 30 minutes from now
+      const readyTime = estimatedReadyTime || getManilaTimestampWithOffset(30 * 60 * 1000) // 30 minutes from now
 
       return await this.updateOrderStatus(
         orderId,
@@ -323,7 +324,7 @@ class OrderTrackingService {
    */
   async markOrderCompleted(orderId: string, actualDeliveryTime?: string): Promise<{ success: boolean; error?: string }> {
     try {
-      const deliveryTime = actualDeliveryTime || new Date().toISOString()
+      const deliveryTime = actualDeliveryTime || getManilaTimestamp()
 
       const trackingResult = await this.getTrackingByOrder(orderId)
       

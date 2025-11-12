@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import { ProductWithUnits, ProductUnit } from '../types'
+import { getManilaTimestamp } from '../utils/dateTime'
 
 interface ProductServiceConfig {
   supabaseUrl: string
@@ -403,8 +404,8 @@ class ProductService {
         brand: 'AgriGold',
         barcode: '123456789',
         is_active: true,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        created_at: getManilaTimestamp(),
+        updated_at: getManilaTimestamp(),
         unit_name: 'kilogram',
         unit_label: 'Per Kilogram',
         conversion_factor: 1,
@@ -428,8 +429,8 @@ class ProductService {
           dimensions: null,
           is_prescription_required: false,
           is_active: true,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
+          created_at: getManilaTimestamp(),
+          updated_at: getManilaTimestamp(),
           barcode: '123456789',
           supplier_id: 'supplier-1'
         },
@@ -445,8 +446,8 @@ class ProductService {
             price_per_unit: 25,
             min_sellable_quantity: 0.25,
             sort_order: 1,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
+            created_at: getManilaTimestamp(),
+            updated_at: getManilaTimestamp()
           },
           {
             id: 'unit-2',
@@ -459,8 +460,8 @@ class ProductService {
             price_per_unit: 310,
             min_sellable_quantity: 1,
             sort_order: 2,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
+            created_at: getManilaTimestamp(),
+            updated_at: getManilaTimestamp()
           },
           {
             id: 'unit-3',
@@ -473,8 +474,8 @@ class ProductService {
             price_per_unit: 1200,
             min_sellable_quantity: 1,
             sort_order: 3,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
+            created_at: getManilaTimestamp(),
+            updated_at: getManilaTimestamp()
           }
         ]
       },
@@ -486,8 +487,8 @@ class ProductService {
         brand: 'TestBrand',
         barcode: '987654321',
         is_active: true,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        created_at: getManilaTimestamp(),
+        updated_at: getManilaTimestamp(),
         unit_name: 'kilogram',
         unit_label: 'kg',
         conversion_factor: 1,
@@ -511,8 +512,8 @@ class ProductService {
           dimensions: null,
           is_prescription_required: false,
           is_active: true,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
+          created_at: getManilaTimestamp(),
+          updated_at: getManilaTimestamp(),
           barcode: '987654321',
           supplier_id: 'supplier-2'
         },
@@ -528,8 +529,8 @@ class ProductService {
             price_per_unit: 100,
             min_sellable_quantity: 0.5,
             sort_order: 1,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
+            created_at: getManilaTimestamp(),
+            updated_at: getManilaTimestamp()
           },
           {
             id: 'unit-5',
@@ -542,8 +543,8 @@ class ProductService {
             price_per_unit: 0.1,
             min_sellable_quantity: 100,
             sort_order: 2,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
+            created_at: getManilaTimestamp(),
+            updated_at: getManilaTimestamp()
           }
         ]
       }

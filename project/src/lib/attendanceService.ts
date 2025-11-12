@@ -1,5 +1,6 @@
 // lib/attendanceService.ts
 import { supabase } from './supabase';
+import { getManilaTimestamp } from './utils/manilaTimestamp';
 
 export interface AttendanceRecord {
   id: string;
@@ -37,7 +38,7 @@ export interface StaffInfo {
 class AttendanceService {
   private normalizeTimestamp(timeInput?: string): string {
     if (!timeInput) {
-      return new Date().toISOString();
+      return getManilaTimestamp();
     }
 
     const directParse = new Date(timeInput);
@@ -103,7 +104,7 @@ class AttendanceService {
             time_in: timeInIso,
             status: 'present',
             check_in_method: 'biometric',
-            updated_at: new Date().toISOString()
+            updated_at: getManilaTimestamp()
           })
           .eq('id', existing.id)
           .select()
@@ -124,8 +125,8 @@ class AttendanceService {
             check_in_method: 'biometric',
             total_hours: 0,
             overtime_hours: 0,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
+            created_at: getManilaTimestamp(),
+            updated_at: getManilaTimestamp()
           })
           .select()
           .single();
@@ -168,7 +169,7 @@ class AttendanceService {
           total_hours: parseFloat(totalHours.toFixed(2)),
           overtime_hours: parseFloat(overtimeHours.toFixed(2)),
           status: totalHours >= 8 ? 'present' : existing.status ?? 'present',
-          updated_at: new Date().toISOString()
+          updated_at: getManilaTimestamp()
         })
         .eq('id', existing.id)
         .select()

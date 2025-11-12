@@ -6,6 +6,71 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+/**
+ * Get current timestamp in Manila timezone as ISO string
+ * Manila, Philippines is UTC+8
+ */
+function getManilaTimestamp(): string {
+  const now = new Date()
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  })
+  
+  const parts = formatter.formatToParts(now)
+  const year = parseInt(parts.find(p => p.type === 'year')!.value)
+  const month = parseInt(parts.find(p => p.type === 'month')!.value) - 1
+  const day = parseInt(parts.find(p => p.type === 'day')!.value)
+  const hour = parseInt(parts.find(p => p.type === 'hour')!.value)
+  const minute = parseInt(parts.find(p => p.type === 'minute')!.value)
+  const second = parseInt(parts.find(p => p.type === 'second')!.value)
+  
+  const manilaAsUTC = new Date(Date.UTC(year, month, day, hour, minute, second))
+  const manilaOffset = 8 * 60 * 60 * 1000 // 8 hours in milliseconds
+  const utcTime = new Date(manilaAsUTC.getTime() - manilaOffset)
+  
+  return utcTime.toISOString()
+}
+
+/**
+ * Get Manila timestamp with offset (for future/past dates)
+ */
+function getManilaTimestampWithOffset(offsetMs: number): string {
+  const now = new Date()
+  const targetTime = new Date(now.getTime() + offsetMs)
+  
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  })
+  
+  const parts = formatter.formatToParts(targetTime)
+  const year = parseInt(parts.find(p => p.type === 'year')!.value)
+  const month = parseInt(parts.find(p => p.type === 'month')!.value) - 1
+  const day = parseInt(parts.find(p => p.type === 'day')!.value)
+  const hour = parseInt(parts.find(p => p.type === 'hour')!.value)
+  const minute = parseInt(parts.find(p => p.type === 'minute')!.value)
+  const second = parseInt(parts.find(p => p.type === 'second')!.value)
+  
+  const manilaAsUTC = new Date(Date.UTC(year, month, day, hour, minute, second))
+  const manilaOffset = 8 * 60 * 60 * 1000
+  const utcTime = new Date(manilaAsUTC.getTime() - manilaOffset)
+  
+  return utcTime.toISOString()
+}
+
 interface CreateOrderRequest {
   cart: {
     items: Array<{
@@ -149,7 +214,7 @@ serve(async (req) => {
       payment_method: paymentMethod,
       payment_reference: null,
       payment_notes: notes || null,
-      estimated_ready_time: orderType === 'pickup' ? new Date(Date.now() + 30 * 60 * 1000).toISOString() : null,
+      estimated_ready_time: orderType === 'pickup' ? getManilaTimestampWithOffset(30 * 60 * 1000) : null,
       is_guest_order: !finalCustomerId,
       customer_name: customerInfo ? `${customerInfo.firstName} ${customerInfo.lastName}` : null,
       customer_email: customerInfo?.email || null,
@@ -164,8 +229,8 @@ serve(async (req) => {
       delivery_status: deliveryStatus || null,
       confirmed_at: null,
       completed_at: null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
+      created_at: getManilaTimestamp(),
+      updated_at: getManilaTimestamp()
     }
 
     // Insert order into database
@@ -219,9 +284,9 @@ serve(async (req) => {
         product_id: item.product.product_id,
         branch_id: branchId,
         quantity_reserved: item.base_unit_quantity || item.quantity,
-        reserved_until: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        reserved_until: getManilaTimestampWithOffset(24 * 60 * 60 * 1000),
         status: 'pending',
-        created_at: new Date().toISOString()
+        created_at: getManilaTimestamp()
       }))
 
       await supabaseClient

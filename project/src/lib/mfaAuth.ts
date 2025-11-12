@@ -1,6 +1,7 @@
 import { mfaService } from './mfaService';
 import { customAuth, CustomUser } from './customAuth';
 import { posSessionService } from './posSessionService';
+import { getManilaTimestamp } from './utils/manilaTimestamp';
 
 /**
  * MFA Authentication Service
@@ -121,8 +122,8 @@ class MFAAuthService {
       await supabaseClient
         .from('users')
         .update({ 
-          last_login: new Date().toISOString(),
-          last_activity: new Date().toISOString()
+          last_login: getManilaTimestamp(),
+          last_activity: getManilaTimestamp()
         })
         .eq('id', customUser.id);
 
