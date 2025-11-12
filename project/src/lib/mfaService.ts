@@ -151,12 +151,15 @@ class MFAService {
       const expiresAt = getManilaTimestampWithOffset(this.OTP_EXPIRY_MINUTES * 60 * 1000);
 
       // Store OTP in database
+      // Explicitly set created_at to Manila time to match expires_at
+      const createdAt = getManilaTimestamp();
       const { error: storeError } = await supabase
         .from('mfa_otp_codes')
         .insert({
           user_id: userId,
           otp_code: otpCode,
           expires_at: expiresAt,
+          created_at: createdAt,
           used: false
         });
 
