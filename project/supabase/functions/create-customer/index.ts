@@ -11,8 +11,10 @@ const corsHeaders = {
 }
 
 /**
- * Get current timestamp in Manila timezone as ISO string
+ * Get current timestamp in Manila timezone as ISO string with timezone offset
  * Manila, Philippines is UTC+8
+ * Returns an ISO string with +08:00 timezone offset so PostgreSQL
+ * correctly interprets it as Manila time and stores it appropriately.
  */
 function getManilaTimestamp(): string {
   const now = new Date()
@@ -28,18 +30,16 @@ function getManilaTimestamp(): string {
   })
   
   const parts = formatter.formatToParts(now)
-  const year = parseInt(parts.find(p => p.type === 'year')!.value)
-  const month = parseInt(parts.find(p => p.type === 'month')!.value) - 1
-  const day = parseInt(parts.find(p => p.type === 'day')!.value)
-  const hour = parseInt(parts.find(p => p.type === 'hour')!.value)
-  const minute = parseInt(parts.find(p => p.type === 'minute')!.value)
-  const second = parseInt(parts.find(p => p.type === 'second')!.value)
+  const year = parts.find(p => p.type === 'year')!.value
+  const month = parts.find(p => p.type === 'month')!.value
+  const day = parts.find(p => p.type === 'day')!.value
+  const hour = parts.find(p => p.type === 'hour')!.value
+  const minute = parts.find(p => p.type === 'minute')!.value
+  const second = parts.find(p => p.type === 'second')!.value
   
-  const manilaAsUTC = new Date(Date.UTC(year, month, day, hour, minute, second))
-  const manilaOffset = 8 * 60 * 60 * 1000 // 8 hours in milliseconds
-  const utcTime = new Date(manilaAsUTC.getTime() - manilaOffset)
-  
-  return utcTime.toISOString()
+  // Format as ISO string with +08:00 timezone offset (Manila is UTC+8)
+  // Format: YYYY-MM-DDTHH:mm:ss+08:00
+  return `${year}-${month}-${day}T${hour}:${minute}:${second}+08:00`
 }
 
 interface ResponseBody {
