@@ -17,6 +17,11 @@ export interface Branch {
   branch_type: 'main' | 'satellite';
   created_at: string;
   updated_at: string | null;
+  // Attendance Terminal Security Fields
+  latitude?: number | null;
+  longitude?: number | null;
+  attendance_pin?: string | null;
+  attendance_security_settings?: AttendanceSecuritySettings | null;
   // Joined fields
   manager?: {
     id: string;
@@ -24,6 +29,16 @@ export interface Branch {
     last_name: string;
     email: string;
   };
+}
+
+export interface AttendanceSecuritySettings {
+  enableDeviceVerification: boolean;
+  enableGeoLocationVerification: boolean;
+  enablePinAccessControl: boolean;
+  geoLocationToleranceMeters: number;
+  requirePinForEachSession: boolean;
+  pinSessionDurationHours: number;
+  enableActivityLogging: boolean;
 }
 
 export interface CreateBranchData {
@@ -39,6 +54,11 @@ export interface CreateBranchData {
   is_active?: boolean;
   operating_hours?: any;
   branch_type?: 'main' | 'satellite';
+  // Attendance Terminal Security Fields
+  latitude?: number | null;
+  longitude?: number | null;
+  attendance_pin?: string | null;
+  attendance_security_settings?: AttendanceSecuritySettings | null;
 }
 
 export interface UpdateBranchData extends Partial<CreateBranchData> {
@@ -170,7 +190,12 @@ class BranchManagementService {
           manager_id: branchData.manager_id || null,
           is_active: branchData.is_active !== undefined ? branchData.is_active : true,
           operating_hours: branchData.operating_hours || null,
-          branch_type: branchData.branch_type || 'satellite'
+          branch_type: branchData.branch_type || 'satellite',
+          // Attendance Terminal Security Fields
+          latitude: branchData.latitude !== undefined ? branchData.latitude : null,
+          longitude: branchData.longitude !== undefined ? branchData.longitude : null,
+          attendance_pin: branchData.attendance_pin || null,
+          attendance_security_settings: branchData.attendance_security_settings || null
         }])
         .select(`
           *,
