@@ -5,6 +5,7 @@
 // creation, guest user support, and proper error handling
 
 import { supabase } from './supabase'
+import { getAuthRedirectUrl } from '../utils/authUtils'
 
 // ============================================================================
 // TYPES
@@ -96,7 +97,7 @@ class EnhancedAuthService {
         password: data.password,
         options: {
           data: userMetaData,
-          emailRedirectTo: `${window.location.origin}/auth/callback`
+          emailRedirectTo: getAuthRedirectUrl('/auth/callback')
         }
       })
 

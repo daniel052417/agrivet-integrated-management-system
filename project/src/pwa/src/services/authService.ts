@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { getAuthRedirectUrl } from '../utils/authUtils'
 
 export interface AuthUser {
   id: string
@@ -297,20 +298,21 @@ class AuthService {
   async socialLogin(provider: 'google' | 'facebook'): Promise<AuthResponse> {
     try {
       console.log('🔐 Social Login: Starting OAuth flow with provider:', provider)
+      const redirectUrl = getAuthRedirectUrl('/auth/callback')
       console.log('🔐 Social Login: Current origin:', window.location.origin)
       console.log('🔐 Social Login: Current URL:', window.location.href)
-      console.log('🔐 Social Login: Redirect will be to:', `${window.location.origin}/auth/callback`)
+      console.log('🔐 Social Login: Redirect will be to:', redirectUrl)
       console.log('🔐 Social Login: Supabase client ready:', !!supabase)
       
       // Use Supabase Auth for social login (creates in auth.users automatically)
       console.log('🔐 Social Login: Calling supabase.auth.signInWithOAuth...')
       console.log('🔐 Social Login: Provider:', provider)
-      console.log('🔐 Social Login: Redirect URL:', `${window.location.origin}/auth/callback`)
+      console.log('🔐 Social Login: Using redirect URL:', redirectUrl)
       
       const { data, error: authError } = await supabase.auth.signInWithOAuth({
         provider: provider,
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
+          redirectTo: redirectUrl,
           skipBrowserRedirect: false,
           queryParams: {
             access_type: 'offline',
@@ -631,7 +633,7 @@ class AuthService {
   private async initiatePasswordResetFlow(email: string): Promise<{ emailSent: boolean; requiresPasswordReset: boolean; message: string }> {
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/auth/password-reset`
+        redirectTo: getAuthRedirectUrl('/auth/password-reset')
       })
 
       if (error) {

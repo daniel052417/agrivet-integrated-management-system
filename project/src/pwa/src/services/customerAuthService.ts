@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { getAuthRedirectUrl } from '../utils/authUtils'
 
 // ============================================================================
 // CUSTOMER AUTHENTICATION SERVICE
@@ -83,7 +84,7 @@ class CustomerAuthService {
         password: data.password,
         options: {
           data: userMetaData,
-          emailRedirectTo: `${window.location.origin}/auth/callback`
+          emailRedirectTo: getAuthRedirectUrl('/auth/callback')
         }
       })
 
@@ -195,10 +196,11 @@ class CustomerAuthService {
     try {
       console.log('🔄 CustomerAuthService: Starting Google signin...')
       
+      const redirectUrl = getAuthRedirectUrl('/auth/callback')
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
+          redirectTo: redirectUrl,
           queryParams: {
             access_type: 'offline',
             prompt: 'consent',

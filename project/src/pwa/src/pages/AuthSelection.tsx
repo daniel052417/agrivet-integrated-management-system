@@ -24,6 +24,7 @@ import ErrorMessage from '../components/common/ErrorMessage'
 import googleLogo from '../assets/google.png'
 import { authService } from '../services/authService'
 import { supabase } from '../services/supabase'
+import { getAuthRedirectUrl } from '../utils/authUtils'
 
 const AuthSelection: React.FC = () => {
   const navigate = useNavigate()
@@ -227,7 +228,7 @@ const AuthSelection: React.FC = () => {
 
     try {
       const { error: resendError } = await supabase.auth.resetPasswordForEmail(passwordResetNotice.email, {
-        redirectTo: `${window.location.origin}/auth/password-reset`
+        redirectTo: getAuthRedirectUrl('/auth/password-reset')
       })
 
       if (resendError) {

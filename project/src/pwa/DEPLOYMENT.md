@@ -24,13 +24,15 @@ Add the required variables under **Settings → Environment Variables** in Verce
 | -------- | ----------- |
 | `VITE_SUPABASE_URL` | Supabase project URL (starts with `https://...supabase.co`). |
 | `VITE_SUPABASE_ANON_KEY` | Supabase public anon key. |
-| `VITE_SITE_URL` | Optional. Defaults to the deployed domain if omitted. |
+| `VITE_PRODUCTION_URL` or `VITE_SITE_URL` | **Required for OAuth redirects.** Set to your production domain (e.g., `https://tiongsononline.vercel.app`). This ensures Google OAuth and other OAuth providers redirect to the production domain instead of localhost. |
 | `VITE_API_BASE_URL` | Base URL for your custom API (optional). |
 | `VITE_GCASH_API_URL`, `VITE_PAYMAYA_API_URL` | Payment gateway endpoints (optional). |
 | `VITE_SMS_API_URL`, `VITE_SMS_API_KEY` | SMS provider configuration (optional). |
 | `VITE_ENABLE_OFFLINE_MODE`, `VITE_ENABLE_PUSH_NOTIFICATIONS`, `VITE_ENABLE_ANALYTICS` | Feature flags. |
 
 > **Security note:** Never expose Supabase service-role keys or other server-only secrets in Vite `VITE_` variables. Anything prefixed with `VITE_` is bundled into the client.
+
+> **OAuth Redirect Note:** For Google OAuth and other OAuth providers to work correctly in production, you must set `VITE_PRODUCTION_URL` (or `VITE_SITE_URL`) to your production domain (e.g., `https://tiongsononline.vercel.app`). This ensures that after successful OAuth authentication, users are redirected to your production domain and not localhost. Also, make sure this same URL is added to your Supabase project's allowed redirect URLs in the Supabase dashboard under Authentication → URL Configuration.
 
 After saving the variables, trigger a redeploy so the build picks them up.
 
