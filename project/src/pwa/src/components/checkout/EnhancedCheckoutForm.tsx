@@ -78,7 +78,8 @@ const handleGCashReferenceChange = (value: string) => {
     longitude?: number
   }>({
     method: 'pickup',
-    deliveryMethod: 'maxim'
+    deliveryMethod: 'maxim',
+    contactNumber: user?.phone || ''
   })
   
   // Payment Info
@@ -216,6 +217,24 @@ const handleGCashReferenceChange = (value: string) => {
       }
     }
   }, [])
+
+  // Sync delivery contact number with customer phone when entering delivery step or when phone changes
+  useEffect(() => {
+    if (customerInfo.phone && currentStep === 'delivery') {
+      // Only auto-populate if contact number is empty or matches the previous customer phone
+      // This allows users to edit it without it being overwritten
+      setDeliveryInfo(prev => {
+        // If contact number is empty or hasn't been manually set, populate from customer phone
+        if (!prev.contactNumber || prev.contactNumber === '') {
+          return {
+            ...prev,
+            contactNumber: customerInfo.phone
+          }
+        }
+        return prev
+      })
+    }
+  }, [customerInfo.phone, currentStep])
   
   const initializeMap = () => {
     if (!mapContainerRef.current || mapInstanceRef.current) {
@@ -400,11 +419,17 @@ const handleGCashReferenceChange = (value: string) => {
   const handleCustomerSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     
-    if (!customerInfo.firstName.trim() || !customerInfo.lastName.trim()) {
+    if (!customerInfo.firstName.trim() || !customerInfo.lastName.trim() || !customerInfo.phone.trim()) {
       onError('Please fill in all required fields')
       return
     }
 
+    // Populate delivery contact number from customer phone
+    setDeliveryInfo(prev => ({
+      ...prev,
+      contactNumber: customerInfo.phone.trim() || prev.contactNumber
+    }))
+    
     setCurrentStep('delivery')
   }
 
@@ -522,7 +547,7 @@ const handleGCashReferenceChange = (value: string) => {
         firstName: customerInfo.firstName.trim(),
         lastName: customerInfo.lastName.trim(),
         email: customerInfo.email?.trim() || undefined,
-        phone: customerInfo.phone?.trim() || undefined
+        phone: customerInfo.phone.trim()
       },
       orderType: deliveryInfo.method,
       deliveryMethod: deliveryInfo.method === 'delivery' ? deliveryInfo.deliveryMethod : undefined,
@@ -625,12 +650,14 @@ const handleGCashReferenceChange = (value: string) => {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Phone *</label>
               <input
                 type="tel"
+                required
                 value={customerInfo.phone}
                 onChange={(e) => setCustomerInfo(prev => ({ ...prev, phone: e.target.value }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Enter phone number"
               />
             </div>
           </div>
@@ -867,7 +894,7 @@ const handleGCashReferenceChange = (value: string) => {
                     <input
                       type="tel"
                       required
-                      value={deliveryInfo.contactNumber || ''}
+                      value={deliveryInfo.contactNumber || customerInfo.phone || ''}
                       onChange={(e) => setDeliveryInfo(prev => ({ ...prev, contactNumber: e.target.value }))}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                       placeholder="+63 912 345 6789"

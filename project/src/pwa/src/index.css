@@ -15,6 +15,11 @@
   html {
     scroll-behavior: smooth;
   }
+  
+  /* Safe area support for mobile devices with notches */
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
 }
 
 @layer components {
