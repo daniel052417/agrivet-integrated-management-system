@@ -327,6 +327,28 @@ class AttendanceTerminalDeviceService {
 
       if (error) throw error;
       console.log('✅ Device registered successfully with UUID:', deviceUuid);
+      
+      // After successful device registration, set allow_device_registration = false in general branch settings
+      // This prevents spam and ensures only one device can be registered per enablement
+      try {
+        // Import branchManagementService dynamically to avoid circular dependencies
+        const { branchManagementService } = await import('./branchManagementService');
+        
+        // Get current branch settings
+        const currentSettings = await branchManagementService.getBranchSettings();
+        
+        // Update to disable device registration
+        await branchManagementService.updateBranchSettings({
+          ...currentSettings,
+          allow_device_registration: false
+        });
+        
+        console.log('✅ General branch settings allow_device_registration set to false after device registration');
+      } catch (updateErr: any) {
+        console.warn('⚠️ Error updating allow_device_registration in branch settings:', updateErr);
+        // Don't throw - device registration was successful
+      }
+      
       return data;
     } catch (error: any) {
       console.error('Error registering device:', error);

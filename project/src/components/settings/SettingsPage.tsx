@@ -187,7 +187,8 @@ const SettingsPage: React.FC = () => {
   const [branchSettings, setBranchSettings] = useState({
     allowInterBranchTransfers: false,
     shareInventoryAcrossBranches: false,
-    enableBranchSpecificPricing: false
+    enableBranchSpecificPricing: false,
+    allow_device_registration: false
   });
 
   // PWA settings state
@@ -974,7 +975,8 @@ const SettingsPage: React.FC = () => {
         setBranchSettings({
           allowInterBranchTransfers: branchSettings.allowInterBranchTransfers || false,
           shareInventoryAcrossBranches: branchSettings.shareInventoryAcrossBranches || false,
-          enableBranchSpecificPricing: branchSettings.enableBranchSpecificPricing || false
+          enableBranchSpecificPricing: branchSettings.enableBranchSpecificPricing || false,
+          allow_device_registration: branchSettings.allow_device_registration || false
         });
       }
 
@@ -1755,7 +1757,7 @@ const SettingsPage: React.FC = () => {
       latitude: branch.latitude || null,
       longitude: branch.longitude || null,
       attendancePin: branch.attendance_pin || '',
-      attendanceSecuritySettings: branch.attendance_security_settings || defaultSecuritySettings
+        attendanceSecuritySettings: branch.attendance_security_settings || defaultSecuritySettings
     });
     setShowAddBranchModal(true);
   };
@@ -3347,35 +3349,31 @@ const SettingsPage: React.FC = () => {
         </div>
         
         <div className="space-y-4">
-          <label className="flex items-center space-x-3">
+          <label className="flex items-center space-x-3 p-4 bg-green-50 rounded-lg border border-green-200">
             <input
               type="checkbox"
-              checked={branchSettings.allowInterBranchTransfers}
-              onChange={(e) => setBranchSettings({ ...branchSettings, allowInterBranchTransfers: e.target.checked })}
-              className="rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+              checked={branchSettings.allow_device_registration}
+              onChange={(e) => setBranchSettings({ ...branchSettings, allow_device_registration: e.target.checked })}
+              className="rounded border-gray-300 text-green-600 focus:ring-green-500"
             />
-            <span className="text-sm text-gray-700">Allow inter-branch transfers</span>
+            <div className="flex-1">
+              <div className="flex items-center space-x-2">
+                <Key className="w-4 h-4 text-green-600" />
+                <span className="text-sm font-medium text-gray-900">Allow Device Registration</span>
+              </div>
+              <p className="text-xs text-gray-600 mt-1">
+                When enabled, unregistered devices can request OTP for device registration. Automatically disabled after a device is registered to prevent spam.
+              </p>
+            </div>
           </label>
-
-          <label className="flex items-center space-x-3">
-            <input
-              type="checkbox"
-              checked={branchSettings.shareInventoryAcrossBranches}
-              onChange={(e) => setBranchSettings({ ...branchSettings, shareInventoryAcrossBranches: e.target.checked })}
-              className="rounded border-gray-300 text-orange-600 focus:ring-orange-500"
-            />
-            <span className="text-sm text-gray-700">Share inventory across branches</span>
-          </label>
-
-          <label className="flex items-center space-x-3">
-            <input
-              type="checkbox"
-              checked={branchSettings.enableBranchSpecificPricing}
-              onChange={(e) => setBranchSettings({ ...branchSettings, enableBranchSpecificPricing: e.target.checked })}
-              className="rounded border-gray-300 text-orange-600 focus:ring-orange-500"
-            />
-            <span className="text-sm text-gray-700">Enable branch-specific pricing</span>
-          </label>
+        </div>
+        <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+          <p className="text-xs text-blue-800">
+            💡 <strong>How it works:</strong> When enabled, unregistered devices accessing the attendance terminal 
+            will see a "Request OTP for registration" option. Once a device is successfully registered via OTP, 
+            this setting automatically turns off to prevent spam. You can re-enable it when you need to register 
+            another device.
+          </p>
         </div>
       </div>
 
@@ -4375,101 +4373,6 @@ const SettingsPage: React.FC = () => {
                   Configure security settings for the attendance terminal at this branch. These settings help prevent unauthorized access and ensure attendance is only recorded from authorized locations and devices.
                 </p>
 
-                {/* Geo-location Settings */}
-                <div className="space-y-4 mb-6">
-                  <div className="flex items-center justify-between p-4 bg-blue-50 rounded-lg border border-blue-200">
-                    <div className="flex items-center space-x-3">
-                      <MapPin className="w-5 h-5 text-blue-600" />
-                      <div>
-                        <label className="text-sm font-medium text-gray-900">Enable Geo-location Verification</label>
-                        <p className="text-xs text-gray-600">Require attendance to be recorded within branch location</p>
-                      </div>
-                    </div>
-                    <input
-                      type="checkbox"
-                      checked={branchFormData.attendanceSecuritySettings.enableGeoLocationVerification}
-                      onChange={(e) => setBranchFormData({
-                        ...branchFormData,
-                        attendanceSecuritySettings: {
-                          ...branchFormData.attendanceSecuritySettings,
-                          enableGeoLocationVerification: e.target.checked
-                        }
-                      })}
-                      className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
-                    />
-                  </div>
-
-                  {branchFormData.attendanceSecuritySettings.enableGeoLocationVerification && (
-                    <div className="ml-8 space-y-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Latitude <span className="text-red-500">*</span>
-                          </label>
-                          <input
-                            type="number"
-                            step="0.00000001"
-                            value={branchFormData.latitude || ''}
-                            onChange={(e) => setBranchFormData({
-                              ...branchFormData,
-                              latitude: e.target.value ? parseFloat(e.target.value) : null
-                            })}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                            placeholder="14.5995"
-                            min="-90"
-                            max="90"
-                          />
-                          <p className="text-xs text-gray-500 mt-1">Branch latitude coordinate (e.g., 14.5995)</p>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Longitude <span className="text-red-500">*</span>
-                          </label>
-                          <input
-                            type="number"
-                            step="0.00000001"
-                            value={branchFormData.longitude || ''}
-                            onChange={(e) => setBranchFormData({
-                              ...branchFormData,
-                              longitude: e.target.value ? parseFloat(e.target.value) : null
-                            })}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                            placeholder="120.9842"
-                            min="-180"
-                            max="180"
-                          />
-                          <p className="text-xs text-gray-500 mt-1">Branch longitude coordinate (e.g., 120.9842)</p>
-                        </div>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Location Tolerance (meters)
-                        </label>
-                        <input
-                          type="number"
-                          value={branchFormData.attendanceSecuritySettings.geoLocationToleranceMeters}
-                          onChange={(e) => setBranchFormData({
-                            ...branchFormData,
-                            attendanceSecuritySettings: {
-                              ...branchFormData.attendanceSecuritySettings,
-                              geoLocationToleranceMeters: parseInt(e.target.value) || 100
-                            }
-                          })}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                          min="10"
-                          max="1000"
-                        />
-                        <p className="text-xs text-gray-500 mt-1">Maximum distance from branch coordinates (default: 100 meters)</p>
-                      </div>
-                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                        <p className="text-xs text-blue-800">
-                          💡 <strong>Tip:</strong> Use Google Maps to get your branch coordinates. Right-click on your branch location and select "What's here?" to see the coordinates.
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
                 {/* Device Verification */}
                 <div className="space-y-4 mb-6">
                   <div className="flex items-center justify-between p-4 bg-green-50 rounded-lg border border-green-200">
@@ -4498,93 +4401,6 @@ const SettingsPage: React.FC = () => {
                       <p className="text-xs text-gray-600">
                         💡 Device registration can be managed in the "Attendance Terminal Devices" section below.
                       </p>
-                    </div>
-                  )}
-                </div>
-
-                {/* PIN Access Control */}
-                <div className="space-y-4 mb-6">
-                  <div className="flex items-center justify-between p-4 bg-yellow-50 rounded-lg border border-yellow-200">
-                    <div className="flex items-center space-x-3">
-                      <Lock className="w-5 h-5 text-yellow-600" />
-                      <div>
-                        <label className="text-sm font-medium text-gray-900">Enable PIN Access Control</label>
-                        <p className="text-xs text-gray-600">Require PIN code to access attendance terminal</p>
-                      </div>
-                    </div>
-                    <input
-                      type="checkbox"
-                      checked={branchFormData.attendanceSecuritySettings.enablePinAccessControl}
-                      onChange={(e) => setBranchFormData({
-                        ...branchFormData,
-                        attendanceSecuritySettings: {
-                          ...branchFormData.attendanceSecuritySettings,
-                          enablePinAccessControl: e.target.checked
-                        }
-                      })}
-                      className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
-                    />
-                  </div>
-
-                  {branchFormData.attendanceSecuritySettings.enablePinAccessControl && (
-                    <div className="ml-8 space-y-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Branch PIN Code <span className="text-red-500">*</span>
-                        </label>
-                        <input
-                          type="text"
-                          value={branchFormData.attendancePin}
-                          onChange={(e) => setBranchFormData({
-                            ...branchFormData,
-                            attendancePin: e.target.value
-                          })}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                          placeholder="Enter 4-20 digit PIN"
-                          maxLength={20}
-                        />
-                        <p className="text-xs text-gray-500 mt-1">PIN code required to access attendance terminal</p>
-                      </div>
-                      <div>
-                        <label className="flex items-center space-x-3">
-                          <input
-                            type="checkbox"
-                            checked={branchFormData.attendanceSecuritySettings.requirePinForEachSession}
-                            onChange={(e) => setBranchFormData({
-                              ...branchFormData,
-                              attendanceSecuritySettings: {
-                                ...branchFormData.attendanceSecuritySettings,
-                                requirePinForEachSession: e.target.checked
-                              }
-                            })}
-                            className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
-                          />
-                          <span className="text-sm text-gray-700">Require PIN for each session</span>
-                        </label>
-                        <p className="text-xs text-gray-500 ml-7">If disabled, PIN is valid for the duration specified below</p>
-                      </div>
-                      {!branchFormData.attendanceSecuritySettings.requirePinForEachSession && (
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
-                            PIN Session Duration (hours)
-                          </label>
-                          <input
-                            type="number"
-                            value={branchFormData.attendanceSecuritySettings.pinSessionDurationHours}
-                            onChange={(e) => setBranchFormData({
-                              ...branchFormData,
-                              attendanceSecuritySettings: {
-                                ...branchFormData.attendanceSecuritySettings,
-                                pinSessionDurationHours: parseInt(e.target.value) || 24
-                              }
-                            })}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                            min="1"
-                            max="168"
-                          />
-                          <p className="text-xs text-gray-500 mt-1">How long the PIN session remains valid (default: 24 hours)</p>
-                        </div>
-                      )}
                     </div>
                   )}
                 </div>

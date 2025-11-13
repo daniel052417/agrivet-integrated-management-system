@@ -69,6 +69,7 @@ export interface BranchSettings {
   allowInterBranchTransfers: boolean;
   shareInventoryAcrossBranches: boolean;
   enableBranchSpecificPricing: boolean;
+  allow_device_registration: boolean;
 }
 
 export interface ManagerCandidate {
@@ -332,6 +333,10 @@ class BranchManagementService {
         enableBranchSpecificPricing: 
           branchSettings.enableBranchSpecificPricing ?? 
           flatSettings.enableBranchSpecificPricing ?? 
+          false,
+        allow_device_registration:
+          branchSettings.allow_device_registration ??
+          flatSettings.allow_device_registration ??
           false
       };
     } catch (error: any) {
@@ -340,7 +345,8 @@ class BranchManagementService {
       return {
         allowInterBranchTransfers: false,
         shareInventoryAcrossBranches: false,
-        enableBranchSpecificPricing: false
+        enableBranchSpecificPricing: false,
+        allow_device_registration: false
       };
     }
   }

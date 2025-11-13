@@ -246,8 +246,25 @@ const LandingPage: React.FC = () => {
         return;
       }
       
-      // Device is not registered - request OTP instead of showing error
-      console.log('⚠️ Device not registered, requesting OTP for device registration...');
+      // Device is not registered - check if general branch settings allow device registration
+      console.log('⚠️ Device not registered, checking if device registration is enabled...');
+      
+      // Get general branch settings
+      const branchSettings = await branchManagementService.getBranchSettings();
+      const allowDeviceRegistration = branchSettings.allow_device_registration === true;
+      
+      if (!allowDeviceRegistration) {
+        // Device registration is disabled - show unauthorized access message
+        console.log('❌ Device registration is currently disabled');
+        const errorMessage = 'Unauthorized Access\n\nThis device is not registered and device registration is currently disabled.\n\nPlease contact your administrator to register this device.';
+        setDeviceError(errorMessage);
+        setShowDeviceError(true);
+        setIsCheckingDevice(false);
+        return;
+      }
+      
+      // Device registration is enabled - request OTP
+      console.log('✅ Device registration is enabled, requesting OTP...');
       
       // Get device info and include UUID and fingerprint
       const deviceInfo = getDeviceInfo();
