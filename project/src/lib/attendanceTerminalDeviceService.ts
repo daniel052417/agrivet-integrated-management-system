@@ -5,7 +5,8 @@ import { getManilaTimestamp } from './utils/manilaTimestamp';
 export interface AttendanceTerminalDevice {
   id: string;
   branch_id: string;
-  device_fingerprint: string;
+  device_uuid: string | null; // Stable UUID from localStorage
+  device_fingerprint: string; // Metadata fingerprint (for logging)
   device_name: string;
   device_type?: string | null;
   browser_info?: any;
@@ -64,7 +65,8 @@ export interface AttendanceTerminalActivityLog {
 
 export interface CreateDeviceData {
   branch_id: string;
-  device_fingerprint: string;
+  device_uuid: string | null; // Stable UUID from localStorage (required for new registrations, can be null for backward compatibility)
+  device_fingerprint: string; // Metadata fingerprint (for logging)
   device_name: string;
   device_type?: string;
   browser_info?: any;
@@ -143,7 +145,51 @@ class AttendanceTerminalDeviceService {
   }
 
   /**
-   * Get device by fingerprint
+   * Get device by UUID (primary method for device lookup)
+   * This uses the stable UUID from localStorage for consistent device identification
+   */
+  async getDeviceByUuid(
+    branchId: string,
+    deviceUuid: string
+  ): Promise<AttendanceTerminalDevice | null> {
+    try {
+      const { data, error } = await supabase
+        .from('attendance_terminal_devices')
+        .select(`
+          *,
+          branch:branches!attendance_terminal_devices_branch_id_fkey (
+            id,
+            name,
+            code
+          ),
+          registered_by_user:users!attendance_terminal_devices_registered_by_fkey (
+            id,
+            first_name,
+            last_name,
+            email
+          )
+        `)
+        .eq('branch_id', branchId)
+        .eq('device_uuid', deviceUuid)
+        .eq('is_active', true)
+        .single();
+
+      if (error) {
+        if (error.code === 'PGRST116') {
+          return null; // No device found
+        }
+        throw error;
+      }
+      return data;
+    } catch (error: any) {
+      console.error('Error fetching device by UUID:', error);
+      throw new Error(`Failed to fetch device: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get device by fingerprint (legacy method, kept for backward compatibility)
+   * @deprecated Use getDeviceByUuid instead for stable device identification
    */
   async getDeviceByFingerprint(
     branchId: string,
@@ -152,7 +198,20 @@ class AttendanceTerminalDeviceService {
     try {
       const { data, error } = await supabase
         .from('attendance_terminal_devices')
-        .select('*')
+        .select(`
+          *,
+          branch:branches!attendance_terminal_devices_branch_id_fkey (
+            id,
+            name,
+            code
+          ),
+          registered_by_user:users!attendance_terminal_devices_registered_by_fkey (
+            id,
+            first_name,
+            last_name,
+            email
+          )
+        `)
         .eq('branch_id', branchId)
         .eq('device_fingerprint', deviceFingerprint)
         .eq('is_active', true)
@@ -179,40 +238,69 @@ class AttendanceTerminalDeviceService {
     registeredBy: string
   ): Promise<AttendanceTerminalDevice> {
     try {
-      // Check if device already exists
-      console.log('🔍 Checking if device already exists...', {
-        branchId: deviceData.branch_id,
-        fingerprint: deviceData.device_fingerprint.substring(0, 20) + '...' // First 20 chars only for security
-      });
-      
-      const existing = await this.getDeviceByFingerprint(
+      // Check if device already exists by UUID (primary check)
+      if (deviceData.device_uuid) {
+        const existingByUuid = await this.getDeviceByUuid(
+          deviceData.branch_id,
+          deviceData.device_uuid
+        );
+
+        if (existingByUuid) {
+          console.log('✅ Device already registered with UUID:', deviceData.device_uuid);
+          return existingByUuid;
+        }
+      }
+
+      // Also check by fingerprint for backward compatibility
+      const existingByFingerprint = await this.getDeviceByFingerprint(
         deviceData.branch_id,
         deviceData.device_fingerprint
       );
 
-      if (existing) {
-        console.warn('⚠️ Device already registered for this branch', {
-          deviceId: existing.id,
-          deviceName: existing.device_name,
-          branchId: existing.branch_id,
-          isActive: existing.is_active
-        });
-        throw new Error('Device already registered for this branch');
-      }
-      
-      console.log('✅ Device not found, proceeding with registration...');
-      console.log('💾 Inserting device into database...', {
-        branchId: deviceData.branch_id,
-        deviceName: deviceData.device_name,
-        deviceType: deviceData.device_type || 'kiosk',
-        registeredBy: registeredBy
-      });
+      if (existingByFingerprint && !existingByFingerprint.device_uuid && deviceData.device_uuid) {
+        // Update existing device to include UUID
+        const { data: updatedDevice, error: updateError } = await supabase
+          .from('attendance_terminal_devices')
+          .update({
+            device_uuid: deviceData.device_uuid,
+            updated_at: getManilaTimestamp()
+          })
+          .eq('id', existingByFingerprint.id)
+          .select(`
+            *,
+            branch:branches!attendance_terminal_devices_branch_id_fkey (
+              id,
+              name,
+              code
+            ),
+            registered_by_user:users!attendance_terminal_devices_registered_by_fkey (
+              id,
+              first_name,
+              last_name,
+              email
+            )
+          `)
+          .single();
 
+        if (updateError) throw updateError;
+        console.log('✅ Updated existing device with UUID:', deviceData.device_uuid);
+        return updatedDevice;
+      }
+
+      if (existingByFingerprint) {
+        throw new Error('Device is already registered for this branch');
+      }
+
+      // Create new device with UUID
+      // Generate UUID if not provided (backward compatibility)
+      const deviceUuid = deviceData.device_uuid || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `temp-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`);
+      
       const { data, error } = await supabase
         .from('attendance_terminal_devices')
         .insert({
           branch_id: deviceData.branch_id,
-          device_fingerprint: deviceData.device_fingerprint,
+          device_uuid: deviceUuid, // Primary identifier
+          device_fingerprint: deviceData.device_fingerprint, // Metadata
           device_name: deviceData.device_name,
           device_type: deviceData.device_type || null,
           browser_info: deviceData.browser_info || null,
@@ -238,23 +326,10 @@ class AttendanceTerminalDeviceService {
         .single();
 
       if (error) throw error;
-      
-      // Debug: Log successful device registration
-      console.log('✅ Device registered successfully!', {
-        deviceId: data.id,
-        deviceName: data.device_name,
-        branchId: data.branch_id,
-        branchName: data.branch?.name,
-        deviceFingerprint: data.device_fingerprint.substring(0, 20) + '...', // First 20 chars only for security
-        deviceType: data.device_type,
-        registeredBy: data.registered_by,
-        registeredAt: data.registered_at,
-        isActive: data.is_active
-      });
-      
+      console.log('✅ Device registered successfully with UUID:', deviceUuid);
       return data;
     } catch (error: any) {
-      console.error('❌ Error registering device:', error);
+      console.error('Error registering device:', error);
       throw new Error(`Failed to register device: ${error.message}`);
     }
   }

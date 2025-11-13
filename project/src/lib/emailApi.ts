@@ -19,6 +19,7 @@ export interface OTPEmailData {
   otpCode: string;
   expiryMinutes: number;
   companyName?: string;
+  customMessage?: string;
 }
 
 export interface EmailResult {

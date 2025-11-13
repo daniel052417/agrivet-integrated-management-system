@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Plus, Search, Edit, Trash2, X, Save, Tag, 
-  AlertCircle, CheckCircle, Upload, Image as ImageIcon, FolderTree
+  AlertCircle, CheckCircle, Upload, Image as ImageIcon, Folder
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
@@ -24,6 +24,7 @@ interface Category {
 
 const Brands: React.FC = () => {
   const [brands, setBrands] = useState<Brand[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -31,9 +32,7 @@ const Brands: React.FC = () => {
   const [showModal, setShowModal] = useState(false);
   const [editingBrand, setEditingBrand] = useState<Brand | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [categories, setCategories] = useState<Category[]>([]);
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
-  const [loadingCategories, setLoadingCategories] = useState(false);
   
   const [formData, setFormData] = useState({
     name: '',
@@ -67,7 +66,6 @@ const Brands: React.FC = () => {
 
   const loadCategories = async () => {
     try {
-      setLoadingCategories(true);
       const { data, error: fetchError } = await supabase
         .from('categories')
         .select('*')
@@ -79,25 +77,7 @@ const Brands: React.FC = () => {
       setCategories(data || []);
     } catch (err: any) {
       console.error('Error loading categories:', err);
-      // Don't show error to user, just log it
-    } finally {
-      setLoadingCategories(false);
-    }
-  };
-
-  const loadBrandCategories = async (brandId: string) => {
-    try {
-      const { data, error: fetchError } = await supabase
-        .from('brand_categories')
-        .select('category_id')
-        .eq('brand_id', brandId);
-
-      if (fetchError) throw fetchError;
-      const categoryIds = (data || []).map(item => item.category_id);
-      setSelectedCategoryIds(categoryIds);
-    } catch (err: any) {
-      console.error('Error loading brand categories:', err);
-      setError(err.message || 'Failed to load brand categories');
+      setError(err.message || 'Failed to load categories');
     }
   };
 
@@ -195,18 +175,15 @@ const Brands: React.FC = () => {
         setSuccess('Brand updated successfully!');
       } else {
         // Create new brand
-        const { data: insertedData, error: insertError } = await supabase
+        const { data: newBrand, error: insertError } = await supabase
           .from('brands')
           .insert([formData])
-          .select();
+          .select()
+          .single();
 
         if (insertError) throw insertError;
-        
-        if (!insertedData || insertedData.length === 0) {
-          throw new Error('Failed to create brand');
-        }
 
-        brandId = insertedData[0].id;
+        brandId = newBrand.id;
 
         // Insert brand_categories
         if (selectedCategoryIds.length > 0) {
@@ -244,7 +221,24 @@ const Brands: React.FC = () => {
       name: brand.name,
       image_url: brand.image_url || ''
     });
-    await loadBrandCategories(brand.id);
+
+    // Load existing brand categories
+    try {
+      const { data: brandCategories, error: fetchError } = await supabase
+        .from('brand_categories')
+        .select('category_id')
+        .eq('brand_id', brand.id);
+
+      if (fetchError) throw fetchError;
+
+      const categoryIds = brandCategories?.map(bc => bc.category_id) || [];
+      setSelectedCategoryIds(categoryIds);
+    } catch (err: any) {
+      console.error('Error loading brand categories:', err);
+      setError(err.message || 'Failed to load brand categories');
+      setSelectedCategoryIds([]);
+    }
+
     setShowModal(true);
   };
 
@@ -287,30 +281,19 @@ const Brands: React.FC = () => {
     setSelectedCategoryIds([]);
   };
 
+  const handleCategoryToggle = (categoryId: string) => {
+    setSelectedCategoryIds(prev => {
+      if (prev.includes(categoryId)) {
+        return prev.filter(id => id !== categoryId);
+      } else {
+        return [...prev, categoryId];
+      }
+    });
+  };
+
   const filteredBrands = brands.filter(brand =>
     brand.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
-
-  // Organize categories: parents first, then children indented
-  const organizedCategories = () => {
-    const parents = categories.filter(cat => !cat.parent_id);
-    const children = categories.filter(cat => cat.parent_id);
-    
-    const result: Category[] = [];
-    parents.forEach(parent => {
-      result.push(parent);
-      // Add children of this parent
-      children
-        .filter(child => child.parent_id === parent.id)
-        .forEach(child => result.push(child));
-    });
-    // Add any remaining children (orphaned)
-    children
-      .filter(child => !parents.find(p => p.id === child.parent_id))
-      .forEach(child => result.push(child));
-    
-    return result;
-  };
 
   if (loading && brands.length === 0) {
     return (
@@ -459,7 +442,7 @@ const Brands: React.FC = () => {
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
+            <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[calc(100vh-200px)] overflow-y-auto">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Brand Name *
@@ -529,55 +512,37 @@ const Brands: React.FC = () => {
                   Categories
                 </label>
                 <div className="border border-gray-300 rounded-md p-3 max-h-48 overflow-y-auto bg-gray-50">
-                  {loadingCategories ? (
-                    <div className="flex items-center justify-center py-4">
-                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
-                    </div>
-                  ) : categories.length === 0 ? (
+                  {categories.length === 0 ? (
                     <p className="text-sm text-gray-500 text-center py-4">
                       No categories available
                     </p>
                   ) : (
-                    <div className="space-y-1">
-                      {organizedCategories().map((category) => {
-                        const isSelected = selectedCategoryIds.includes(category.id);
-                        const isChild = !!category.parent_id;
-                        return (
-                          <label
-                            key={category.id}
-                            className={`flex items-center space-x-2 cursor-pointer hover:bg-gray-100 p-2 rounded ${
-                              isChild ? 'ml-4' : ''
-                            }`}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={isSelected}
-                              onChange={(e) => {
-                                if (e.target.checked) {
-                                  setSelectedCategoryIds([...selectedCategoryIds, category.id]);
-                                } else {
-                                  setSelectedCategoryIds(
-                                    selectedCategoryIds.filter(id => id !== category.id)
-                                  );
-                                }
-                              }}
-                              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                            />
-                            <span className="text-sm text-gray-700 flex items-center">
-                              {isChild && (
-                                <FolderTree className="w-3 h-3 mr-1 text-gray-400" />
-                              )}
-                              {category.name}
-                            </span>
-                          </label>
-                        );
-                      })}
+                    <div className="space-y-2">
+                      {categories.map((category) => (
+                        <label
+                          key={category.id}
+                          className="flex items-center space-x-2 cursor-pointer hover:bg-gray-100 p-2 rounded-md"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedCategoryIds.includes(category.id)}
+                            onChange={() => handleCategoryToggle(category.id)}
+                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                          />
+                          <span className="text-sm text-gray-700 flex items-center">
+                            <Folder className="w-4 h-4 mr-2 text-gray-400" />
+                            {category.name}
+                          </span>
+                        </label>
+                      ))}
                     </div>
                   )}
                 </div>
-                <p className="mt-1 text-xs text-gray-500">
-                  Select one or more categories for this brand
-                </p>
+                {selectedCategoryIds.length > 0 && (
+                  <p className="mt-2 text-xs text-gray-500">
+                    {selectedCategoryIds.length} categor{selectedCategoryIds.length === 1 ? 'y' : 'ies'} selected
+                  </p>
+                )}
               </div>
 
               <div className="flex space-x-3 pt-4">

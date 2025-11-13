@@ -702,30 +702,13 @@ const InventoryManagement: React.FC = () => {
   const openEditModal = async (product: InventoryManagementRow) => {
     try {
       // Fetch all units for this product
-      const { data: units, error: unitsError } = await supabase
+      const { data: units, error } = await supabase
         .from('product_units')
         .select('*')
         .eq('product_id', product.product_id)
         .order('is_base_unit', { ascending: false });
 
-      if (unitsError) throw unitsError;
-
-      // Fetch inventory record to get correct batch_no and expiration_date for this specific inventory record
-      let batchNo = product.batch_no || '';
-      let expirationDate = product.expiration_date || '';
-      
-      if (product.inventory_id) {
-        const { data: inventoryRecord, error: inventoryError } = await supabase
-          .from('inventory')
-          .select('batch_no, expiration_date')
-          .eq('id', product.inventory_id)
-          .single();
-
-        if (!inventoryError && inventoryRecord) {
-          batchNo = inventoryRecord.batch_no || '';
-          expirationDate = inventoryRecord.expiration_date || '';
-        }
-      }
+      if (error) throw error;
 
       // Check if product has multiple units
       const hasMultipleUnits = units && units.length > 1;
@@ -749,8 +732,8 @@ const InventoryManagement: React.FC = () => {
         barcode: product.barcode || '',
         brand: product.brand || '',
         enable_multi_unit: hasMultipleUnits,
-        batch_no: batchNo,
-        expiration_date: expirationDate ? (expirationDate.includes('T') ? expirationDate.split('T')[0] : expirationDate) : ''
+        batch_no: product.batch_no || '',
+        expiration_date: product.expiration_date || ''
       });
 
       // If product has multiple units, load them into productUnits state

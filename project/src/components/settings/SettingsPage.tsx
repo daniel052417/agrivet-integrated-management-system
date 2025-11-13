@@ -7,7 +7,7 @@ import {
   FileText, HardDrive, Edit3, Ban,
   TestTube, ShieldCheck, Activity, Settings2, User,
   Clock, DollarSign, Calendar, BarChart3, Users, LogOut,
-  Eye
+  Eye, Key
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { settingsService } from '../../lib/settingsService';
@@ -24,6 +24,10 @@ import {
   AttendanceTerminalDevice,
   AttendanceTerminalActivityLog
 } from '../../lib/attendanceTerminalDeviceService';
+import {
+  attendanceTerminalOTPService,
+  AttendanceTerminalOTPLog
+} from '../../lib/attendanceTerminalOTPService';
 
 const SettingsPage: React.FC = () => {
   const [selectedTheme, setSelectedTheme] = useState('light');
@@ -123,11 +127,18 @@ const SettingsPage: React.FC = () => {
   const [selectedBranchForSecurity, setSelectedBranchForSecurity] = useState<string | null>(null);
   const [branchDevices, setBranchDevices] = useState<AttendanceTerminalDevice[]>([]);
   const [branchActivityLogs, setBranchActivityLogs] = useState<AttendanceTerminalActivityLog[]>([]);
+  const [branchOTPLogs, setBranchOTPLogs] = useState<AttendanceTerminalOTPLog[]>([]);
+  const [allOTPLogs, setAllOTPLogs] = useState<AttendanceTerminalOTPLog[]>([]);
+  const [registeredDeviceUuids, setRegisteredDeviceUuids] = useState<Set<string>>(new Set());
   const [showDeviceModal, setShowDeviceModal] = useState(false);
+  const [showBranchSelectionModal, setShowBranchSelectionModal] = useState(false);
+  const [selectedOTPLogForRegistration, setSelectedOTPLogForRegistration] = useState<AttendanceTerminalOTPLog | null>(null);
+  const [selectedBranchForRegistration, setSelectedBranchForRegistration] = useState<string>('');
   const [showActivityLogsModal, setShowActivityLogsModal] = useState(false);
   const [deviceFormData, setDeviceFormData] = useState({
     device_name: '',
-    device_fingerprint: '',
+    device_uuid: '', // Stable UUID (preferred)
+    device_fingerprint: '', // Fallback for manual entry
     device_type: 'kiosk' as 'desktop' | 'laptop' | 'tablet' | 'kiosk'
   });
   const [activityLogsFilters, setActivityLogsFilters] = useState({
@@ -318,6 +329,7 @@ const SettingsPage: React.FC = () => {
       fetchAllBranches();
       fetchManagerCandidates();
       fetchBranchSettings();
+      fetchAllOTPLogs(); // Fetch all OTP logs when branches section is active
     }
     if (activeSection === 'pos') {
       fetchAllTerminals();
@@ -424,6 +436,199 @@ const SettingsPage: React.FC = () => {
     }
   };
 
+  const fetchBranchOTPLogs = async (branchId: string, limit: number = 100) => {
+    try {
+      setLoading(true);
+      const { logs } = await attendanceTerminalOTPService.getOTPLogs(branchId, limit, 0);
+      setBranchOTPLogs(logs);
+    } catch (error: any) {
+      console.error('Error fetching OTP logs:', error);
+      setError(error.message || 'Failed to fetch OTP logs');
+      setTimeout(() => setError(null), 5000);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchAllOTPLogs = async (limit: number = 100) => {
+    try {
+      setLoading(true);
+      const { logs } = await attendanceTerminalOTPService.getAllOTPLogs(limit, 0);
+      
+      // Get all registered devices to check which OTPs have already been registered
+      const allDevices = await attendanceTerminalDeviceService.getAllDevices();
+      const registeredUuids = new Set<string>();
+      
+      allDevices.forEach(device => {
+        if (device.device_uuid && device.is_active) {
+          registeredUuids.add(device.device_uuid);
+        }
+      });
+      
+      setRegisteredDeviceUuids(registeredUuids);
+      
+      // Filter out verified OTPs that have already been registered
+      // Only show pending OTPs and verified OTPs that haven't been registered yet
+      const filteredLogs = logs.filter(log => {
+        // Always show pending OTPs
+        if (log.status === 'pending') {
+          return true;
+        }
+        
+        // For verified OTPs, only show if device is not yet registered
+        if (log.status === 'verified' && log.device_uuid) {
+          return !registeredUuids.has(log.device_uuid);
+        }
+        
+        // Show verified OTPs without device_uuid (shouldn't happen, but just in case)
+        if (log.status === 'verified' && !log.device_uuid) {
+          return true;
+        }
+        
+        // Show expired/failed OTPs (for reference)
+        return log.status === 'expired' || log.status === 'failed';
+      });
+      
+      setAllOTPLogs(filteredLogs);
+    } catch (error: any) {
+      console.error('Error fetching all OTP logs:', error);
+      setError(error.message || 'Failed to fetch OTP logs');
+      setTimeout(() => setError(null), 5000);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRegisterDeviceFromOTP = async (otpLog: AttendanceTerminalOTPLog) => {
+    if (!otpLog.device_uuid) {
+      setError('Device UUID not available in OTP log. Please request a new OTP.');
+      setTimeout(() => setError(null), 5000);
+      return;
+    }
+
+    // Show branch selection modal
+    setSelectedOTPLogForRegistration(otpLog);
+    setSelectedBranchForRegistration('');
+    setShowBranchSelectionModal(true);
+  };
+
+  const handleConfirmRegisterDeviceFromOTP = async () => {
+    if (!selectedOTPLogForRegistration) {
+      setError('No OTP log selected for registration.');
+      setTimeout(() => setError(null), 5000);
+      return;
+    }
+
+    if (!selectedOTPLogForRegistration.device_uuid) {
+      setError('Device UUID not available in OTP log. Please request a new OTP.');
+      setTimeout(() => setError(null), 5000);
+      return;
+    }
+
+    if (!selectedBranchForRegistration) {
+      setError('Please select a branch to register the device.');
+      setTimeout(() => setError(null), 5000);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Get current user
+      let currentUser = simplifiedAuth.getCurrentUser();
+      let userId: string | null = null;
+
+      if (currentUser) {
+        userId = currentUser.id;
+      } else {
+        // Try to get user from localStorage
+        try {
+          const storedSession = localStorage.getItem('agrivet_session');
+          if (storedSession) {
+            const session = JSON.parse(storedSession);
+            if (session.userId) {
+              userId = session.userId;
+              try {
+                currentUser = await simplifiedAuth.getUserById(session.userId);
+                simplifiedAuth.setCurrentUser(currentUser);
+              } catch (err) {
+                // Use userId directly
+              }
+            }
+          }
+        } catch (err) {
+          console.warn('Could not get user from localStorage:', err);
+        }
+
+        // Try Supabase auth as fallback
+        if (!userId) {
+          try {
+            const sessionResponse = await supabase.auth.getSession();
+            const session = sessionResponse.data?.session;
+            if (session?.user) {
+              userId = session.user.id;
+              try {
+                currentUser = await simplifiedAuth.getUserById(session.user.id);
+                simplifiedAuth.setCurrentUser(currentUser);
+              } catch (err) {
+                // Use userId directly
+              }
+            }
+          } catch (err) {
+            console.warn('Could not get user from Supabase:', err);
+          }
+        }
+      }
+
+      if (!userId) {
+        throw new Error('User not authenticated. Please log in again.');
+      }
+
+      // Get selected branch info
+      const selectedBranch = branches.find(b => b.id === selectedBranchForRegistration);
+      if (!selectedBranch) {
+        throw new Error('Selected branch not found.');
+      }
+
+      // Register device using UUID from OTP log (primary identifier)
+      // Use the selected branch from the modal, not the OTP log's branch_id
+      await attendanceTerminalDeviceService.registerDevice(
+        {
+          branch_id: selectedBranchForRegistration, // Use selected branch from modal
+          device_uuid: selectedOTPLogForRegistration.device_uuid, // Stable UUID (primary identifier)
+          device_fingerprint: selectedOTPLogForRegistration.device_fingerprint || 'unknown', // Metadata fingerprint
+          device_name: selectedOTPLogForRegistration.device_name || `Device from OTP ${selectedOTPLogForRegistration.otp_code}`,
+          device_type: (selectedOTPLogForRegistration.device_type as 'desktop' | 'laptop' | 'tablet' | 'kiosk') || 'kiosk',
+          browser_info: selectedOTPLogForRegistration.browser_info || null
+        },
+        userId
+      );
+
+      setSuccess(`Device registered successfully to ${selectedBranch.name}!`);
+      
+      // Close modal
+      setShowBranchSelectionModal(false);
+      setSelectedOTPLogForRegistration(null);
+      setSelectedBranchForRegistration('');
+      
+      // Refresh devices if the selected branch matches the security branch
+      if (selectedBranchForSecurity === selectedBranchForRegistration) {
+        await fetchBranchDevices(selectedBranchForSecurity);
+      }
+      
+            // Refresh all OTP logs to update the display (this will also update registeredDeviceUuids)
+            await fetchAllOTPLogs();
+            setTimeout(() => setSuccess(null), 3000);
+    } catch (error: any) {
+      console.error('Error registering device from OTP:', error);
+      setError(error.message || 'Failed to register device');
+      setTimeout(() => setError(null), 5000);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleRegisterDevice = async () => {
     if (!selectedBranchForSecurity) {
       setError('Please select a branch first');
@@ -431,8 +636,15 @@ const SettingsPage: React.FC = () => {
       return;
     }
 
-    if (!deviceFormData.device_name || !deviceFormData.device_fingerprint) {
-      setError('Please fill in device name and fingerprint');
+    if (!deviceFormData.device_name) {
+      setError('Please provide a device name');
+      setTimeout(() => setError(null), 5000);
+      return;
+    }
+
+    // For manual registration, we need either device_uuid or device_fingerprint
+    if (!deviceFormData.device_fingerprint && !deviceFormData.device_uuid) {
+      setError('Please provide either a device UUID or device fingerprint');
       setTimeout(() => setError(null), 5000);
       return;
     }
@@ -570,10 +782,15 @@ const SettingsPage: React.FC = () => {
         registeredBy: userId
       });
 
+      // Use device_uuid if provided, otherwise generate one
+      const deviceUuid = deviceFormData.device_uuid || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `temp-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`);
+      const deviceFingerprint = deviceFormData.device_fingerprint || 'manual-entry-' + Date.now();
+      
       const registeredDevice = await attendanceTerminalDeviceService.registerDevice(
         {
           branch_id: selectedBranchForSecurity,
-          device_fingerprint: deviceFormData.device_fingerprint,
+          device_uuid: deviceUuid,
+          device_fingerprint: deviceFingerprint,
           device_name: deviceFormData.device_name,
           device_type: deviceFormData.device_type,
           browser_info: browserInfo
@@ -594,6 +811,7 @@ const SettingsPage: React.FC = () => {
       setShowDeviceModal(false);
       setDeviceFormData({
         device_name: '',
+        device_uuid: '',
         device_fingerprint: '',
         device_type: 'kiosk'
       });
@@ -2821,6 +3039,214 @@ const SettingsPage: React.FC = () => {
 
   const renderBranchManagement = () => (
     <div className="space-y-8">
+      {/* OTP Request Logs Section - Show at top, before branch selection */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center space-x-3">
+            <div className="p-2 bg-purple-50 rounded-lg">
+              <Key className="w-5 h-5 text-purple-600" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">OTP Request Logs</h3>
+              <p className="text-sm text-gray-500">View and manage device registration OTP requests from all branches</p>
+            </div>
+          </div>
+          <button
+            onClick={() => fetchAllOTPLogs()}
+            disabled={loading}
+            className="flex items-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            <span>Refresh</span>
+          </button>
+        </div>
+
+        {loading && allOTPLogs.length === 0 ? (
+          <div className="text-center py-8">
+            <RefreshCw className="w-8 h-8 animate-spin text-gray-400 mx-auto mb-2" />
+            <p className="text-gray-500">Loading OTP logs...</p>
+          </div>
+        ) : allOTPLogs.length === 0 ? (
+          <div className="text-center py-8 bg-gray-50 rounded-lg border border-gray-200">
+            <Key className="w-12 h-12 text-gray-300 mx-auto mb-2" />
+            <p className="text-gray-500">No OTP requests yet.</p>
+            <p className="text-xs text-gray-400 mt-2">OTP requests will appear here when users request device registration.</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {/* Filter by status */}
+            <div className="flex items-center space-x-2 mb-4">
+              <span className="text-sm font-medium text-gray-700">Filter:</span>
+              <button
+                onClick={() => fetchAllOTPLogs()}
+                className="px-3 py-1 text-xs font-medium rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200"
+              >
+                All
+              </button>
+              <button
+                onClick={async () => {
+                  const { logs } = await attendanceTerminalOTPService.getAllOTPLogs(100, 0);
+                  // Get registered devices to filter properly
+                  const allDevices = await attendanceTerminalDeviceService.getAllDevices();
+                  const registeredUuids = new Set<string>();
+                  allDevices.forEach(device => {
+                    if (device.device_uuid && device.is_active) {
+                      registeredUuids.add(device.device_uuid);
+                    }
+                  });
+                  setRegisteredDeviceUuids(registeredUuids);
+                  // Show only pending OTPs
+                  setAllOTPLogs(logs.filter(log => log.status === 'pending'));
+                }}
+                className="px-3 py-1 text-xs font-medium rounded-lg bg-yellow-100 text-yellow-700 hover:bg-yellow-200"
+              >
+                Pending
+              </button>
+              <button
+                onClick={async () => {
+                  const { logs } = await attendanceTerminalOTPService.getAllOTPLogs(100, 0);
+                  // Get registered devices to filter properly
+                  const allDevices = await attendanceTerminalDeviceService.getAllDevices();
+                  const registeredUuids = new Set<string>();
+                  allDevices.forEach(device => {
+                    if (device.device_uuid && device.is_active) {
+                      registeredUuids.add(device.device_uuid);
+                    }
+                  });
+                  setRegisteredDeviceUuids(registeredUuids);
+                  // Show only verified OTPs that haven't been registered yet
+                  setAllOTPLogs(logs.filter(log => 
+                    log.status === 'verified' && 
+                    (!log.device_uuid || !registeredUuids.has(log.device_uuid))
+                  ));
+                }}
+                className="px-3 py-1 text-xs font-medium rounded-lg bg-green-100 text-green-700 hover:bg-green-200"
+              >
+                Verified
+              </button>
+            </div>
+
+            {allOTPLogs.map((otpLog) => (
+              <div key={otpLog.id} className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50">
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex-1">
+                    <div className="flex items-center space-x-2 mb-2">
+                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                        otpLog.status === 'verified' ? 'bg-green-100 text-green-700' :
+                        otpLog.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
+                        otpLog.status === 'expired' ? 'bg-red-100 text-red-700' :
+                        'bg-gray-100 text-gray-700'
+                      }`}>
+                        {otpLog.status.toUpperCase()}
+                      </span>
+                      <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-700 font-mono">
+                        OTP: {otpLog.otp_code}
+                      </span>
+                      <span className="text-xs text-gray-500">
+                        {new Date(otpLog.created_at).toLocaleString()}
+                      </span>
+                    </div>
+                    {otpLog.device_uuid && (
+                      <div className="mt-2 p-2 bg-blue-50 rounded border border-blue-200">
+                        <p className="text-xs font-medium text-blue-700 mb-1">Device UUID (Primary Identifier):</p>
+                        <p className="text-xs font-mono text-blue-800 break-all">
+                          {otpLog.device_uuid}
+                        </p>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(otpLog.device_uuid || '');
+                            alert('Device UUID copied to clipboard!');
+                          }}
+                          className="mt-1 text-xs text-blue-600 hover:text-blue-700 font-medium"
+                        >
+                          Copy UUID to Clipboard
+                        </button>
+                      </div>
+                    )}
+                    {otpLog.device_fingerprint && (
+                      <div className="mt-2 p-2 bg-gray-100 rounded border border-gray-300">
+                        <p className="text-xs font-medium text-gray-700 mb-1">Device Fingerprint (Metadata):</p>
+                        <p className="text-xs font-mono text-gray-800 break-all">
+                          {otpLog.device_fingerprint}
+                        </p>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(otpLog.device_fingerprint || '');
+                            alert('Device fingerprint copied to clipboard!');
+                          }}
+                          className="mt-1 text-xs text-blue-600 hover:text-blue-700 font-medium"
+                        >
+                          Copy to Clipboard
+                        </button>
+                      </div>
+                    )}
+                    {otpLog.location_latitude && otpLog.location_longitude && (
+                      <div className="mt-2">
+                        <p className="text-xs text-gray-600">
+                          <strong>Location:</strong> {otpLog.location_latitude.toFixed(6)}, {otpLog.location_longitude.toFixed(6)}
+                        </p>
+                      </div>
+                    )}
+                    {otpLog.verified_by_user && (
+                      <p className="text-xs text-gray-500 mt-2">
+                        Verified by: {otpLog.verified_by_user.first_name} {otpLog.verified_by_user.last_name} 
+                        {otpLog.verified_at && ` on ${new Date(otpLog.verified_at).toLocaleString()}`}
+                      </p>
+                    )}
+                    {otpLog.expires_at && new Date(otpLog.expires_at) < new Date() && otpLog.status === 'pending' && (
+                      <p className="text-xs text-red-600 mt-1">⚠️ OTP Expired</p>
+                    )}
+                  </div>
+                  <div className="ml-4 flex flex-col space-y-2">
+                    {otpLog.status === 'verified' && otpLog.device_uuid && !registeredDeviceUuids.has(otpLog.device_uuid) && (
+                      <button
+                        onClick={() => handleRegisterDeviceFromOTP(otpLog)}
+                        disabled={loading}
+                        className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                        title="Register device using this OTP log"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span>Register Device</span>
+                      </button>
+                    )}
+                    {otpLog.status === 'verified' && otpLog.device_uuid && registeredDeviceUuids.has(otpLog.device_uuid) && (
+                      <div className="px-3 py-2 text-xs text-green-600 bg-green-50 border border-green-200 rounded-lg">
+                        <p className="font-medium text-green-800">Device Registered</p>
+                        <p className="text-green-700 mt-1">This device has already been registered.</p>
+                      </div>
+                    )}
+                    {otpLog.status === 'verified' && !otpLog.device_uuid && (
+                      <div className="px-3 py-2 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg">
+                        <p className="font-medium text-red-800">Missing Device UUID</p>
+                        <p className="text-red-700 mt-1">Cannot register device without UUID. Please request a new OTP.</p>
+                      </div>
+                    )}
+                    {otpLog.status === 'pending' && (
+                      <div className="px-3 py-2 text-xs text-gray-600 bg-yellow-50 border border-yellow-200 rounded-lg">
+                        <p className="font-medium text-yellow-800">Pending Verification</p>
+                        <p className="text-yellow-700 mt-1">Waiting for user to verify OTP</p>
+                        <p className="text-yellow-600 mt-1">OTP Code: <span className="font-mono font-bold">{otpLog.otp_code}</span></p>
+                      </div>
+                    )}
+                    {(otpLog.status === 'expired' || otpLog.status === 'failed') && (
+                      <span className="px-3 py-2 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg text-center">
+                        {otpLog.status === 'expired' ? 'OTP Expired' : 'OTP Failed'}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="mt-4 p-4 bg-purple-50 border border-purple-200 rounded-lg">
+          <p className="text-xs text-purple-800">
+            💡 <strong>How it works:</strong> When a user requests device registration, an OTP code is sent to administrators. Once the OTP is verified by the user, click "Register Device" to select a branch and register the device to that branch.
+          </p>
+        </div>
+      </div>
+
       {/* Branch List Card */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
         <div className="flex items-center justify-between mb-6">
@@ -2974,9 +3400,11 @@ const SettingsPage: React.FC = () => {
               if (branchId) {
                 fetchBranchDevices(branchId);
                 fetchBranchActivityLogs(branchId);
+                fetchBranchOTPLogs(branchId);
               } else {
                 setBranchDevices([]);
                 setBranchActivityLogs([]);
+                setBranchOTPLogs([]);
               }
             }}
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
@@ -3045,6 +3473,7 @@ const SettingsPage: React.FC = () => {
                   onClick={() => {
                     setDeviceFormData({
                       device_name: '',
+                      device_uuid: '',
                       device_fingerprint: '',
                       device_type: 'kiosk'
                     });
@@ -3216,6 +3645,7 @@ const SettingsPage: React.FC = () => {
                 </div>
               )}
             </div>
+
           </div>
         )}
 
@@ -3234,24 +3664,25 @@ const SettingsPage: React.FC = () => {
             <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
               <h3 className="text-xl font-semibold text-gray-900">Register Attendance Terminal Device</h3>
               <button
-                onClick={() => {
-                  setShowDeviceModal(false);
-                  setDeviceFormData({
-                    device_name: '',
-                    device_fingerprint: '',
-                    device_type: 'kiosk'
-                  });
-                }}
-                className="p-2 text-gray-400 hover:text-gray-600 rounded-lg"
-              >
-                <X className="w-5 h-5" />
-              </button>
+                  onClick={() => {
+                    setShowDeviceModal(false);
+                    setDeviceFormData({
+                      device_name: '',
+                      device_uuid: '',
+                      device_fingerprint: '',
+                      device_type: 'kiosk'
+                    });
+                  }}
+                  className="p-2 text-gray-400 hover:text-gray-600 rounded-lg"
+                >
+                  <X className="w-5 h-5" />
+                </button>
             </div>
 
             <div className="p-6 space-y-6">
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                 <p className="text-sm text-blue-800">
-                  💡 <strong>Device Fingerprint:</strong> The device fingerprint is automatically generated when the attendance terminal page loads. Copy it from the terminal page or generate a new one below.
+                  💡 <strong>Device Registration:</strong> For OTP-based registration, devices are automatically registered with a stable UUID. For manual registration, you can paste the device UUID from the OTP log or use a device fingerprint.
                 </p>
               </div>
 
@@ -3271,7 +3702,32 @@ const SettingsPage: React.FC = () => {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Device Fingerprint <span className="text-red-500">*</span>
+                  Device UUID (Recommended) <span className="text-blue-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={deviceFormData.device_uuid}
+                  onChange={(e) => setDeviceFormData({ ...deviceFormData, device_uuid: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent font-mono text-sm"
+                  placeholder="Paste device UUID from OTP log (e.g., xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Stable UUID from browser localStorage. Get this from the OTP Request Logs.
+                </p>
+                <button
+                  onClick={() => {
+                    const uuid = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `temp-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
+                    setDeviceFormData({ ...deviceFormData, device_uuid: uuid });
+                  }}
+                  className="mt-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+                >
+                  Generate New UUID
+                </button>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Device Fingerprint (Alternative/Backward Compatibility)
                 </label>
                 <div className="flex space-x-2">
                   <input
@@ -3279,19 +3735,21 @@ const SettingsPage: React.FC = () => {
                     value={deviceFormData.device_fingerprint}
                     onChange={(e) => setDeviceFormData({ ...deviceFormData, device_fingerprint: e.target.value })}
                     className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent font-mono text-sm"
-                    placeholder="Paste device fingerprint here"
+                    placeholder="Paste device fingerprint here (optional)"
                   />
                   <button
                     onClick={() => {
                       const fingerprint = generateDeviceFingerprint();
                       setDeviceFormData({ ...deviceFormData, device_fingerprint: fingerprint });
                     }}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                    className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
                   >
                     Generate
                   </button>
                 </div>
-                <p className="text-xs text-gray-500 mt-1">Unique identifier for this device/browser</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  Legacy method. Use Device UUID for stable identification. Fingerprint is for metadata only.
+                </p>
               </div>
 
               <div>
@@ -3323,6 +3781,7 @@ const SettingsPage: React.FC = () => {
                   setShowDeviceModal(false);
                   setDeviceFormData({
                     device_name: '',
+                    device_uuid: '',
                     device_fingerprint: '',
                     device_type: 'kiosk'
                   });
@@ -3333,7 +3792,7 @@ const SettingsPage: React.FC = () => {
               </button>
               <button
                 onClick={handleRegisterDevice}
-                disabled={loading || !deviceFormData.device_name || !deviceFormData.device_fingerprint}
+                disabled={loading || !deviceFormData.device_name || (!deviceFormData.device_uuid && !deviceFormData.device_fingerprint)}
                 className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
               >
                 {loading ? (
@@ -3342,6 +3801,137 @@ const SettingsPage: React.FC = () => {
                   <Save className="w-4 h-4" />
                 )}
                 <span>{loading ? 'Registering...' : 'Register Device'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Branch Selection Modal for Device Registration */}
+      {showBranchSelectionModal && selectedOTPLogForRegistration && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-2xl w-full">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+              <h3 className="text-xl font-semibold text-gray-900">Register Device</h3>
+              <button
+                onClick={() => {
+                  setShowBranchSelectionModal(false);
+                  setSelectedOTPLogForRegistration(null);
+                  setSelectedBranchForRegistration('');
+                }}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <p className="text-sm text-blue-800">
+                  <strong>OTP Code:</strong> <span className="font-mono">{selectedOTPLogForRegistration.otp_code}</span>
+                </p>
+                {selectedOTPLogForRegistration.device_uuid && (
+                  <p className="text-xs text-blue-700 mt-2">
+                    <strong>Device UUID:</strong> <span className="font-mono break-all">{selectedOTPLogForRegistration.device_uuid}</span>
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Select Branch to Register Device <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={selectedBranchForRegistration}
+                  onChange={(e) => setSelectedBranchForRegistration(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                >
+                  <option value="">-- Select a branch --</option>
+                  {branches
+                    .filter(branch => branch.is_active)
+                    .map((branch) => (
+                      <option key={branch.id} value={branch.id}>
+                        {branch.name} {branch.code && `(${branch.code})`}
+                      </option>
+                    ))}
+                </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  Select the branch where this device will be registered for attendance terminal access.
+                </p>
+              </div>
+
+              {selectedOTPLogForRegistration.device_uuid && (
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                  <p className="text-xs font-medium text-gray-700 mb-2">Device UUID (Primary Identifier):</p>
+                  <p className="text-xs font-mono text-gray-800 break-all mb-2">
+                    {selectedOTPLogForRegistration.device_uuid}
+                  </p>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(selectedOTPLogForRegistration.device_uuid || '');
+                      alert('Device UUID copied to clipboard!');
+                    }}
+                    className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                  >
+                    Copy UUID to Clipboard
+                  </button>
+                </div>
+              )}
+
+              {selectedOTPLogForRegistration.device_fingerprint && (
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                  <p className="text-xs font-medium text-gray-700 mb-2">Device Fingerprint (Metadata):</p>
+                  <p className="text-xs font-mono text-gray-800 break-all mb-2">
+                    {selectedOTPLogForRegistration.device_fingerprint}
+                  </p>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(selectedOTPLogForRegistration.device_fingerprint || '');
+                      alert('Device fingerprint copied to clipboard!');
+                    }}
+                    className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                  >
+                    Copy to Clipboard
+                  </button>
+                </div>
+              )}
+
+              {selectedOTPLogForRegistration.location_latitude && selectedOTPLogForRegistration.location_longitude && (
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                  <p className="text-xs text-gray-600">
+                    <strong>Location:</strong> {selectedOTPLogForRegistration.location_latitude.toFixed(6)}, {selectedOTPLogForRegistration.location_longitude.toFixed(6)}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-6 py-4 flex items-center justify-end space-x-3">
+              <button
+                onClick={() => {
+                  setShowBranchSelectionModal(false);
+                  setSelectedOTPLogForRegistration(null);
+                  setSelectedBranchForRegistration('');
+                }}
+                className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmRegisterDeviceFromOTP}
+                disabled={loading || !selectedBranchForRegistration}
+                className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+              >
+                {loading ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Registering...</span>
+                  </>
+                ) : (
+                  <>
+                    <Plus className="w-4 h-4" />
+                    <span>Register Device</span>
+                  </>
+                )}
               </button>
             </div>
           </div>

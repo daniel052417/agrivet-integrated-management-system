@@ -25,6 +25,7 @@ export interface OTPEmailData {
   otpCode: string;
   expiryMinutes: number;
   companyName?: string;
+  customMessage?: string;
 }
 
 export const emailService = {
@@ -277,18 +278,30 @@ export const emailService = {
    */
   async sendOTPEmail(data: OTPEmailData): Promise<EmailResult> {
     try {
-      const { to, name, otpCode, expiryMinutes = 5, companyName = 'AgriVet Management System' } = data;
+      const { to, name, otpCode, expiryMinutes = 5, companyName = 'AgriVet Management System', customMessage } = data;
+      
+      // Determine subject and header based on custom message
+      const isDeviceRegistration = customMessage?.includes('device registration') || customMessage?.includes('Attendance Terminal');
+      const subject = isDeviceRegistration 
+        ? `Device Registration OTP Code - ${companyName}`
+        : `Your Login Verification Code - ${companyName}`;
+      const headerTitle = isDeviceRegistration 
+        ? '🔐 Device Registration OTP Code'
+        : '🔐 Login Verification Code';
+      const introText = isDeviceRegistration
+        ? `A device registration request has been made for <strong>${companyName}</strong>. Please use the OTP code below to verify and register the device:`
+        : `You've requested to log in to your <strong>${companyName}</strong> account. Please use the verification code below:`;
       
       const emailContent = {
         to,
-        subject: `Your Login Verification Code - ${companyName}`,
+        subject,
         html: `
           <!DOCTYPE html>
           <html>
           <head>
             <meta charset="utf-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Login Verification Code</title>
+            <title>${isDeviceRegistration ? 'Device Registration' : 'Login'} Verification Code</title>
             <style>
               body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
               .container { max-width: 600px; margin: 0 auto; padding: 20px; }
@@ -298,16 +311,24 @@ export const emailService = {
               .otp-code { font-size: 32px; font-weight: bold; color: #2563eb; letter-spacing: 8px; font-family: 'Courier New', monospace; }
               .warning { background: #fef3c7; border: 1px solid #f59e0b; padding: 15px; border-radius: 6px; margin: 20px 0; }
               .footer { text-align: center; margin-top: 30px; color: #6b7280; font-size: 14px; }
+              .custom-message { background: #e0f2fe; border: 1px solid #0284c7; padding: 15px; border-radius: 6px; margin: 20px 0; }
             </style>
           </head>
           <body>
             <div class="container">
               <div class="header">
-                <h1>🔐 Login Verification Code</h1>
+                <h1>${headerTitle}</h1>
               </div>
               <div class="content">
                 <h2>Hello ${name}!</h2>
-                <p>You've requested to log in to your <strong>${companyName}</strong> account. Please use the verification code below:</p>
+                <p>${introText}</p>
+                
+                ${customMessage ? `
+                <div class="custom-message">
+                  <strong>ℹ️ Request Details:</strong><br>
+                  ${customMessage}
+                </div>
+                ` : ''}
                 
                 <div class="otp-box">
                   <div style="color: #6b7280; font-size: 14px; margin-bottom: 10px;">Your verification code:</div>

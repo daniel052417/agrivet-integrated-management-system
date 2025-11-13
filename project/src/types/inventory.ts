@@ -55,8 +55,8 @@ export interface InventoryManagementRow {
   last_updated: string;
   last_counted: string | null;
   product_created_at: string;
-  batch_no: string | null;
-  expiration_date: string | null;
+  batch_no: string;
+  expiration_date: string;
   
   
   // Multi-unit support

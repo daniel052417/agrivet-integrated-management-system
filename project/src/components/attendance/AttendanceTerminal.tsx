@@ -12,7 +12,8 @@ import {
 } from '../../lib/attendanceService';
 import { branchManagementService, Branch, AttendanceSecuritySettings } from '../../lib/branchManagementService';
 import { attendanceTerminalDeviceService } from '../../lib/attendanceTerminalDeviceService';
-import { generateDeviceFingerprint, getDeviceInfo } from '../../lib/utils/deviceFingerprint';
+import { getStableDeviceId, generateDeviceFingerprint, getDeviceInfo } from '../../lib/utils/deviceFingerprint';
+import { supabase } from '../../lib/supabase';
 import * as faceapi from 'face-api.js';
 
 type ActionType = 'timein' | 'timeout' | null;
@@ -48,6 +49,7 @@ const AttendanceTerminal: React.FC = () => {
   const streamRef = useRef<MediaStream | null>(null);
   const detectionIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const autoResetTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const securityCheckExecuted = useRef(false);
   
   const [isProcessing, setIsProcessing] = useState(false);
   const [actionType, setActionType] = useState<ActionType>(null);
@@ -92,25 +94,97 @@ const AttendanceTerminal: React.FC = () => {
         setSecurityCheck(prev => ({ ...prev, isLoading: true, error: null }));
         console.log('🔒 Starting security check...');
 
-        // Get branch ID from URL parameter or use default branch
-        const urlParams = new URLSearchParams(window.location.search);
-        const branchId = urlParams.get('branch_id') || null;
-
-        // Get all branches to find the one to use
+        // Get stable device UUID from localStorage (primary identifier)
+        const deviceUuid = getStableDeviceId();
+        console.log('🔍 Device UUID (stable):', deviceUuid);
+        
+        // Get all branches
         const branches = await branchManagementService.getAllBranches();
-        let branch: Branch | null = null;
-
-        if (branchId) {
-          branch = branches.find(b => b.id === branchId) || null;
-        } else {
-          // Use first active branch or main branch
-          branch = branches.find(b => b.is_active && b.branch_type === 'main') || 
-                   branches.find(b => b.is_active) || 
-                   branches[0] || null;
+        if (!branches || branches.length === 0) {
+          throw new Error('No branches found. Please configure a branch first.');
         }
 
+        // Find which branch the device is registered in
+        // Search across all branches to find the device registration
+        let branch: Branch | null = null;
+        let registeredDevice: any = null;
+        
+        // First, check if branch_id is provided in URL (from LandingPage navigation)
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlBranchId = urlParams.get('branch_id');
+        
+        if (urlBranchId) {
+          // If branch_id is in URL, check that branch first
+          branch = branches.find(b => b.id === urlBranchId) || null;
+          if (branch) {
+            console.log('📍 Checking device in URL branch:', branch.name);
+            try {
+              registeredDevice = await attendanceTerminalDeviceService.getDeviceByUuid(
+                branch.id,
+                deviceUuid
+              );
+              if (registeredDevice && registeredDevice.is_active) {
+                console.log('✅ Device found in URL branch:', branch.name);
+              } else {
+                registeredDevice = null;
+                branch = null;
+              }
+            } catch (err) {
+              console.log('ℹ️ Device not found in URL branch, searching all branches...');
+              registeredDevice = null;
+              branch = null;
+            }
+          }
+        }
+        
+        // If device not found in URL branch, search all branches
+        if (!registeredDevice) {
+          console.log('🔍 Searching for device registration across all branches...');
+          for (const b of branches) {
+            if (!b.is_active) continue; // Skip inactive branches
+            
+            try {
+              const device = await attendanceTerminalDeviceService.getDeviceByUuid(
+                b.id,
+                deviceUuid
+              );
+              
+              if (device && device.is_active) {
+                registeredDevice = device;
+                branch = b;
+                console.log('✅ Device found in branch:', {
+                  branchId: b.id,
+                  branchName: b.name,
+                  deviceId: device.id,
+                  deviceName: device.device_name
+                });
+                break; // Found device, stop searching
+              }
+            } catch (err) {
+              // Device not found in this branch, continue searching
+              continue;
+            }
+          }
+        }
+        
+        // If still no branch found, use URL branch or default branch
         if (!branch) {
-          throw new Error('No branch found. Please configure a branch first.');
+          if (urlBranchId) {
+            branch = branches.find(b => b.id === urlBranchId) || null;
+          }
+          
+          if (!branch) {
+            // Use first active branch or main branch as fallback
+            branch = branches.find(b => b.is_active && b.branch_type === 'main') || 
+                     branches.find(b => b.is_active) || 
+                     branches[0] || null;
+          }
+          
+          if (!branch) {
+            throw new Error('No branch found. Please configure a branch first.');
+          }
+          
+          console.log('⚠️ Device not registered, using branch:', branch.name);
         }
 
         console.log('✅ Branch found:', {
@@ -154,9 +228,9 @@ const AttendanceTerminal: React.FC = () => {
           console.warn('⚠️ To enable device verification, configure security settings in Settings → Branch Management');
         }
 
-        // Generate device fingerprint (always generate for logging)
+        // Generate device fingerprint for metadata/logging
         const deviceFingerprint = generateDeviceFingerprint();
-        console.log('🔍 Device fingerprint generated:', deviceFingerprint.substring(0, 20) + '...');
+        console.log('🔍 Device fingerprint (metadata):', deviceFingerprint.substring(0, 20) + '...');
 
         // Always log access attempt (even if security is disabled)
         const logAccessAttempt = async (actionType: 'device_verified' | 'device_blocked' | 'access_denied', status: 'success' | 'blocked' | 'failed', reason: string, deviceId: string | null = null) => {
@@ -194,62 +268,129 @@ const AttendanceTerminal: React.FC = () => {
         let deviceId: string | null = null;
         if (securitySettings.enableDeviceVerification) {
           console.log('🔒 Device verification ENABLED, checking device...');
-          try {
-            const device = await attendanceTerminalDeviceService.getDeviceByFingerprint(
-              branch.id,
-              deviceFingerprint
-            );
-
-            console.log('🔍 Device lookup result:', {
-              deviceFound: !!device,
-              deviceActive: device?.is_active || false,
-              deviceId: device?.id || null,
-              deviceName: device?.device_name || null
+          
+          // Use the device found during branch search
+          let device = registeredDevice;
+          
+          // If device was found in a different branch, switch to that branch
+          if (device && device.branch && device.branch.id !== branch.id) {
+            console.log('⚠️ Device is registered in a different branch:', {
+              deviceBranch: device.branch.name,
+              deviceBranchId: device.branch.id,
+              currentBranch: branch.name,
+              currentBranchId: branch.id
             });
-
-            if (!device || !device.is_active) {
-              // Log unauthorized device attempt
-              await logAccessAttempt(
-                'device_blocked',
-                'blocked',
-                'Device not registered or inactive',
-                null
-              );
-
-              const errorMsg = 'Unauthorized device. Only authorized devices can access this page. Please contact your administrator to register this device.';
-              console.error('❌ Device verification failed:', errorMsg);
-              throw new Error(errorMsg);
+            console.log('📍 Switching to device branch:', device.branch.name);
+            
+            // Switch to the branch where device is registered
+            const deviceBranch = branches.find(b => b.id === device.branch!.id);
+            if (deviceBranch) {
+              branch = deviceBranch;
+              
+              // Reload security settings for the correct branch
+              if (branch.attendance_security_settings && typeof branch.attendance_security_settings === 'object') {
+                securitySettings = branch.attendance_security_settings as AttendanceSecuritySettings;
+                console.log('✅ Security settings reloaded for device branch:', {
+                  branchName: branch.name,
+                  enableDeviceVerification: securitySettings.enableDeviceVerification,
+                  enableGeoLocationVerification: securitySettings.enableGeoLocationVerification,
+                  enablePinAccessControl: securitySettings.enablePinAccessControl
+                });
+              }
             }
-
-            deviceId = device.id;
-            console.log('✅ Device verified successfully:', {
-              deviceId: device.id,
-              deviceName: device.device_name,
-              deviceType: device.device_type,
-              isActive: device.is_active
-            });
-
-            // Update device last used
-            try {
-              await attendanceTerminalDeviceService.updateDeviceLastUsed(device.id);
-              console.log('✅ Device last used timestamp updated');
-            } catch (updateErr: any) {
-              console.warn('⚠️ Failed to update device last used:', updateErr);
-              // Don't throw - this is not critical
-            }
-
-            // Log device verification success
-            await logAccessAttempt(
-              'device_verified',
-              'success',
-              'Device verified successfully',
-              device.id
-            );
-          } catch (deviceErr: any) {
-            console.error('❌ Device verification failed:', deviceErr);
-            // Error is already logged in logAccessAttempt, so just rethrow
-            throw deviceErr;
           }
+          
+          // If device not found yet, check in current branch (fallback)
+          if (!device) {
+            try {
+              device = await attendanceTerminalDeviceService.getDeviceByUuid(
+                branch.id,
+                deviceUuid
+              );
+              
+              // Fallback to fingerprint lookup for backward compatibility
+              if (!device) {
+                console.log('⚠️ Device not found by UUID, trying fingerprint lookup...');
+                device = await attendanceTerminalDeviceService.getDeviceByFingerprint(
+                  branch.id,
+                  deviceFingerprint
+                );
+                
+                // If found by fingerprint but no UUID, update it with the UUID
+                if (device && !device.device_uuid) {
+                  console.log('✅ Updating device with UUID for future lookups...');
+                  try {
+                    const { data: updatedDevice, error: updateError } = await supabase
+                      .from('attendance_terminal_devices')
+                      .update({ device_uuid: deviceUuid })
+                      .eq('id', device.id)
+                      .select()
+                      .single();
+                    
+                    if (!updateError && updatedDevice) {
+                      device = updatedDevice;
+                      console.log('✅ Device updated with UUID');
+                    }
+                  } catch (updateErr: any) {
+                    console.warn('⚠️ Failed to update device with UUID:', updateErr);
+                  }
+                }
+              }
+            } catch (deviceErr: any) {
+              console.error('❌ Error checking device:', deviceErr);
+              device = null;
+            }
+          }
+
+          console.log('🔍 Device lookup result:', {
+            deviceFound: !!device,
+            deviceActive: device?.is_active || false,
+            deviceId: device?.id || null,
+            deviceName: device?.device_name || null,
+            branchName: branch.name,
+            branchId: branch.id
+          });
+
+          if (!device || !device.is_active) {
+            // Log unauthorized device attempt
+            await logAccessAttempt(
+              'device_blocked',
+              'blocked',
+              'Device not registered or inactive',
+              null
+            );
+
+            const errorMsg = 'Unauthorized device. Only authorized devices can access this page. Please contact your administrator to register this device.';
+            console.error('❌ Device verification failed:', errorMsg);
+            throw new Error(errorMsg);
+          }
+
+          deviceId = device.id;
+          console.log('✅ Device verified successfully:', {
+            deviceId: device.id,
+            deviceName: device.device_name,
+            deviceType: device.device_type,
+            isActive: device.is_active,
+            branchName: branch.name,
+            branchId: branch.id
+          });
+
+          // Update device last used
+          try {
+            await attendanceTerminalDeviceService.updateDeviceLastUsed(device.id);
+            console.log('✅ Device last used timestamp updated');
+          } catch (updateErr: any) {
+            console.warn('⚠️ Failed to update device last used:', updateErr);
+            // Don't throw - this is not critical
+          }
+
+          // Log device verification success
+          await logAccessAttempt(
+            'device_verified',
+            'success',
+            'Device verified successfully',
+            device.id
+          );
         } else {
           console.log('⚠️ Device verification DISABLED - allowing all devices');
           // Even if device verification is disabled, try to find the device for logging purposes
