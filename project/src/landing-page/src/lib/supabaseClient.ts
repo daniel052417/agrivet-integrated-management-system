@@ -92,6 +92,68 @@ export interface ProductWithJoinedCategory {
   };
 }
 
+// Promotion type based on database schema
+export interface Promotion {
+  id: string;
+  title: string;
+  description: string;
+  start_date: string;
+  end_date: string;
+  products: any[] | null;
+  categories: any[] | null;
+  show_on_pwa: boolean;
+  show_on_landing_page: boolean;
+  share_to_facebook: boolean;
+  status: 'draft' | 'active' | 'upcoming' | 'expired' | 'archived';
+  max_uses: number | null;
+  total_uses: number;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  image_url: string | null;
+  promotion_type: 'new_item' | 'restock' | 'event';
+  total_views: number;
+  total_clicks: number;
+  updated_by: string | null;
+  image_urls: string[] | null;
+  layout_style: string | null;
+  text_alignment: string | null;
+  font_family: string | null;
+  font_size: string | null;
+  text_color: string | null;
+  button_text: string | null;
+  button_link: string | null;
+  is_active: boolean;
+  display_priority: number;
+  display_settings: any;
+  display_mode: 'banner' | 'modal' | 'notification' | 'carousel';
+  auto_end: boolean;
+  pin_to_top: boolean;
+  slideshow_autoplay: boolean;
+  slideshow_speed: number | null;
+}
 
-
+// Branch type based on database schema
+export interface Branch {
+  id: string;
+  name: string;
+  code: string;
+  address: string;
+  city: string;
+  province: string;
+  postal_code: string | null;
+  phone: string | null;
+  email: string | null;
+  manager_id: string | null;
+  is_active: boolean;
+  operating_hours: any;
+  created_at: string;
+  branch_type: 'main' | 'satellite';
+  latitude: number | null;
+  longitude: number | null;
+  attendance_pin: string | null;
+  attendance_security_settings: any;
+  allow_device_registration: boolean;
+  allow_attendance_device_for_pos: boolean;
+}
 
