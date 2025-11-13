@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { emailService } from './emailService';
+import { getManilaTimestamp, getManilaTimestampWithOffset } from './utils/manilaTimestamp';
 
 /**
  * MFA OTP Service
@@ -146,16 +147,19 @@ class MFAService {
     try {
       // Generate OTP
       const otpCode = this.generateOTP();
-      const expiresAt = new Date();
-      expiresAt.setMinutes(expiresAt.getMinutes() + this.OTP_EXPIRY_MINUTES);
+      // Calculate expiry time in Manila timezone (5 minutes from now)
+      const expiresAt = getManilaTimestampWithOffset(this.OTP_EXPIRY_MINUTES * 60 * 1000);
 
       // Store OTP in database
+      // Explicitly set created_at to Manila time to match expires_at
+      const createdAt = getManilaTimestamp();
       const { error: storeError } = await supabase
         .from('mfa_otp_codes')
         .insert({
           user_id: userId,
           otp_code: otpCode,
-          expires_at: expiresAt.toISOString(),
+          expires_at: expiresAt,
+          created_at: createdAt,
           used: false
         });
 
@@ -219,7 +223,7 @@ class MFAService {
         .eq('user_id', userId)
         .eq('otp_code', otpCode)
         .eq('used', false)
-        .gt('expires_at', new Date().toISOString())
+        .gt('expires_at', getManilaTimestamp())
         .order('created_at', { ascending: false })
         .limit(1)
         .single();
@@ -286,7 +290,7 @@ class MFAService {
         // Update last used time
         await supabase
           .from('verified_devices')
-          .update({ last_used_at: new Date().toISOString() })
+          .update({ last_used_at: getManilaTimestamp() })
           .eq('id', existing.id);
       } else {
         // Insert new verified device
@@ -297,8 +301,8 @@ class MFAService {
             device_fingerprint: deviceFingerprint,
             device_name: this.getDeviceName(),
             browser_info: deviceInfo,
-            verified_at: new Date().toISOString(),
-            last_used_at: new Date().toISOString()
+            verified_at: getManilaTimestamp(),
+            last_used_at: getManilaTimestamp()
           });
       }
     } catch (error) {
@@ -338,7 +342,7 @@ class MFAService {
         .from('mfa_otp_codes')
         .delete()
         .eq('user_id', userId)
-        .lt('expires_at', new Date().toISOString());
+        .lt('expires_at', getManilaTimestamp());
     } catch (error) {
       console.error('Error cleaning up OTP codes:', error);
     }

@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { User, MapPin, Phone, Mail, Building2, CheckCircle, AlertCircle } from 'lucide-react'
 import { supabase } from '../services/supabase'
 import { useAuth } from '../contexts/AuthContext'
+import { getManilaTimestamp } from '../utils/dateTime'
 
 interface ProfileCompletionProps {
   userId?: string
@@ -93,7 +94,7 @@ const ProfileCompletion: React.FC<ProfileCompletionProps> = (props) => {
             province: formData.province,
             postal_code: formData.postalCode,
             customer_type: formData.customerType,
-            updated_at: new Date().toISOString()
+            updated_at: getManilaTimestamp()
           })
           .eq('user_id', initialData.userId)
         
@@ -154,8 +155,8 @@ const ProfileCompletion: React.FC<ProfileCompletionProps> = (props) => {
         user_type: 'customer' as const,
         is_active: true,
         email_verified: true, // OAuth users are pre-verified
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        created_at: getManilaTimestamp(),
+        updated_at: getManilaTimestamp()
       }
       
       localStorage.setItem('auth_user', JSON.stringify(customerData))

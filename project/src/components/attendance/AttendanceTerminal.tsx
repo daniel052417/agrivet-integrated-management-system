@@ -1,8 +1,18 @@
 // components/attendance/AttendanceTerminal.tsx
 import React, { useState, useRef, useEffect } from 'react';
-import { Clock, Camera, LogOut, CheckCircle, XCircle, AlertCircle, User, Loader2 } from 'lucide-react';
+import { Clock, Camera, LogOut, CheckCircle, XCircle, AlertCircle, User, Loader2, Sun, Moon, Shield, MapPin, Lock } from 'lucide-react';
 import { faceRegistrationService } from '../../lib/faceRegistrationService';
-import { attendanceService, StaffInfo } from '../../lib/attendanceService';
+import { 
+  attendanceService, 
+  StaffInfo, 
+  AttendanceSession, 
+  SessionAction, 
+  SessionInfo,
+  AttendanceRecord
+} from '../../lib/attendanceService';
+import { branchManagementService, Branch, AttendanceSecuritySettings } from '../../lib/branchManagementService';
+import { attendanceTerminalDeviceService } from '../../lib/attendanceTerminalDeviceService';
+import { generateDeviceFingerprint, getDeviceInfo } from '../../lib/utils/deviceFingerprint';
 import * as faceapi from 'face-api.js';
 
 type ActionType = 'timein' | 'timeout' | null;
@@ -48,40 +58,623 @@ const AttendanceTerminal: React.FC = () => {
   const [modelsLoaded, setModelsLoaded] = useState(false);
   const [isWebcamActive, setIsWebcamActive] = useState(false);
   const [currentAttempt, setCurrentAttempt] = useState(0);
+  const [currentSession, setCurrentSession] = useState<AttendanceSession | null>(null);
+  const [sessionInfo, setSessionInfo] = useState<SessionInfo | null>(null);
+  const [attendanceRecord, setAttendanceRecord] = useState<AttendanceRecord | null>(null);
+  
+  // Security state
+  const [securityCheck, setSecurityCheck] = useState<{
+    isLoading: boolean;
+    isAuthorized: boolean;
+    error: string | null;
+    branch: Branch | null;
+    securitySettings: AttendanceSecuritySettings | null;
+    deviceId: string | null;
+    requiresPin: boolean;
+    pinVerified: boolean;
+  }>({
+    isLoading: true,
+    isAuthorized: false,
+    error: null,
+    branch: null,
+    securitySettings: null,
+    deviceId: null,
+    requiresPin: false,
+    pinVerified: false
+  });
+  const [pinInput, setPinInput] = useState('');
+  const [showPinModal, setShowPinModal] = useState(false);
 
-  // Load models on component mount
+  // Check security on component mount
   useEffect(() => {
-    const loadModels = async () => {
+    const checkSecurity = async () => {
       try {
-        setStatus('loading');
-        setStatusMessage('Loading face recognition models...');
-        console.log('🔄 Loading face recognition models...');
+        setSecurityCheck(prev => ({ ...prev, isLoading: true, error: null }));
+        console.log('🔒 Starting security check...');
+
+        // Get branch ID from URL parameter or use default branch
+        const urlParams = new URLSearchParams(window.location.search);
+        const branchId = urlParams.get('branch_id') || null;
+
+        // Get all branches to find the one to use
+        const branches = await branchManagementService.getAllBranches();
+        let branch: Branch | null = null;
+
+        if (branchId) {
+          branch = branches.find(b => b.id === branchId) || null;
+        } else {
+          // Use first active branch or main branch
+          branch = branches.find(b => b.is_active && b.branch_type === 'main') || 
+                   branches.find(b => b.is_active) || 
+                   branches[0] || null;
+        }
+
+        if (!branch) {
+          throw new Error('No branch found. Please configure a branch first.');
+        }
+
+        console.log('✅ Branch found:', {
+          branchId: branch.id,
+          branchName: branch.name,
+          hasSecuritySettings: !!branch.attendance_security_settings,
+          securitySettingsRaw: branch.attendance_security_settings
+        });
+
+        // Parse security settings from branch
+        let securitySettings: AttendanceSecuritySettings;
+        if (branch.attendance_security_settings && typeof branch.attendance_security_settings === 'object') {
+          // Use settings from database (parse JSONB if needed)
+          securitySettings = branch.attendance_security_settings as AttendanceSecuritySettings;
+          console.log('✅ Security settings loaded from database:', {
+            enableDeviceVerification: securitySettings.enableDeviceVerification,
+            enableGeoLocationVerification: securitySettings.enableGeoLocationVerification,
+            enablePinAccessControl: securitySettings.enablePinAccessControl,
+            enableActivityLogging: securitySettings.enableActivityLogging,
+            geoLocationToleranceMeters: securitySettings.geoLocationToleranceMeters,
+            rawSettings: securitySettings
+          });
+          
+          // Validate that settings are actually enabled
+          if (securitySettings.enableDeviceVerification === undefined) {
+            console.warn('⚠️ enableDeviceVerification is undefined, defaulting to false');
+            securitySettings.enableDeviceVerification = false;
+          }
+        } else {
+          // Default settings (all disabled for backward compatibility)
+          securitySettings = {
+            enableDeviceVerification: false,
+            enableGeoLocationVerification: false,
+            enablePinAccessControl: false,
+            geoLocationToleranceMeters: 100,
+            requirePinForEachSession: false,
+            pinSessionDurationHours: 24,
+            enableActivityLogging: true
+          };
+          console.warn('⚠️ No security settings found in database, using defaults (all disabled)');
+          console.warn('⚠️ To enable device verification, configure security settings in Settings → Branch Management');
+        }
+
+        // Generate device fingerprint (always generate for logging)
+        const deviceFingerprint = generateDeviceFingerprint();
+        console.log('🔍 Device fingerprint generated:', deviceFingerprint.substring(0, 20) + '...');
+
+        // Always log access attempt (even if security is disabled)
+        const logAccessAttempt = async (actionType: 'device_verified' | 'device_blocked' | 'access_denied', status: 'success' | 'blocked' | 'failed', reason: string, deviceId: string | null = null) => {
+          if (securitySettings.enableActivityLogging) {
+            try {
+              console.log('📝 Logging access attempt:', { actionType, status, reason });
+              await attendanceTerminalDeviceService.logActivity({
+                branch_id: branch.id,
+                device_id: deviceId,
+                device_fingerprint: deviceFingerprint,
+                action_type: actionType,
+                status: status,
+                status_reason: reason,
+                user_agent: navigator.userAgent,
+                session_data: {
+                  fingerprint: deviceFingerprint.substring(0, 20) + '...',
+                  securitySettings: {
+                    deviceVerification: securitySettings.enableDeviceVerification,
+                    geoLocation: securitySettings.enableGeoLocationVerification,
+                    pinAccess: securitySettings.enablePinAccessControl
+                  }
+                }
+              });
+              console.log('✅ Access attempt logged successfully');
+            } catch (logErr: any) {
+              console.error('❌ Failed to log access attempt:', logErr);
+              // Don't throw - logging failures shouldn't block access
+            }
+          } else {
+            console.log('⚠️ Activity logging disabled, skipping log');
+          }
+        };
+
+        // Check device verification
+        let deviceId: string | null = null;
+        if (securitySettings.enableDeviceVerification) {
+          console.log('🔒 Device verification ENABLED, checking device...');
+          try {
+            const device = await attendanceTerminalDeviceService.getDeviceByFingerprint(
+              branch.id,
+              deviceFingerprint
+            );
+
+            console.log('🔍 Device lookup result:', {
+              deviceFound: !!device,
+              deviceActive: device?.is_active || false,
+              deviceId: device?.id || null,
+              deviceName: device?.device_name || null
+            });
+
+            if (!device || !device.is_active) {
+              // Log unauthorized device attempt
+              await logAccessAttempt(
+                'device_blocked',
+                'blocked',
+                'Device not registered or inactive',
+                null
+              );
+
+              const errorMsg = 'Unauthorized device. Only authorized devices can access this page. Please contact your administrator to register this device.';
+              console.error('❌ Device verification failed:', errorMsg);
+              throw new Error(errorMsg);
+            }
+
+            deviceId = device.id;
+            console.log('✅ Device verified successfully:', {
+              deviceId: device.id,
+              deviceName: device.device_name,
+              deviceType: device.device_type,
+              isActive: device.is_active
+            });
+
+            // Update device last used
+            try {
+              await attendanceTerminalDeviceService.updateDeviceLastUsed(device.id);
+              console.log('✅ Device last used timestamp updated');
+            } catch (updateErr: any) {
+              console.warn('⚠️ Failed to update device last used:', updateErr);
+              // Don't throw - this is not critical
+            }
+
+            // Log device verification success
+            await logAccessAttempt(
+              'device_verified',
+              'success',
+              'Device verified successfully',
+              device.id
+            );
+          } catch (deviceErr: any) {
+            console.error('❌ Device verification failed:', deviceErr);
+            // Error is already logged in logAccessAttempt, so just rethrow
+            throw deviceErr;
+          }
+        } else {
+          console.log('⚠️ Device verification DISABLED - allowing all devices');
+          // Even if device verification is disabled, try to find the device for logging purposes
+          try {
+            const device = await attendanceTerminalDeviceService.getDeviceByFingerprint(
+              branch.id,
+              deviceFingerprint
+            );
+            if (device && device.is_active) {
+              deviceId = device.id;
+              console.log('✅ Device found (verification disabled):', {
+                deviceId: device.id,
+                deviceName: device.device_name
+              });
+              // Update last used even if verification is disabled
+              await attendanceTerminalDeviceService.updateDeviceLastUsed(device.id).catch(() => {});
+            }
+          } catch (err) {
+            // Ignore - device not found is okay if verification is disabled
+            console.log('ℹ️ Device not found (verification disabled, allowing access)');
+          }
+
+          // Log access attempt (device verification disabled, but still log)
+          await logAccessAttempt(
+            'device_verified',
+            'success',
+            'Device verification disabled - access allowed',
+            deviceId
+          );
+        }
+
+        // Check geo-location verification
+        if (securitySettings.enableGeoLocationVerification) {
+          console.log('📍 Geo-location verification enabled, checking location...');
+          try {
+            if (!branch.latitude || !branch.longitude) {
+              console.warn('⚠️ Branch coordinates not set, skipping geo-location check');
+            } else {
+              const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+                navigator.geolocation.getCurrentPosition(resolve, reject, {
+                  enableHighAccuracy: true,
+                  timeout: 10000,
+                  maximumAge: 0
+                });
+              });
+
+              const userLat = position.coords.latitude;
+              const userLon = position.coords.longitude;
+              const branchLat = branch.latitude!;
+              const branchLon = branch.longitude!;
+
+              // Calculate distance using Haversine formula
+              const R = 6371000; // Earth radius in meters
+              const φ1 = (branchLat * Math.PI) / 180;
+              const φ2 = (userLat * Math.PI) / 180;
+              const Δφ = ((userLat - branchLat) * Math.PI) / 180;
+              const Δλ = ((userLon - branchLon) * Math.PI) / 180;
+
+              const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+                        Math.cos(φ1) * Math.cos(φ2) *
+                        Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+              const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+              const distance = R * c;
+
+              console.log('📍 Location check:', {
+                userLocation: { lat: userLat, lon: userLon },
+                branchLocation: { lat: branchLat, lon: branchLon },
+                distance: distance.toFixed(2) + 'm',
+                tolerance: securitySettings.geoLocationToleranceMeters + 'm'
+              });
+
+              if (distance > securitySettings.geoLocationToleranceMeters) {
+                // Log location failure
+                if (securitySettings.enableActivityLogging) {
+                  await attendanceTerminalDeviceService.logActivity({
+                    branch_id: branch.id,
+                    device_id: deviceId,
+                    device_fingerprint: deviceFingerprint,
+                    action_type: 'location_failed',
+                    status: 'failed',
+                    status_reason: `Location is ${distance.toFixed(2)}m away from branch (tolerance: ${securitySettings.geoLocationToleranceMeters}m)`,
+                    location_latitude: userLat,
+                    location_longitude: userLon,
+                    distance_from_branch_meters: distance,
+                    user_agent: navigator.userAgent
+                  });
+                }
+
+                throw new Error(`Location verification failed. You are ${distance.toFixed(0)} meters away from the branch. Maximum allowed distance: ${securitySettings.geoLocationToleranceMeters} meters. Please move closer to the branch location.`);
+              }
+
+              // Log location verification success
+              if (securitySettings.enableActivityLogging) {
+                await attendanceTerminalDeviceService.logActivity({
+                  branch_id: branch.id,
+                  device_id: deviceId,
+                  device_fingerprint: deviceFingerprint,
+                  action_type: 'location_verified',
+                  status: 'success',
+                  status_reason: `Location verified (${distance.toFixed(2)}m from branch)`,
+                  location_latitude: userLat,
+                  location_longitude: userLon,
+                  distance_from_branch_meters: distance,
+                  user_agent: navigator.userAgent
+                });
+              }
+
+              console.log('✅ Location verified');
+            }
+          } catch (locationErr: any) {
+            if (locationErr.code === 1) {
+              // Permission denied
+              throw new Error('Location access denied. Please allow location access to use the attendance terminal.');
+            } else if (locationErr.code === 2) {
+              // Position unavailable
+              throw new Error('Unable to determine your location. Please check your device settings.');
+            } else if (locationErr.message) {
+              throw locationErr;
+            } else {
+              throw new Error('Location verification failed. Please try again.');
+            }
+          }
+        } else {
+          console.log('⚠️ Geo-location verification disabled');
+        }
+
+        // Check PIN access control
+        const requiresPin = securitySettings.enablePinAccessControl && !!branch.attendance_pin;
+        let pinVerified = false;
+
+        if (requiresPin) {
+          console.log('🔐 PIN access control enabled');
+          // Check if PIN was verified in this session (stored in sessionStorage)
+          const pinSessionKey = `attendance_terminal_pin_verified_${branch.id}`;
+          const pinSessionData = sessionStorage.getItem(pinSessionKey);
+          
+          if (pinSessionData) {
+            try {
+              const sessionData = JSON.parse(pinSessionData);
+              const sessionExpiry = new Date(sessionData.expiresAt);
+              
+              if (sessionExpiry > new Date()) {
+                pinVerified = true;
+                console.log('✅ PIN verified in this session');
+              } else {
+                console.log('⚠️ PIN session expired');
+                sessionStorage.removeItem(pinSessionKey);
+              }
+            } catch (parseErr) {
+              console.warn('⚠️ Error parsing PIN session data:', parseErr);
+              sessionStorage.removeItem(pinSessionKey);
+            }
+          }
+
+          if (!pinVerified) {
+            // Show PIN modal
+            setShowPinModal(true);
+            setSecurityCheck(prev => ({
+              ...prev,
+              isLoading: false,
+              isAuthorized: false,
+              branch,
+              securitySettings,
+              deviceId,
+              requiresPin: true,
+              pinVerified: false
+            }));
+            return;
+          }
+        }
+
+        // All security checks passed
+        console.log('✅ All security checks passed');
         
-        await faceRegistrationService.loadModels();
-        await faceRegistrationService.testModels();
+        // Final access log (all checks passed)
+        if (securitySettings.enableActivityLogging) {
+          try {
+            await attendanceTerminalDeviceService.logActivity({
+              branch_id: branch.id,
+              device_id: deviceId,
+              device_fingerprint: deviceFingerprint,
+              action_type: 'device_verified',
+              status: 'success',
+              status_reason: 'All security checks passed - access granted',
+              user_agent: navigator.userAgent,
+              session_data: {
+                securitySettings: {
+                  deviceVerification: securitySettings.enableDeviceVerification,
+                  geoLocation: securitySettings.enableGeoLocationVerification,
+                  pinAccess: securitySettings.enablePinAccessControl,
+                  allChecksPassed: true
+                }
+              }
+            });
+            console.log('✅ Final access log recorded');
+          } catch (logErr: any) {
+            console.warn('⚠️ Failed to log final access:', logErr);
+            // Don't throw - logging failures shouldn't block access
+          }
+        }
+
+        setSecurityCheck(prev => ({
+          ...prev,
+          isLoading: false,
+          isAuthorized: true,
+          branch,
+          securitySettings,
+          deviceId,
+          requiresPin,
+          pinVerified: true
+        }));
+
+        // Load models after security check
+        await loadModels();
+      } catch (securityErr: any) {
+        console.error('❌ Security check failed:', securityErr);
+        console.error('❌ Security error details:', {
+          message: securityErr.message,
+          stack: securityErr.stack,
+          name: securityErr.name
+        });
         
-        setModelsLoaded(true);
-        setStatus('idle');
-        setStatusMessage('Ready. Click Time In or Time Out to start.');
-        console.log('✅ Face recognition models loaded successfully');
-      } catch (err: any) {
-        console.error('❌ Error loading models:', err);
-        setError('Failed to load face recognition models. Please refresh the page.');
+        // Log access denied attempt
+        const branch = await branchManagementService.getAllBranches().then(branches => {
+          const urlParams = new URLSearchParams(window.location.search);
+          const branchId = urlParams.get('branch_id');
+          if (branchId) {
+            return branches.find(b => b.id === branchId) || branches[0] || null;
+          }
+          return branches.find(b => b.is_active && b.branch_type === 'main') || 
+                 branches.find(b => b.is_active) || 
+                 branches[0] || null;
+        }).catch(() => null);
+        
+        if (branch) {
+          try {
+            const deviceFingerprint = generateDeviceFingerprint();
+            const securitySettings: AttendanceSecuritySettings = branch.attendance_security_settings || {
+              enableActivityLogging: true
+            };
+            
+            if (securitySettings.enableActivityLogging !== false) {
+              await attendanceTerminalDeviceService.logActivity({
+                branch_id: branch.id,
+                device_fingerprint: deviceFingerprint,
+                action_type: 'access_denied',
+                status: 'blocked',
+                status_reason: securityErr.message || 'Security check failed',
+                user_agent: navigator.userAgent,
+                session_data: {
+                  error: securityErr.message,
+                  fingerprint: deviceFingerprint.substring(0, 20) + '...'
+                }
+              }).catch(logErr => {
+                console.error('❌ Failed to log access denied:', logErr);
+              });
+            }
+          } catch (logErr) {
+            console.error('❌ Error logging access denied:', logErr);
+          }
+        }
+        
+        setSecurityCheck(prev => ({
+          ...prev,
+          isLoading: false,
+          isAuthorized: false,
+          error: securityErr.message || 'Security check failed. Please contact your administrator.'
+        }));
+        setError(securityErr.message || 'Security check failed.');
         setStatus('error');
-        setStatusMessage(err.message || 'Model loading failed');
+        setStatusMessage(securityErr.message || 'Security check failed. Please contact your administrator.');
       }
     };
 
-    loadModels();
+    checkSecurity();
+  }, []);
+
+  // Load models after security check passes
+  const loadModels = async () => {
+    try {
+      setStatus('loading');
+      setStatusMessage('Loading face recognition models...');
+      console.log('🔄 Loading face recognition models...');
+      
+      await faceRegistrationService.loadModels();
+      await faceRegistrationService.testModels();
+      
+      setModelsLoaded(true);
+      checkSession();
+      console.log('✅ Face recognition models loaded successfully');
+    } catch (err: any) {
+      console.error('❌ Error loading models:', err);
+      setError('Failed to load face recognition models. Please refresh the page.');
+      setStatus('error');
+      setStatusMessage(err.message || 'Model loading failed');
+    }
+  };
+
+  // Handle PIN verification
+  const handlePinSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!securityCheck.branch || !securityCheck.branch.attendance_pin) {
+      setError('PIN verification failed. Please contact your administrator.');
+      return;
+    }
+
+    const enteredPin = pinInput.trim();
+    const correctPin = securityCheck.branch.attendance_pin;
+
+    if (enteredPin === correctPin) {
+      // PIN is correct
+      const pinSessionKey = `attendance_terminal_pin_verified_${securityCheck.branch!.id}`;
+      const expiresAt = new Date();
+      expiresAt.setHours(expiresAt.getHours() + (securityCheck.securitySettings?.pinSessionDurationHours || 24));
+      
+      sessionStorage.setItem(pinSessionKey, JSON.stringify({
+        expiresAt: expiresAt.toISOString(),
+        verifiedAt: new Date().toISOString()
+      }));
+
+      // Log PIN verification
+      if (securityCheck.securitySettings?.enableActivityLogging) {
+        const deviceFingerprint = generateDeviceFingerprint();
+        await attendanceTerminalDeviceService.logActivity({
+          branch_id: securityCheck.branch!.id,
+          device_id: securityCheck.deviceId,
+          device_fingerprint: deviceFingerprint,
+          action_type: 'pin_verified',
+          status: 'success',
+          status_reason: 'PIN verified successfully',
+          user_agent: navigator.userAgent
+        });
+      }
+
+      setShowPinModal(false);
+      setPinInput('');
+      setSecurityCheck(prev => ({
+        ...prev,
+        isAuthorized: true,
+        pinVerified: true
+      }));
+
+      // Load models after PIN verification
+      await loadModels();
+    } else {
+      // PIN is incorrect
+      setError('Incorrect PIN. Please try again.');
+      
+      // Log PIN failure
+      if (securityCheck.securitySettings?.enableActivityLogging) {
+        const deviceFingerprint = generateDeviceFingerprint();
+        await attendanceTerminalDeviceService.logActivity({
+          branch_id: securityCheck.branch!.id,
+          device_id: securityCheck.deviceId,
+          device_fingerprint: deviceFingerprint,
+          action_type: 'pin_failed',
+          status: 'failed',
+          status_reason: 'Incorrect PIN entered',
+          user_agent: navigator.userAgent
+        });
+      }
+
+      setPinInput('');
+    }
+  };
+
+  // Check session every minute (only if authorized)
+  useEffect(() => {
+    if (!securityCheck.isAuthorized) {
+      return;
+    }
+
+    const sessionCheckInterval = setInterval(() => {
+      checkSession();
+    }, 60000); // Check every minute
 
     return () => {
-      // Cleanup: stop webcam and clear intervals/timeouts
+      clearInterval(sessionCheckInterval);
+    };
+  }, [securityCheck.isAuthorized]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
       console.log('🧹 Cleaning up AttendanceTerminal...');
       stopWebcam();
       clearDetectionInterval();
       clearAutoResetTimeout();
     };
   }, []);
+
+  // Check current session and update UI
+  const checkSession = async () => {
+    try {
+      const session = attendanceService.getCurrentSession();
+      setCurrentSession(session);
+
+      if (session) {
+        // If we have a detected staff, check their attendance
+        // For now, we'll update the session info based on current time
+        setStatus('idle');
+        const sessionMsg = session === 'morning' 
+          ? 'Morning Session (7:00 AM - 12:00 NN)\n\nReady. Click Time In or Time Out to start.'
+          : 'Afternoon Session (1:00 PM - 7:00 PM)\n\nReady. Click Time In or Time Out to start.';
+        setStatusMessage(sessionMsg);
+      } else {
+        const hour = attendanceService.getCurrentManilaHour();
+        let message = '';
+        if (hour < 7) {
+          message = `Morning session starts at 7:00 AM.\n\nCurrent time: ${hour}:00\n\nPlease come back at 7:00 AM.`;
+        } else if (hour >= 12 && hour < 13) {
+          message = `Lunch break (12:00 NN - 1:00 PM).\n\nCurrent time: ${hour}:00\n\nAfternoon session starts at 1:00 PM.`;
+        } else if (hour >= 19) {
+          message = `All sessions ended for today.\n\nCurrent time: ${hour}:00\n\nSessions end at 7:00 PM.`;
+        } else {
+          message = 'Session not available at this time.';
+        }
+        setStatus('idle');
+        setStatusMessage(message);
+      }
+    } catch (err) {
+      console.error('Error checking session:', err);
+    }
+  };
 
   // Clear detection interval helper
   const clearDetectionInterval = () => {
@@ -385,17 +978,24 @@ const AttendanceTerminal: React.FC = () => {
   };
 
   // Process attendance with face recognition
-  const processAttendance = async (type: 'timein' | 'timeout') => {
+  const processAttendance = async (session: AttendanceSession, action: SessionAction) => {
     if (!modelsLoaded) {
       setError('Face recognition models are still loading. Please wait...');
       setStatus('error');
       return;
     }
 
-    console.log(`🎬 Starting ${type} process...`);
+    if (!session) {
+      setError('No active session at this time. Please check the session schedule.');
+      setStatus('error');
+      setStatusMessage('Session not available. Morning: 7:00 AM - 12:00 NN, Afternoon: 1:00 PM - 7:00 PM');
+      return;
+    }
+
+    console.log(`🎬 Starting ${session} ${action} process...`);
     
     setIsProcessing(true);
-    setActionType(type);
+    setActionType(action);
     setError(null);
     setDetectionResult(null);
     setCurrentAttempt(0);
@@ -500,37 +1100,98 @@ const AttendanceTerminal: React.FC = () => {
 
       console.log('✅ Staff info retrieved:', staffInfo);
 
+      // Check current attendance record
+      const currentAttendance = await attendanceService.getTodayAttendance(bestMatch.staff_id);
+      setAttendanceRecord(currentAttendance);
+
+      // Validate session action
+      const sessionActionInfo = attendanceService.getSessionAction(currentAttendance, session);
+      setSessionInfo(sessionActionInfo);
+
+      if (!sessionActionInfo.isValid) {
+        throw new Error(sessionActionInfo.message || 'Invalid action for current session.');
+      }
+
+      // Update action if different from what was requested
+      const actualAction = sessionActionInfo.action;
+      const actualSession = sessionActionInfo.session;
+
       setDetectionResult({
         staffInfo,
         confidence: 1 - bestMatch.distance
       });
 
       // Record attendance
+      const actionLabel = actualAction === 'timein' ? 'Time In' : 'Time Out';
+      const sessionLabel = actualSession === 'morning' ? 'Morning' : 'Afternoon';
       setStatus('recording');
-      setStatusMessage(`Recording ${type === 'timein' ? 'Time In' : 'Time Out'}...\n\nFor: ${staffInfo.first_name} ${staffInfo.last_name}\n\nPlease wait...`);
+      setStatusMessage(`Recording ${sessionLabel} ${actionLabel}...\n\nFor: ${staffInfo.first_name} ${staffInfo.last_name}\n\nPlease wait...`);
 
-      console.log(`📝 Recording ${type}...`);
-      let attendanceRecord;
-      if (type === 'timein') {
-        attendanceRecord = await attendanceService.recordTimeIn(bestMatch.staff_id);
+      console.log(`📝 Recording ${actualSession} ${actualAction}...`);
+      
+      // Log attendance action (before recording)
+      if (securityCheck.securitySettings?.enableActivityLogging && securityCheck.branch) {
+        const deviceFingerprint = generateDeviceFingerprint();
+        await attendanceTerminalDeviceService.logActivity({
+          branch_id: securityCheck.branch.id,
+          device_id: securityCheck.deviceId,
+          staff_id: bestMatch.staff_id,
+          device_fingerprint: deviceFingerprint,
+          action_type: actualAction === 'timein' ? 'time_in' : 'time_out',
+          status: 'success',
+          status_reason: `${actualSession} session ${actualAction} - Face recognition successful`,
+          user_agent: navigator.userAgent,
+          session_data: {
+            session: actualSession,
+            action: actualAction,
+            staff_id: bestMatch.staff_id,
+            confidence: 1 - bestMatch.distance
+          }
+        }).catch(err => {
+          console.warn('⚠️ Failed to log activity:', err);
+          // Don't throw - activity logging is not critical
+        });
+      }
+      
+      const attendanceRecord = await attendanceService.recordSessionAttendance(
+        bestMatch.staff_id,
+        actualSession,
+        actualAction
+      );
+
+      // Get recorded time based on session and action
+      let recordedTime: string | undefined;
+      if (actualSession === 'morning') {
+        recordedTime = actualAction === 'timein' ? attendanceRecord.time_in : attendanceRecord.break_start;
       } else {
-        attendanceRecord = await attendanceService.recordTimeOut(bestMatch.staff_id);
+        recordedTime = actualAction === 'timein' ? attendanceRecord.break_end : attendanceRecord.time_out;
       }
 
-      const recordedTime = type === 'timein' ? attendanceRecord.time_in : attendanceRecord.time_out;
       const formattedTime = recordedTime 
-        ? new Date(recordedTime).toLocaleTimeString()
-        : new Date().toLocaleTimeString();
+        ? new Date(recordedTime).toLocaleTimeString('en-US', { 
+            timeZone: 'Asia/Manila',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: true
+          })
+        : new Date().toLocaleTimeString('en-US', { 
+            timeZone: 'Asia/Manila',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: true
+          });
       
-      const greeting = type === 'timein'
-        ? `Welcome, ${staffInfo.first_name}! 👋`
-        : `Great job today, ${staffInfo.first_name}! 👏`;
+      const greeting = actualAction === 'timein'
+        ? `${actualSession === 'morning' ? 'Good morning' : 'Good afternoon'}, ${staffInfo.first_name}! 👋`
+        : `Great job ${actualSession === 'morning' ? 'this morning' : 'this afternoon'}, ${staffInfo.first_name}! 👏`;
 
       console.log('✅ Attendance recorded successfully');
 
       setStatus('success');
       setStatusMessage(
-        `${greeting}\n\n${type === 'timein' ? 'Time In' : 'Time Out'} recorded successfully!\n\nTime: ${formattedTime}\n\nEmployee: ${staffInfo.first_name} ${staffInfo.last_name}\nID: ${staffInfo.employee_id}`
+        `${greeting}\n\n${sessionLabel} ${actionLabel} recorded successfully!\n\nTime: ${formattedTime}\n\nEmployee: ${staffInfo.first_name} ${staffInfo.last_name}\nID: ${staffInfo.employee_id}`
       );
 
       // Auto-reset after success
@@ -560,22 +1221,151 @@ const AttendanceTerminal: React.FC = () => {
     
     setIsProcessing(false);
     setActionType(null);
-    setStatus('idle');
-    setStatusMessage('Ready. Click Time In or Time Out to start.');
     setDetectionResult(null);
     setError(null);
     setCurrentAttempt(0);
+    setAttendanceRecord(null);
+    setSessionInfo(null);
     stopWebcam();
     clearAutoResetTimeout();
+    checkSession(); // Recheck session after reset
   };
 
-  const handleTimeIn = () => {
-    processAttendance('timein');
+  const handleMorningTimeIn = () => {
+    if (currentSession === 'morning') {
+      processAttendance('morning', 'timein');
+    } else {
+      setError('Morning session is not active. Morning session: 7:00 AM - 12:00 NN');
+      setStatus('error');
+    }
   };
 
-  const handleTimeOut = () => {
-    processAttendance('timeout');
+  const handleMorningTimeOut = () => {
+    if (currentSession === 'morning') {
+      processAttendance('morning', 'timeout');
+    } else {
+      setError('Morning session is not active. Morning session: 7:00 AM - 12:00 NN');
+      setStatus('error');
+    }
   };
+
+  const handleAfternoonTimeIn = () => {
+    if (currentSession === 'afternoon') {
+      processAttendance('afternoon', 'timein');
+    } else {
+      setError('Afternoon session is not active. Afternoon session: 1:00 PM - 7:00 PM');
+      setStatus('error');
+    }
+  };
+
+  const handleAfternoonTimeOut = () => {
+    if (currentSession === 'afternoon') {
+      processAttendance('afternoon', 'timeout');
+    } else {
+      setError('Afternoon session is not active. Afternoon session: 1:00 PM - 7:00 PM');
+      setStatus('error');
+    }
+  };
+
+  // Show security check loading
+  if (securityCheck.isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex items-center justify-center py-12 px-4">
+        <div className="max-w-2xl w-full text-center">
+          <div className="bg-white rounded-2xl shadow-2xl p-8">
+            <Loader2 className="w-16 h-16 text-blue-600 mx-auto mb-4 animate-spin" />
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">Checking Security</h2>
+            <p className="text-gray-600">Verifying device authorization...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show unauthorized device error
+  if (!securityCheck.isAuthorized && securityCheck.error) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex items-center justify-center py-12 px-4">
+        <div className="max-w-2xl w-full">
+          <div className="bg-white rounded-2xl shadow-2xl p-8 border-2 border-red-200">
+            <div className="text-center">
+              <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Shield className="w-10 h-10 text-red-600" />
+              </div>
+              <h2 className="text-3xl font-bold text-red-900 mb-2">Unauthorized Device</h2>
+              <p className="text-red-700 text-lg mb-4 font-semibold">Only authorized devices can access this page</p>
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+                <p className="text-red-800 text-sm whitespace-pre-line">{securityCheck.error}</p>
+              </div>
+              <div className="text-gray-600 text-sm space-y-2">
+                <p>If you believe this is an error, please contact your administrator.</p>
+                <p className="text-xs text-gray-500 mt-4">
+                  To register this device, go to Settings → Branch Management → Attendance Terminal Security
+                </p>
+              </div>
+              <button
+                onClick={() => window.location.href = '/'}
+                className="mt-6 px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+              >
+                ← Back to Home
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show PIN modal
+  if (showPinModal && securityCheck.requiresPin && !securityCheck.pinVerified) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex items-center justify-center py-12 px-4">
+        <div className="max-w-md w-full">
+          <div className="bg-white rounded-2xl shadow-2xl p-8 border-2 border-blue-200">
+            <div className="text-center mb-6">
+              <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Lock className="w-8 h-8 text-blue-600" />
+              </div>
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">PIN Required</h2>
+              <p className="text-gray-600">Enter the branch PIN to access the attendance terminal</p>
+            </div>
+            <form onSubmit={handlePinSubmit} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Branch PIN
+                </label>
+                <input
+                  type="password"
+                  value={pinInput}
+                  onChange={(e) => setPinInput(e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-center text-2xl tracking-widest"
+                  placeholder="Enter PIN"
+                  autoFocus
+                  required
+                />
+              </div>
+              {error && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                  <p className="text-red-800 text-sm">{error}</p>
+                </div>
+              )}
+              <button
+                type="submit"
+                className="w-full px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-semibold"
+              >
+                Verify PIN
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Don't show main terminal if not authorized
+  if (!securityCheck.isAuthorized) {
+    return null;
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex items-center justify-center py-12 px-4">
@@ -584,12 +1374,32 @@ const AttendanceTerminal: React.FC = () => {
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold text-white mb-2">Attendance Terminal</h1>
           <p className="text-gray-400">Facial Recognition Attendance System</p>
-          {modelsLoaded && (
-            <div className="inline-flex items-center gap-2 mt-3 px-4 py-2 bg-green-900/30 border border-green-700 rounded-full">
-              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-              <span className="text-green-400 text-sm">System Ready</span>
-            </div>
-          )}
+          <div className="flex items-center justify-center gap-4 mt-4">
+            {modelsLoaded && (
+              <div className="inline-flex items-center gap-2 px-4 py-2 bg-green-900/30 border border-green-700 rounded-full">
+                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                <span className="text-green-400 text-sm">System Ready</span>
+              </div>
+            )}
+            {currentSession && (
+              <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full border ${
+                currentSession === 'morning' 
+                  ? 'bg-yellow-900/30 border-yellow-700' 
+                  : 'bg-blue-900/30 border-blue-700'
+              }`}>
+                {currentSession === 'morning' ? (
+                  <Sun className="w-4 h-4 text-yellow-400" />
+                ) : (
+                  <Moon className="w-4 h-4 text-blue-400" />
+                )}
+                <span className={`text-sm ${
+                  currentSession === 'morning' ? 'text-yellow-400' : 'text-blue-400'
+                }`}>
+                  {currentSession === 'morning' ? 'Morning Session' : 'Afternoon Session'}
+                </span>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Main Content */}
@@ -710,51 +1520,133 @@ const AttendanceTerminal: React.FC = () => {
             </div>
           </div>
 
+          {/* Session Schedule Info */}
+          <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+              <div className="flex items-center gap-3">
+                <Sun className="w-5 h-5 text-yellow-500" />
+                <div>
+                  <p className="font-semibold text-gray-800">Morning Session</p>
+                  <p className="text-gray-600">7:00 AM - 12:00 NN</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <Moon className="w-5 h-5 text-blue-500" />
+                <div>
+                  <p className="font-semibold text-gray-800">Afternoon Session</p>
+                  <p className="text-gray-600">1:00 PM - 7:00 PM</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* Action Buttons */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Time In Button */}
-            <button
-              onClick={handleTimeIn}
-              disabled={isProcessing || !modelsLoaded || status === 'loading'}
-              className="group relative bg-gradient-to-br from-emerald-500 to-emerald-600 text-white rounded-xl p-8 hover:from-emerald-600 hover:to-emerald-700 transition-all duration-300 shadow-lg hover:shadow-2xl disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-lg"
-            >
-              <div className="flex flex-col items-center space-y-4">
-                <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
-                  <Clock className="w-8 h-8" />
-                </div>
-                <div>
-                  <h3 className="text-2xl font-bold mb-1">Time In</h3>
-                  <p className="text-emerald-100 text-sm">Start your work day</p>
-                </div>
-              </div>
-              {isProcessing && actionType === 'timein' && (
-                <div className="absolute inset-0 bg-emerald-700/50 rounded-xl flex items-center justify-center">
-                  <Loader2 className="w-8 h-8 animate-spin" />
-                </div>
-              )}
-            </button>
+            {/* Morning Session */}
+            <div className="space-y-4">
+              <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                <Sun className="w-5 h-5 text-yellow-500" />
+                Morning Session (7:00 AM - 12:00 NN)
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                {/* Morning Time In */}
+                <button
+                  onClick={handleMorningTimeIn}
+                  disabled={isProcessing || !modelsLoaded || status === 'loading' || currentSession !== 'morning'}
+                  className="group relative bg-gradient-to-br from-yellow-500 to-yellow-600 text-white rounded-xl p-6 hover:from-yellow-600 hover:to-yellow-700 transition-all duration-300 shadow-lg hover:shadow-2xl disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-lg"
+                >
+                  <div className="flex flex-col items-center space-y-3">
+                    <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+                      <Clock className="w-6 h-6" />
+                    </div>
+                    <div className="text-center">
+                      <h4 className="text-lg font-bold mb-1">Time In</h4>
+                      <p className="text-yellow-100 text-xs">Morning</p>
+                    </div>
+                  </div>
+                  {isProcessing && actionType === 'timein' && currentSession === 'morning' && (
+                    <div className="absolute inset-0 bg-yellow-700/50 rounded-xl flex items-center justify-center">
+                      <Loader2 className="w-6 h-6 animate-spin" />
+                    </div>
+                  )}
+                </button>
 
-            {/* Time Out Button */}
-            <button
-              onClick={handleTimeOut}
-              disabled={isProcessing || !modelsLoaded || status === 'loading'}
-              className="group relative bg-gradient-to-br from-red-500 to-red-600 text-white rounded-xl p-8 hover:from-red-600 hover:to-red-700 transition-all duration-300 shadow-lg hover:shadow-2xl disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-lg"
-            >
-              <div className="flex flex-col items-center space-y-4">
-                <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
-                  <LogOut className="w-8 h-8" />
-                </div>
-                <div>
-                  <h3 className="text-2xl font-bold mb-1">Time Out</h3>
-                  <p className="text-red-100 text-sm">End your work day</p>
-                </div>
+                {/* Morning Time Out */}
+                <button
+                  onClick={handleMorningTimeOut}
+                  disabled={isProcessing || !modelsLoaded || status === 'loading' || currentSession !== 'morning'}
+                  className="group relative bg-gradient-to-br from-orange-500 to-orange-600 text-white rounded-xl p-6 hover:from-orange-600 hover:to-orange-700 transition-all duration-300 shadow-lg hover:shadow-2xl disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-lg"
+                >
+                  <div className="flex flex-col items-center space-y-3">
+                    <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+                      <LogOut className="w-6 h-6" />
+                    </div>
+                    <div className="text-center">
+                      <h4 className="text-lg font-bold mb-1">Time Out</h4>
+                      <p className="text-orange-100 text-xs">Morning</p>
+                    </div>
+                  </div>
+                  {isProcessing && actionType === 'timeout' && currentSession === 'morning' && (
+                    <div className="absolute inset-0 bg-orange-700/50 rounded-xl flex items-center justify-center">
+                      <Loader2 className="w-6 h-6 animate-spin" />
+                    </div>
+                  )}
+                </button>
               </div>
-              {isProcessing && actionType === 'timeout' && (
-                <div className="absolute inset-0 bg-red-700/50 rounded-xl flex items-center justify-center">
-                  <Loader2 className="w-8 h-8 animate-spin" />
-                </div>
-              )}
-            </button>
+            </div>
+
+            {/* Afternoon Session */}
+            <div className="space-y-4">
+              <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                <Moon className="w-5 h-5 text-blue-500" />
+                Afternoon Session (1:00 PM - 7:00 PM)
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                {/* Afternoon Time In */}
+                <button
+                  onClick={handleAfternoonTimeIn}
+                  disabled={isProcessing || !modelsLoaded || status === 'loading' || currentSession !== 'afternoon'}
+                  className="group relative bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-xl p-6 hover:from-blue-600 hover:to-blue-700 transition-all duration-300 shadow-lg hover:shadow-2xl disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-lg"
+                >
+                  <div className="flex flex-col items-center space-y-3">
+                    <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+                      <Clock className="w-6 h-6" />
+                    </div>
+                    <div className="text-center">
+                      <h4 className="text-lg font-bold mb-1">Time In</h4>
+                      <p className="text-blue-100 text-xs">Afternoon</p>
+                    </div>
+                  </div>
+                  {isProcessing && actionType === 'timein' && currentSession === 'afternoon' && (
+                    <div className="absolute inset-0 bg-blue-700/50 rounded-xl flex items-center justify-center">
+                      <Loader2 className="w-6 h-6 animate-spin" />
+                    </div>
+                  )}
+                </button>
+
+                {/* Afternoon Time Out */}
+                <button
+                  onClick={handleAfternoonTimeOut}
+                  disabled={isProcessing || !modelsLoaded || status === 'loading' || currentSession !== 'afternoon'}
+                  className="group relative bg-gradient-to-br from-red-500 to-red-600 text-white rounded-xl p-6 hover:from-red-600 hover:to-red-700 transition-all duration-300 shadow-lg hover:shadow-2xl disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-lg"
+                >
+                  <div className="flex flex-col items-center space-y-3">
+                    <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+                      <LogOut className="w-6 h-6" />
+                    </div>
+                    <div className="text-center">
+                      <h4 className="text-lg font-bold mb-1">Time Out</h4>
+                      <p className="text-red-100 text-xs">Afternoon</p>
+                    </div>
+                  </div>
+                  {isProcessing && actionType === 'timeout' && currentSession === 'afternoon' && (
+                    <div className="absolute inset-0 bg-red-700/50 rounded-xl flex items-center justify-center">
+                      <Loader2 className="w-6 h-6 animate-spin" />
+                    </div>
+                  )}
+                </button>
+              </div>
+            </div>
           </div>
 
           {/* System Status Footer */}

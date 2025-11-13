@@ -5,7 +5,7 @@ import EmailService from './emailService'
 import InventoryService from './inventoryService'
 import OrderTrackingService from './orderTrackingService'
 import NewOrderAlertService from '../../../lib/alerts/newOrderAlertService'
-import { formatManilaDate } from '../utils/dateTime'
+import { formatManilaDate, getManilaTimestamp, getManilaTimestampWithOffset } from '../utils/dateTime'
 
 interface OrderServiceConfig {
   supabaseUrl: string
@@ -146,7 +146,7 @@ class OrderService {
         payment_method: paymentMethod,
         payment_reference: paymentReference || null,
         payment_notes: notes || null,
-        estimated_ready_time: orderType === 'pickup' ? new Date(Date.now() + 30 * 60 * 1000).toISOString() : null,
+        estimated_ready_time: orderType === 'pickup' ? getManilaTimestampWithOffset(30 * 60 * 1000) : null,
         is_guest_order: !finalCustomerId,
         customer_name: customerInfo ? `${customerInfo.firstName} ${customerInfo.lastName}` : null,
         customer_email: customerInfo?.email || null,
@@ -161,8 +161,8 @@ class OrderService {
         delivery_status: deliveryStatus || null,
         confirmed_at: null,
         completed_at: null,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        created_at: getManilaTimestamp(),
+        updated_at: getManilaTimestamp(),
         delivery_latitude: deliveryLatitude || null,
         delivery_longitude: deliveryLongitude || null,
       }
@@ -207,7 +207,7 @@ class OrderService {
         expiry_date: item.expiryDate || null,
         batch_number: item.batchNumber || null, 
         notes: item.notes || null,
-        created_at: new Date().toISOString()
+        created_at: getManilaTimestamp()
       }))
 
       const { error: itemsError } = await supabase
@@ -251,7 +251,7 @@ class OrderService {
         .from('orders')
         .update({ 
           payment_proof_url: publicUrl,  // ✅ Saved to payment_proof_url column
-          updated_at: new Date().toISOString()
+          updated_at: getManilaTimestamp()
         })
         .eq('id', order.id)
 
@@ -327,9 +327,9 @@ class OrderService {
       product_id: item.product.product_id,
       branch_id: branchId,
       quantity_reserved: item.base_unit_quantity || item.quantity,
-      reserved_until: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      reserved_until: getManilaTimestampWithOffset(24 * 60 * 60 * 1000),
       status: 'pending',
-      created_at: new Date().toISOString()
+      created_at: getManilaTimestamp()
     }))
 
     await supabase
@@ -413,9 +413,9 @@ class OrderService {
         .update({
           status: 'confirmed',
           payment_status: 'verified',
-          confirmed_at: new Date().toISOString(),
+          confirmed_at: getManilaTimestamp(),
           confirmed_by: staffUserId,
-          updated_at: new Date().toISOString()
+          updated_at: getManilaTimestamp()
         })
         .eq('id', orderId)
 
@@ -486,10 +486,10 @@ class OrderService {
           status: 'cancelled',
           payment_status: 'cancelled',
           cancellation_reason: reason,
-          cancelled_at: new Date().toISOString(),
+          cancelled_at: getManilaTimestamp(),
           cancelled_by: staffUserId,
           special_instructions: `${order.special_instructions || ''}\n\nREJECTED: ${reason}`,
-          updated_at: new Date().toISOString()
+          updated_at: getManilaTimestamp()
         })
         .eq('id', orderId)
 
@@ -556,9 +556,9 @@ class OrderService {
           status: 'cancelled',
           payment_status: 'failed',
           cancellation_reason: `GCash payment rejected: ${rejectionReason}`,
-          cancelled_at: new Date().toISOString(),
+          cancelled_at: getManilaTimestamp(),
           cancelled_by: staffUserId,
-          updated_at: new Date().toISOString()
+          updated_at: getManilaTimestamp()
         })
         .eq('id', orderId)
 
@@ -654,7 +654,7 @@ class OrderService {
 
       const updateData: any = {
         status,
-        updated_at: new Date().toISOString()
+        updated_at: getManilaTimestamp()
       }
 
       if (paymentStatus) {
@@ -662,9 +662,9 @@ class OrderService {
       }
 
       if (status === 'ready_for_pickup') {
-        updateData.ready_at = new Date().toISOString()
+        updateData.ready_at = getManilaTimestamp()
       } else if (status === 'completed') {
-        updateData.completed_at = new Date().toISOString()
+        updateData.completed_at = getManilaTimestamp()
       }
 
       const { error } = await supabase

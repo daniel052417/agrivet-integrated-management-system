@@ -1,5 +1,6 @@
 import { EmailTemplate, EmailNotification } from '../types'
 import { supabase } from './supabase'
+import { getManilaTimestamp } from '../utils/dateTime'
 import { formatManilaDate } from '../utils/dateTime'
 
 interface EmailServiceConfig {
@@ -271,7 +272,7 @@ class EmailService {
         content_html: data.contentHtml || null,
         content_text: data.contentText || null,
         status: 'pending',
-        created_at: new Date().toISOString()
+        created_at: getManilaTimestamp()
       }
 
       const { data: notification, error } = await supabase
@@ -320,8 +321,8 @@ class EmailService {
         .from('email_notifications')
         .update({
           status: 'sent',
-          sent_at: new Date().toISOString(),
-          delivered_at: new Date().toISOString()
+          sent_at: getManilaTimestamp(),
+          delivered_at: getManilaTimestamp()
         })
         .eq('id', notificationId)
 

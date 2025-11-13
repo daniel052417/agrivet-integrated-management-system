@@ -10,6 +10,38 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+/**
+ * Get current timestamp in Manila timezone as ISO string with timezone offset
+ * Manila, Philippines is UTC+8
+ * Returns an ISO string with +08:00 timezone offset so PostgreSQL
+ * correctly interprets it as Manila time and stores it appropriately.
+ */
+function getManilaTimestamp(): string {
+  const now = new Date()
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  })
+  
+  const parts = formatter.formatToParts(now)
+  const year = parts.find(p => p.type === 'year')!.value
+  const month = parts.find(p => p.type === 'month')!.value
+  const day = parts.find(p => p.type === 'day')!.value
+  const hour = parts.find(p => p.type === 'hour')!.value
+  const minute = parts.find(p => p.type === 'minute')!.value
+  const second = parts.find(p => p.type === 'second')!.value
+  
+  // Format as ISO string with +08:00 timezone offset (Manila is UTC+8)
+  // Format: YYYY-MM-DDTHH:mm:ss+08:00
+  return `${year}-${month}-${day}T${hour}:${minute}:${second}+08:00`
+}
+
 interface ResponseBody {
   success: boolean
   customer?: Record<string, unknown>
@@ -110,7 +142,7 @@ serve(async (req) => {
           province: province ?? existingCustomer.province,
           postal_code: postalCode ?? existingCustomer.postal_code,
           customer_type: customerType ?? existingCustomer.customer_type,
-          updated_at: new Date().toISOString()
+          updated_at: getManilaTimestamp()
         })
         .eq('id', existingCustomer.id)
         .select('*')
@@ -128,7 +160,7 @@ serve(async (req) => {
     }
 
     const { customerNumber, customerCode } = generateCustomerIdentifiers()
-    const now = new Date().toISOString()
+    const now = getManilaTimestamp()
 
     const { data: customer, error } = await supabaseClient
       .from('customers')

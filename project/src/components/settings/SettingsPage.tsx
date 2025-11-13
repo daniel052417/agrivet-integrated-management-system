@@ -6,12 +6,24 @@ import {
   Palette, AlertTriangle, CheckCircle, Trash2,
   FileText, HardDrive, Edit3, Ban,
   TestTube, ShieldCheck, Activity, Settings2, User,
-  Clock, DollarSign, Calendar, BarChart3, Users, LogOut
+  Clock, DollarSign, Calendar, BarChart3, Users, LogOut,
+  Eye
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { settingsService } from '../../lib/settingsService';
-import { branchManagementService, Branch, ManagerCandidate } from '../../lib/branchManagementService';
+import { simplifiedAuth } from '../../lib/simplifiedAuth';
+import { 
+  branchManagementService, 
+  Branch, 
+  ManagerCandidate, 
+  AttendanceSecuritySettings 
+} from '../../lib/branchManagementService';
 import { posTerminalManagementService, POSTerminal, UserCandidate } from '../../lib/posTerminalManagementService';
+import { 
+  attendanceTerminalDeviceService,
+  AttendanceTerminalDevice,
+  AttendanceTerminalActivityLog
+} from '../../lib/attendanceTerminalDeviceService';
 
 const SettingsPage: React.FC = () => {
   const [selectedTheme, setSelectedTheme] = useState('light');
@@ -106,6 +118,24 @@ const SettingsPage: React.FC = () => {
   const [managerCandidates, setManagerCandidates] = useState<ManagerCandidate[]>([]);
   const [editingBranch, setEditingBranch] = useState<Branch | null>(null);
   const [showAddBranchModal, setShowAddBranchModal] = useState(false);
+  
+  // Attendance Terminal Security state
+  const [selectedBranchForSecurity, setSelectedBranchForSecurity] = useState<string | null>(null);
+  const [branchDevices, setBranchDevices] = useState<AttendanceTerminalDevice[]>([]);
+  const [branchActivityLogs, setBranchActivityLogs] = useState<AttendanceTerminalActivityLog[]>([]);
+  const [showDeviceModal, setShowDeviceModal] = useState(false);
+  const [showActivityLogsModal, setShowActivityLogsModal] = useState(false);
+  const [deviceFormData, setDeviceFormData] = useState({
+    device_name: '',
+    device_fingerprint: '',
+    device_type: 'kiosk' as 'desktop' | 'laptop' | 'tablet' | 'kiosk'
+  });
+  const [activityLogsFilters, setActivityLogsFilters] = useState({
+    action_type: '',
+    status: '',
+    start_date: '',
+    end_date: ''
+  });
   const [branchFormData, setBranchFormData] = useState({
     name: '',
     code: '',
@@ -126,7 +156,20 @@ const SettingsPage: React.FC = () => {
       sunday: { open: '08:00', close: '18:00', isOpen: false }
     },
     managerId: '',
-    status: 'active' as 'active' | 'inactive'
+    status: 'active' as 'active' | 'inactive',
+    // Attendance Terminal Security Fields
+    latitude: null as number | null,
+    longitude: null as number | null,
+    attendancePin: '',
+    attendanceSecuritySettings: {
+      enableDeviceVerification: false,
+      enableGeoLocationVerification: false,
+      enablePinAccessControl: false,
+      geoLocationToleranceMeters: 100,
+      requirePinForEachSession: false,
+      pinSessionDurationHours: 24,
+      enableActivityLogging: true
+    } as AttendanceSecuritySettings
   });
   
   // Branch settings state
@@ -350,6 +393,245 @@ const SettingsPage: React.FC = () => {
     } catch (error: any) {
       console.error('Error fetching user candidates:', error);
     }
+  };
+
+  // Attendance Terminal Security Functions
+  const fetchBranchDevices = async (branchId: string) => {
+    try {
+      setLoading(true);
+      const devices = await attendanceTerminalDeviceService.getBranchDevices(branchId);
+      setBranchDevices(devices);
+    } catch (error: any) {
+      console.error('Error fetching branch devices:', error);
+      setError(error.message || 'Failed to fetch devices');
+      setTimeout(() => setError(null), 5000);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchBranchActivityLogs = async (branchId: string, limit: number = 100) => {
+    try {
+      setLoading(true);
+      const { logs } = await attendanceTerminalDeviceService.getBranchActivityLogs(branchId, limit, 0);
+      setBranchActivityLogs(logs);
+    } catch (error: any) {
+      console.error('Error fetching activity logs:', error);
+      setError(error.message || 'Failed to fetch activity logs');
+      setTimeout(() => setError(null), 5000);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRegisterDevice = async () => {
+    if (!selectedBranchForSecurity) {
+      setError('Please select a branch first');
+      setTimeout(() => setError(null), 5000);
+      return;
+    }
+
+    if (!deviceFormData.device_name || !deviceFormData.device_fingerprint) {
+      setError('Please fill in device name and fingerprint');
+      setTimeout(() => setError(null), 5000);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Debug: Log authentication check
+      console.log('🔍 Checking user authentication...');
+
+      // Declare variables in outer scope for access later
+      let currentUser = simplifiedAuth.getCurrentUser();
+      let userId: string | null = null;
+      let authSource = 'unknown';
+      
+      // Method 1: Try to get user from simplifiedAuth service (in-memory)
+      if (currentUser) {
+        userId = currentUser.id;
+        authSource = 'simplifiedAuth (in-memory)';
+        console.log('✅ User found in simplifiedAuth (in-memory):', {
+          userId: currentUser.id,
+          email: currentUser.email,
+          role: currentUser.role_name
+        });
+      } else {
+        console.log('⚠️ No user in simplifiedAuth, trying alternative methods...');
+        
+        // Method 2: Try to get user ID from customAuth (localStorage)
+        try {
+          const storedSession = localStorage.getItem('agrivet_session');
+          if (storedSession) {
+            try {
+              const session = JSON.parse(storedSession);
+              if (session.userId) {
+                console.log('✅ Found user ID in customAuth session:', {
+                  userId: session.userId
+                });
+                
+                // Try to fetch user profile from database
+                try {
+                  currentUser = await simplifiedAuth.getUserById(session.userId);
+                  simplifiedAuth.setCurrentUser(currentUser);
+                  userId = currentUser.id;
+                  authSource = 'customAuth (localStorage) → database';
+                  console.log('✅ User profile loaded from database via customAuth:', {
+                    userId: currentUser.id,
+                    email: currentUser.email,
+                    role: currentUser.role_name
+                  });
+                } catch (profileErr: any) {
+                  console.warn('⚠️ Could not fetch user profile, using user ID directly:', profileErr);
+                  userId = session.userId;
+                  authSource = 'customAuth (localStorage)';
+                }
+              }
+            } catch (parseErr: any) {
+              console.warn('⚠️ Could not parse customAuth session:', parseErr);
+            }
+          }
+        } catch (customAuthErr: any) {
+          console.warn('⚠️ Error checking customAuth:', customAuthErr);
+        }
+
+        // Method 3: Try Supabase auth (only if we don't have a user ID yet)
+        if (!userId) {
+          console.log('⚠️ No user ID from customAuth, trying Supabase auth...');
+          
+          try {
+            // Try session first (non-blocking)
+            const sessionResponse = await supabase.auth.getSession();
+            const session = sessionResponse.data?.session;
+            
+            if (session?.user) {
+              console.log('✅ Supabase session found:', {
+                userId: session.user.id,
+                email: session.user.email
+              });
+              
+              try {
+                currentUser = await simplifiedAuth.getUserById(session.user.id);
+                simplifiedAuth.setCurrentUser(currentUser);
+                userId = currentUser.id;
+                authSource = 'Supabase session → database';
+                console.log('✅ User profile loaded from database via Supabase session:', {
+                  userId: currentUser.id,
+                  email: currentUser.email,
+                  role: currentUser.role_name
+                });
+              } catch (profileErr: any) {
+                console.warn('⚠️ Could not fetch user profile, using Supabase user ID:', profileErr);
+                userId = session.user.id;
+                authSource = 'Supabase session';
+              }
+            } else {
+              console.log('⚠️ No Supabase session found');
+            }
+          } catch (supabaseErr: any) {
+            console.warn('⚠️ Supabase auth check failed (non-blocking):', supabaseErr.message);
+            // Don't throw - Supabase auth is optional
+          }
+        }
+      }
+
+      // Final check - we need at least a user ID
+      if (!userId) {
+        console.error('❌ No user ID found after all authentication attempts');
+        console.error('❌ Tried: simplifiedAuth, customAuth (localStorage), Supabase session');
+        throw new Error('User not authenticated. Please log in again to continue.');
+      }
+      
+      console.log('✅ User authenticated successfully:', {
+        userId: userId,
+        email: currentUser?.email || 'unknown',
+        role: currentUser?.role_name || 'unknown',
+        hasFullProfile: !!currentUser,
+        authSource: authSource
+      });
+
+      // Generate browser info
+      const browserInfo = {
+        user_agent: navigator.userAgent,
+        screen_resolution: `${screen.width}x${screen.height}`,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        language: navigator.language,
+        platform: navigator.platform
+      };
+
+      // Debug: Log device registration attempt
+      console.log('🔄 Registering device...', {
+        branchId: selectedBranchForSecurity,
+        deviceName: deviceFormData.device_name,
+        deviceType: deviceFormData.device_type,
+        fingerprint: deviceFormData.device_fingerprint.substring(0, 20) + '...', // First 20 chars only for security
+        registeredBy: userId
+      });
+
+      const registeredDevice = await attendanceTerminalDeviceService.registerDevice(
+        {
+          branch_id: selectedBranchForSecurity,
+          device_fingerprint: deviceFormData.device_fingerprint,
+          device_name: deviceFormData.device_name,
+          device_type: deviceFormData.device_type,
+          browser_info: browserInfo
+        },
+        userId
+      );
+
+      // Debug: Log successful registration from UI
+      console.log('✅ Device registration completed successfully in UI!', {
+        deviceId: registeredDevice.id,
+        deviceName: registeredDevice.device_name,
+        branchId: registeredDevice.branch_id,
+        branchName: registeredDevice.branch?.name,
+        registeredAt: registeredDevice.registered_at
+      });
+
+      setSuccess('Device registered successfully!');
+      setShowDeviceModal(false);
+      setDeviceFormData({
+        device_name: '',
+        device_fingerprint: '',
+        device_type: 'kiosk'
+      });
+      await fetchBranchDevices(selectedBranchForSecurity);
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (error: any) {
+      // Debug: Log registration error
+      console.error('❌ Device registration failed in UI:', {
+        error: error.message,
+        branchId: selectedBranchForSecurity,
+        deviceName: deviceFormData.device_name,
+        deviceType: deviceFormData.device_type,
+        errorDetails: error
+      });
+      
+      setError(error.message || 'Failed to register device');
+      setTimeout(() => setError(null), 5000);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const generateDeviceFingerprint = (): string => {
+    // Generate a simple fingerprint based on browser characteristics
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    ctx?.fillText('Device fingerprint', 2, 2);
+    const canvasFingerprint = canvas.toDataURL();
+
+    const fingerprint = btoa(
+      navigator.userAgent +
+      navigator.language +
+      screen.width + screen.height +
+      new Date().getTimezoneOffset() +
+      canvasFingerprint
+    ).substring(0, 64);
+
+    return fingerprint;
   };
 
   const fetchSettings = async () => {
@@ -1097,7 +1379,12 @@ const SettingsPage: React.FC = () => {
         manager_id: branchFormData.managerId || undefined,
         is_active: branchFormData.status === 'active',
         operating_hours: Object.keys(dbOperatingHours).length > 0 ? dbOperatingHours : null,
-        branch_type: branchFormData.type
+        branch_type: branchFormData.type,
+        // Attendance Terminal Security Fields
+        latitude: branchFormData.latitude || null,
+        longitude: branchFormData.longitude || null,
+        attendance_pin: branchFormData.attendancePin || undefined,
+        attendance_security_settings: branchFormData.attendanceSecuritySettings
       });
 
       setSuccess('Branch created successfully!');
@@ -1151,7 +1438,12 @@ const SettingsPage: React.FC = () => {
         manager_id: branchFormData.managerId || undefined,
         is_active: branchFormData.status === 'active',
         operating_hours: Object.keys(dbOperatingHours).length > 0 ? dbOperatingHours : null,
-        branch_type: branchFormData.type
+        branch_type: branchFormData.type,
+        // Attendance Terminal Security Fields
+        latitude: branchFormData.latitude || null,
+        longitude: branchFormData.longitude || null,
+        attendance_pin: branchFormData.attendancePin || undefined,
+        attendance_security_settings: branchFormData.attendanceSecuritySettings
       });
 
       setSuccess('Branch updated successfully!');
@@ -1217,6 +1509,17 @@ const SettingsPage: React.FC = () => {
       }
     });
     
+    // Get default security settings if not set
+    const defaultSecuritySettings: AttendanceSecuritySettings = {
+      enableDeviceVerification: false,
+      enableGeoLocationVerification: false,
+      enablePinAccessControl: false,
+      geoLocationToleranceMeters: 100,
+      requirePinForEachSession: false,
+      pinSessionDurationHours: 24,
+      enableActivityLogging: true
+    };
+
     setBranchFormData({
       name: branch.name,
       code: branch.code,
@@ -1229,7 +1532,12 @@ const SettingsPage: React.FC = () => {
       email: branch.email || '',
       operatingHours: formHours,
       managerId: branch.manager_id || '',
-      status: branch.is_active ? 'active' : 'inactive'
+      status: branch.is_active ? 'active' : 'inactive',
+      // Attendance Terminal Security Fields
+      latitude: branch.latitude || null,
+      longitude: branch.longitude || null,
+      attendancePin: branch.attendance_pin || '',
+      attendanceSecuritySettings: branch.attendance_security_settings || defaultSecuritySettings
     });
     setShowAddBranchModal(true);
   };
@@ -1255,7 +1563,20 @@ const SettingsPage: React.FC = () => {
         sunday: { open: '08:00', close: '18:00', isOpen: false }
       },
       managerId: '',
-      status: 'active'
+      status: 'active',
+      // Attendance Terminal Security Fields
+      latitude: null,
+      longitude: null,
+      attendancePin: '',
+      attendanceSecuritySettings: {
+        enableDeviceVerification: false,
+        enableGeoLocationVerification: false,
+        enablePinAccessControl: false,
+        geoLocationToleranceMeters: 100,
+        requirePinForEachSession: false,
+        pinSessionDurationHours: 24,
+        enableActivityLogging: true
+      }
     });
     setEditingBranch(null);
   };
@@ -2632,6 +2953,587 @@ const SettingsPage: React.FC = () => {
         </div>
       </div>
 
+      {/* Attendance Terminal Security Section */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+        <div className="flex items-center space-x-3 mb-6">
+          <div className="p-2 bg-purple-50 rounded-lg">
+            <Shield className="w-5 h-5 text-purple-600" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900">Attendance Terminal Security</h3>
+        </div>
+
+        <div className="mb-6">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Select Branch to Configure Security
+          </label>
+          <select
+            value={selectedBranchForSecurity || ''}
+            onChange={(e) => {
+              const branchId = e.target.value;
+              setSelectedBranchForSecurity(branchId || null);
+              if (branchId) {
+                fetchBranchDevices(branchId);
+                fetchBranchActivityLogs(branchId);
+              } else {
+                setBranchDevices([]);
+                setBranchActivityLogs([]);
+              }
+            }}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+          >
+            <option value="">Select a branch</option>
+            {branches.map((branch) => (
+              <option key={branch.id} value={branch.id}>
+                {branch.name} ({branch.code})
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {selectedBranchForSecurity && (
+          <div className="space-y-6">
+            {/* Branch Security Status */}
+            {(() => {
+              const selectedBranch = branches.find(b => b.id === selectedBranchForSecurity);
+              if (!selectedBranch) return null;
+
+              const securitySettings = selectedBranch.attendance_security_settings || {
+                enableDeviceVerification: false,
+                enableGeoLocationVerification: false,
+                enablePinAccessControl: false,
+                enableActivityLogging: true
+              };
+
+              return (
+                <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                  <h4 className="text-sm font-semibold text-gray-900 mb-3">Security Status for {selectedBranch.name}</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="flex items-center space-x-2">
+                      <div className={`w-2 h-2 rounded-full ${securitySettings.enableDeviceVerification ? 'bg-green-500' : 'bg-gray-300'}`}></div>
+                      <span className="text-sm text-gray-700">Device Verification: {securitySettings.enableDeviceVerification ? 'Enabled' : 'Disabled'}</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <div className={`w-2 h-2 rounded-full ${securitySettings.enableGeoLocationVerification ? 'bg-green-500' : 'bg-gray-300'}`}></div>
+                      <span className="text-sm text-gray-700">Geo-location: {securitySettings.enableGeoLocationVerification ? 'Enabled' : 'Disabled'}</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <div className={`w-2 h-2 rounded-full ${securitySettings.enablePinAccessControl ? 'bg-green-500' : 'bg-gray-300'}`}></div>
+                      <span className="text-sm text-gray-700">PIN Access: {securitySettings.enablePinAccessControl ? 'Enabled' : 'Disabled'}</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <div className={`w-2 h-2 rounded-full ${selectedBranch.latitude && selectedBranch.longitude ? 'bg-green-500' : 'bg-gray-300'}`}></div>
+                      <span className="text-sm text-gray-700">Coordinates: {selectedBranch.latitude && selectedBranch.longitude ? 'Set' : 'Not Set'}</span>
+                    </div>
+                  </div>
+                  {securitySettings.enableGeoLocationVerification && selectedBranch.latitude && selectedBranch.longitude && (
+                    <p className="text-xs text-gray-600 mt-3">
+                      📍 Location: {selectedBranch.latitude}, {selectedBranch.longitude} (Tolerance: {securitySettings.geoLocationToleranceMeters || 100}m)
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* Device Management */}
+            <div className="border-t border-gray-200 pt-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center space-x-3">
+                  <Monitor className="w-5 h-5 text-green-600" />
+                  <h4 className="text-lg font-semibold text-gray-900">Verified Devices</h4>
+                </div>
+                <button
+                  onClick={() => {
+                    setDeviceFormData({
+                      device_name: '',
+                      device_fingerprint: '',
+                      device_type: 'kiosk'
+                    });
+                    setShowDeviceModal(true);
+                  }}
+                  className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Register Device</span>
+                </button>
+              </div>
+
+              {loading && branchDevices.length === 0 ? (
+                <div className="text-center py-8">
+                  <RefreshCw className="w-8 h-8 animate-spin text-gray-400 mx-auto mb-2" />
+                  <p className="text-gray-500">Loading devices...</p>
+                </div>
+              ) : branchDevices.length === 0 ? (
+                <div className="text-center py-8 bg-gray-50 rounded-lg border border-gray-200">
+                  <Monitor className="w-12 h-12 text-gray-300 mx-auto mb-2" />
+                  <p className="text-gray-500">No devices registered. Click "Register Device" to add one.</p>
+                  <p className="text-xs text-gray-400 mt-2">Devices must be registered to access the attendance terminal when device verification is enabled.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {branchDevices.map((device) => (
+                    <div key={device.id} className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center space-x-2 mb-1">
+                            <h5 className="font-medium text-gray-900">{device.device_name}</h5>
+                            <span className="px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-700 capitalize">
+                              {device.device_type || 'unknown'}
+                            </span>
+                            <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                              device.is_active 
+                                ? 'bg-green-100 text-green-700' 
+                                : 'bg-red-100 text-red-700'
+                            }`}>
+                              {device.is_active ? 'Active' : 'Inactive'}
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-500 font-mono mb-1">Fingerprint: {device.device_fingerprint.substring(0, 20)}...</p>
+                          {device.registered_by_user && (
+                            <p className="text-xs text-gray-500">Registered by: {device.registered_by_user.first_name} {device.registered_by_user.last_name}</p>
+                          )}
+                          {device.last_used_at && (
+                            <p className="text-xs text-gray-400 mt-1">Last used: {new Date(device.last_used_at).toLocaleString()}</p>
+                          )}
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <button
+                            onClick={async () => {
+                              if (confirm('Are you sure you want to deactivate this device?')) {
+                                try {
+                                  setLoading(true);
+                                  await attendanceTerminalDeviceService.deactivateDevice(device.id);
+                                  setSuccess('Device deactivated successfully!');
+                                  if (selectedBranchForSecurity) {
+                                    await fetchBranchDevices(selectedBranchForSecurity);
+                                  }
+                                  setTimeout(() => setSuccess(null), 3000);
+                                } catch (error: any) {
+                                  setError(error.message || 'Failed to deactivate device');
+                                  setTimeout(() => setError(null), 5000);
+                                } finally {
+                                  setLoading(false);
+                                }
+                              }
+                            }}
+                            className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg"
+                            title="Deactivate device"
+                          >
+                            <Ban className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={async () => {
+                              if (confirm('Are you sure you want to delete this device? This action cannot be undone.')) {
+                                try {
+                                  setLoading(true);
+                                  await attendanceTerminalDeviceService.deleteDevice(device.id);
+                                  setSuccess('Device deleted successfully!');
+                                  if (selectedBranchForSecurity) {
+                                    await fetchBranchDevices(selectedBranchForSecurity);
+                                  }
+                                  setTimeout(() => setSuccess(null), 3000);
+                                } catch (error: any) {
+                                  setError(error.message || 'Failed to delete device');
+                                  setTimeout(() => setError(null), 5000);
+                                } finally {
+                                  setLoading(false);
+                                }
+                              }
+                            }}
+                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                            title="Delete device"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <p className="text-xs text-blue-800">
+                  💡 <strong>How to Register a Device:</strong> When device verification is enabled, open the attendance terminal page on the device you want to register. The system will prompt for device registration and generate a unique fingerprint. Copy the fingerprint and register it here.
+                </p>
+              </div>
+            </div>
+
+            {/* Activity Logs */}
+            <div className="border-t border-gray-200 pt-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center space-x-3">
+                  <Activity className="w-5 h-5 text-blue-600" />
+                  <h4 className="text-lg font-semibold text-gray-900">Activity Logs</h4>
+                </div>
+                <button
+                  onClick={() => {
+                    if (selectedBranchForSecurity) {
+                      setShowActivityLogsModal(true);
+                      fetchBranchActivityLogs(selectedBranchForSecurity);
+                    }
+                  }}
+                  className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                >
+                  <Eye className="w-4 h-4" />
+                  <span>View All Logs</span>
+                </button>
+              </div>
+
+              {branchActivityLogs.length === 0 ? (
+                <div className="text-center py-8 bg-gray-50 rounded-lg border border-gray-200">
+                  <Activity className="w-12 h-12 text-gray-300 mx-auto mb-2" />
+                  <p className="text-gray-500">No activity logs yet.</p>
+                  <p className="text-xs text-gray-400 mt-2">Activity logs will appear here once attendance terminal is used.</p>
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {branchActivityLogs.slice(0, 10).map((log) => (
+                    <div key={log.id} className="p-3 border border-gray-200 rounded-lg bg-gray-50">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                          log.status === 'success' ? 'bg-green-100 text-green-700' :
+                          log.status === 'failed' ? 'bg-red-100 text-red-700' :
+                          log.status === 'blocked' ? 'bg-orange-100 text-orange-700' :
+                          'bg-gray-100 text-gray-700'
+                        }`}>
+                          {log.action_type.replace('_', ' ').toUpperCase()}
+                        </span>
+                        <span className="text-xs text-gray-500">
+                          {new Date(log.created_at).toLocaleString()}
+                        </span>
+                      </div>
+                      {log.status_reason && (
+                        <p className="text-xs text-gray-600 mt-1">{log.status_reason}</p>
+                      )}
+                      {log.device && (
+                        <p className="text-xs text-gray-500 mt-1">Device: {log.device.device_name}</p>
+                      )}
+                      {log.staff && (
+                        <p className="text-xs text-gray-500">Staff: {log.staff.first_name} {log.staff.last_name}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {!selectedBranchForSecurity && (
+          <div className="text-center py-8 bg-gray-50 rounded-lg border border-gray-200">
+            <Shield className="w-12 h-12 text-gray-300 mx-auto mb-2" />
+            <p className="text-gray-500">Select a branch to configure attendance terminal security settings.</p>
+          </div>
+        )}
+      </div>
+
+      {/* Register Device Modal */}
+      {showDeviceModal && selectedBranchForSecurity && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-2xl w-full">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+              <h3 className="text-xl font-semibold text-gray-900">Register Attendance Terminal Device</h3>
+              <button
+                onClick={() => {
+                  setShowDeviceModal(false);
+                  setDeviceFormData({
+                    device_name: '',
+                    device_fingerprint: '',
+                    device_type: 'kiosk'
+                  });
+                }}
+                className="p-2 text-gray-400 hover:text-gray-600 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <p className="text-sm text-blue-800">
+                  💡 <strong>Device Fingerprint:</strong> The device fingerprint is automatically generated when the attendance terminal page loads. Copy it from the terminal page or generate a new one below.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Device Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={deviceFormData.device_name}
+                  onChange={(e) => setDeviceFormData({ ...deviceFormData, device_name: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  placeholder="e.g., Main Branch Kiosk, Office Laptop"
+                />
+                <p className="text-xs text-gray-500 mt-1">A friendly name to identify this device</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Device Fingerprint <span className="text-red-500">*</span>
+                </label>
+                <div className="flex space-x-2">
+                  <input
+                    type="text"
+                    value={deviceFormData.device_fingerprint}
+                    onChange={(e) => setDeviceFormData({ ...deviceFormData, device_fingerprint: e.target.value })}
+                    className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent font-mono text-sm"
+                    placeholder="Paste device fingerprint here"
+                  />
+                  <button
+                    onClick={() => {
+                      const fingerprint = generateDeviceFingerprint();
+                      setDeviceFormData({ ...deviceFormData, device_fingerprint: fingerprint });
+                    }}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  >
+                    Generate
+                  </button>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">Unique identifier for this device/browser</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Device Type
+                </label>
+                <select
+                  value={deviceFormData.device_type}
+                  onChange={(e) => setDeviceFormData({ ...deviceFormData, device_type: e.target.value as 'desktop' | 'laptop' | 'tablet' | 'kiosk' })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                >
+                  <option value="kiosk">Kiosk</option>
+                  <option value="desktop">Desktop</option>
+                  <option value="laptop">Laptop</option>
+                  <option value="tablet">Tablet</option>
+                </select>
+              </div>
+
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                <p className="text-xs text-yellow-800">
+                  ⚠️ <strong>Important:</strong> Only register devices that will be used at the branch location. Unauthorized devices will be blocked from accessing the attendance terminal when device verification is enabled.
+                </p>
+              </div>
+            </div>
+
+            <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-6 py-4 flex items-center justify-end space-x-3">
+              <button
+                onClick={() => {
+                  setShowDeviceModal(false);
+                  setDeviceFormData({
+                    device_name: '',
+                    device_fingerprint: '',
+                    device_type: 'kiosk'
+                  });
+                }}
+                className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleRegisterDevice}
+                disabled={loading || !deviceFormData.device_name || !deviceFormData.device_fingerprint}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+              >
+                {loading ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Save className="w-4 h-4" />
+                )}
+                <span>{loading ? 'Registering...' : 'Register Device'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Activity Logs Modal */}
+      {showActivityLogsModal && selectedBranchForSecurity && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-6xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+              <h3 className="text-xl font-semibold text-gray-900">Activity Logs</h3>
+              <button
+                onClick={() => {
+                  setShowActivityLogsModal(false);
+                  setActivityLogsFilters({
+                    action_type: '',
+                    status: '',
+                    start_date: '',
+                    end_date: ''
+                  });
+                }}
+                className="p-2 text-gray-400 hover:text-gray-600 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* Filters */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Action Type</label>
+                  <select
+                    value={activityLogsFilters.action_type}
+                    onChange={(e) => setActivityLogsFilters({ ...activityLogsFilters, action_type: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
+                  >
+                    <option value="">All Actions</option>
+                    <option value="time_in">Time In</option>
+                    <option value="time_out">Time Out</option>
+                    <option value="access_denied">Access Denied</option>
+                    <option value="device_verified">Device Verified</option>
+                    <option value="pin_verified">PIN Verified</option>
+                    <option value="location_verified">Location Verified</option>
+                    <option value="location_failed">Location Failed</option>
+                    <option value="device_blocked">Device Blocked</option>
+                    <option value="pin_failed">PIN Failed</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
+                  <select
+                    value={activityLogsFilters.status}
+                    onChange={(e) => setActivityLogsFilters({ ...activityLogsFilters, status: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
+                  >
+                    <option value="">All Statuses</option>
+                    <option value="success">Success</option>
+                    <option value="failed">Failed</option>
+                    <option value="blocked">Blocked</option>
+                    <option value="warning">Warning</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Start Date</label>
+                  <input
+                    type="date"
+                    value={activityLogsFilters.start_date}
+                    onChange={(e) => setActivityLogsFilters({ ...activityLogsFilters, start_date: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">End Date</label>
+                  <input
+                    type="date"
+                    value={activityLogsFilters.end_date}
+                    onChange={(e) => setActivityLogsFilters({ ...activityLogsFilters, end_date: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
+                  />
+                </div>
+              </div>
+
+              <button
+                onClick={async () => {
+                  if (selectedBranchForSecurity) {
+                    try {
+                      setLoading(true);
+                      const { logs } = await attendanceTerminalDeviceService.getActivityLogs({
+                        branch_id: selectedBranchForSecurity,
+                        action_type: activityLogsFilters.action_type || undefined,
+                        status: activityLogsFilters.status || undefined,
+                        start_date: activityLogsFilters.start_date || undefined,
+                        end_date: activityLogsFilters.end_date || undefined,
+                        limit: 500
+                      });
+                      setBranchActivityLogs(logs);
+                    } catch (error: any) {
+                      setError(error.message || 'Failed to fetch logs');
+                      setTimeout(() => setError(null), 5000);
+                    } finally {
+                      setLoading(false);
+                    }
+                  }
+                }}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                Apply Filters
+              </button>
+
+              {/* Logs Table */}
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Timestamp</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Device</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Staff</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Reason</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Location</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {loading && branchActivityLogs.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="px-4 py-8 text-center">
+                          <RefreshCw className="w-8 h-8 animate-spin text-gray-400 mx-auto mb-2" />
+                          <p className="text-gray-500">Loading logs...</p>
+                        </td>
+                      </tr>
+                    ) : branchActivityLogs.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
+                          No activity logs found
+                        </td>
+                      </tr>
+                    ) : (
+                      branchActivityLogs.map((log) => (
+                        <tr key={log.id} className="hover:bg-gray-50">
+                          <td className="px-4 py-3 text-sm text-gray-900">
+                            {new Date(log.created_at).toLocaleString()}
+                          </td>
+                          <td className="px-4 py-3 text-sm">
+                            <span className="px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-700">
+                              {log.action_type.replace('_', ' ').toUpperCase()}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-sm">
+                            <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                              log.status === 'success' ? 'bg-green-100 text-green-700' :
+                              log.status === 'failed' ? 'bg-red-100 text-red-700' :
+                              log.status === 'blocked' ? 'bg-orange-100 text-orange-700' :
+                              'bg-yellow-100 text-yellow-700'
+                            }`}>
+                              {log.status.toUpperCase()}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-600">
+                            {log.device ? log.device.device_name : log.device_fingerprint?.substring(0, 10) + '...' || 'N/A'}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-600">
+                            {log.staff ? `${log.staff.first_name} ${log.staff.last_name}` : 'N/A'}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-600">
+                            {log.status_reason || '-'}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-600">
+                            {log.location_latitude && log.location_longitude ? (
+                              <span className="text-xs">
+                                {log.location_latitude.toFixed(4)}, {log.location_longitude.toFixed(4)}
+                                {log.distance_from_branch_meters && (
+                                  <span className="block text-gray-500">
+                                    {log.distance_from_branch_meters.toFixed(2)}m away
+                                  </span>
+                                )}
+                              </span>
+                            ) : '-'}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Add/Edit Branch Modal */}
       {showAddBranchModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -2868,6 +3770,258 @@ const SettingsPage: React.FC = () => {
                       )}
                     </div>
                   ))}
+                </div>
+              </div>
+
+              {/* Attendance Terminal Security Settings */}
+              <div className="border-t border-gray-200 pt-6">
+                <div className="flex items-center space-x-3 mb-4">
+                  <div className="p-2 bg-purple-50 rounded-lg">
+                    <Shield className="w-5 h-5 text-purple-600" />
+                  </div>
+                  <h4 className="text-lg font-semibold text-gray-900">Attendance Terminal Security</h4>
+                </div>
+                <p className="text-sm text-gray-600 mb-6">
+                  Configure security settings for the attendance terminal at this branch. These settings help prevent unauthorized access and ensure attendance is only recorded from authorized locations and devices.
+                </p>
+
+                {/* Geo-location Settings */}
+                <div className="space-y-4 mb-6">
+                  <div className="flex items-center justify-between p-4 bg-blue-50 rounded-lg border border-blue-200">
+                    <div className="flex items-center space-x-3">
+                      <MapPin className="w-5 h-5 text-blue-600" />
+                      <div>
+                        <label className="text-sm font-medium text-gray-900">Enable Geo-location Verification</label>
+                        <p className="text-xs text-gray-600">Require attendance to be recorded within branch location</p>
+                      </div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={branchFormData.attendanceSecuritySettings.enableGeoLocationVerification}
+                      onChange={(e) => setBranchFormData({
+                        ...branchFormData,
+                        attendanceSecuritySettings: {
+                          ...branchFormData.attendanceSecuritySettings,
+                          enableGeoLocationVerification: e.target.checked
+                        }
+                      })}
+                      className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                    />
+                  </div>
+
+                  {branchFormData.attendanceSecuritySettings.enableGeoLocationVerification && (
+                    <div className="ml-8 space-y-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Latitude <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            type="number"
+                            step="0.00000001"
+                            value={branchFormData.latitude || ''}
+                            onChange={(e) => setBranchFormData({
+                              ...branchFormData,
+                              latitude: e.target.value ? parseFloat(e.target.value) : null
+                            })}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                            placeholder="14.5995"
+                            min="-90"
+                            max="90"
+                          />
+                          <p className="text-xs text-gray-500 mt-1">Branch latitude coordinate (e.g., 14.5995)</p>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Longitude <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            type="number"
+                            step="0.00000001"
+                            value={branchFormData.longitude || ''}
+                            onChange={(e) => setBranchFormData({
+                              ...branchFormData,
+                              longitude: e.target.value ? parseFloat(e.target.value) : null
+                            })}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                            placeholder="120.9842"
+                            min="-180"
+                            max="180"
+                          />
+                          <p className="text-xs text-gray-500 mt-1">Branch longitude coordinate (e.g., 120.9842)</p>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Location Tolerance (meters)
+                        </label>
+                        <input
+                          type="number"
+                          value={branchFormData.attendanceSecuritySettings.geoLocationToleranceMeters}
+                          onChange={(e) => setBranchFormData({
+                            ...branchFormData,
+                            attendanceSecuritySettings: {
+                              ...branchFormData.attendanceSecuritySettings,
+                              geoLocationToleranceMeters: parseInt(e.target.value) || 100
+                            }
+                          })}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                          min="10"
+                          max="1000"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Maximum distance from branch coordinates (default: 100 meters)</p>
+                      </div>
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                        <p className="text-xs text-blue-800">
+                          💡 <strong>Tip:</strong> Use Google Maps to get your branch coordinates. Right-click on your branch location and select "What's here?" to see the coordinates.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Device Verification */}
+                <div className="space-y-4 mb-6">
+                  <div className="flex items-center justify-between p-4 bg-green-50 rounded-lg border border-green-200">
+                    <div className="flex items-center space-x-3">
+                      <Monitor className="w-5 h-5 text-green-600" />
+                      <div>
+                        <label className="text-sm font-medium text-gray-900">Enable Device Verification</label>
+                        <p className="text-xs text-gray-600">Only allow pre-registered devices to access attendance terminal</p>
+                      </div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={branchFormData.attendanceSecuritySettings.enableDeviceVerification}
+                      onChange={(e) => setBranchFormData({
+                        ...branchFormData,
+                        attendanceSecuritySettings: {
+                          ...branchFormData.attendanceSecuritySettings,
+                          enableDeviceVerification: e.target.checked
+                        }
+                      })}
+                      className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                    />
+                  </div>
+                  {branchFormData.attendanceSecuritySettings.enableDeviceVerification && (
+                    <div className="ml-8 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                      <p className="text-xs text-gray-600">
+                        💡 Device registration can be managed in the "Attendance Terminal Devices" section below.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* PIN Access Control */}
+                <div className="space-y-4 mb-6">
+                  <div className="flex items-center justify-between p-4 bg-yellow-50 rounded-lg border border-yellow-200">
+                    <div className="flex items-center space-x-3">
+                      <Lock className="w-5 h-5 text-yellow-600" />
+                      <div>
+                        <label className="text-sm font-medium text-gray-900">Enable PIN Access Control</label>
+                        <p className="text-xs text-gray-600">Require PIN code to access attendance terminal</p>
+                      </div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={branchFormData.attendanceSecuritySettings.enablePinAccessControl}
+                      onChange={(e) => setBranchFormData({
+                        ...branchFormData,
+                        attendanceSecuritySettings: {
+                          ...branchFormData.attendanceSecuritySettings,
+                          enablePinAccessControl: e.target.checked
+                        }
+                      })}
+                      className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                    />
+                  </div>
+
+                  {branchFormData.attendanceSecuritySettings.enablePinAccessControl && (
+                    <div className="ml-8 space-y-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Branch PIN Code <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={branchFormData.attendancePin}
+                          onChange={(e) => setBranchFormData({
+                            ...branchFormData,
+                            attendancePin: e.target.value
+                          })}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                          placeholder="Enter 4-20 digit PIN"
+                          maxLength={20}
+                        />
+                        <p className="text-xs text-gray-500 mt-1">PIN code required to access attendance terminal</p>
+                      </div>
+                      <div>
+                        <label className="flex items-center space-x-3">
+                          <input
+                            type="checkbox"
+                            checked={branchFormData.attendanceSecuritySettings.requirePinForEachSession}
+                            onChange={(e) => setBranchFormData({
+                              ...branchFormData,
+                              attendanceSecuritySettings: {
+                                ...branchFormData.attendanceSecuritySettings,
+                                requirePinForEachSession: e.target.checked
+                              }
+                            })}
+                            className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                          />
+                          <span className="text-sm text-gray-700">Require PIN for each session</span>
+                        </label>
+                        <p className="text-xs text-gray-500 ml-7">If disabled, PIN is valid for the duration specified below</p>
+                      </div>
+                      {!branchFormData.attendanceSecuritySettings.requirePinForEachSession && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            PIN Session Duration (hours)
+                          </label>
+                          <input
+                            type="number"
+                            value={branchFormData.attendanceSecuritySettings.pinSessionDurationHours}
+                            onChange={(e) => setBranchFormData({
+                              ...branchFormData,
+                              attendanceSecuritySettings: {
+                                ...branchFormData.attendanceSecuritySettings,
+                                pinSessionDurationHours: parseInt(e.target.value) || 24
+                              }
+                            })}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                            min="1"
+                            max="168"
+                          />
+                          <p className="text-xs text-gray-500 mt-1">How long the PIN session remains valid (default: 24 hours)</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Activity Logging */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200">
+                    <div className="flex items-center space-x-3">
+                      <Activity className="w-5 h-5 text-gray-600" />
+                      <div>
+                        <label className="text-sm font-medium text-gray-900">Enable Activity Logging</label>
+                        <p className="text-xs text-gray-600">Log all attendance terminal access attempts for auditing</p>
+                      </div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={branchFormData.attendanceSecuritySettings.enableActivityLogging}
+                      onChange={(e) => setBranchFormData({
+                        ...branchFormData,
+                        attendanceSecuritySettings: {
+                          ...branchFormData.attendanceSecuritySettings,
+                          enableActivityLogging: e.target.checked
+                        }
+                      })}
+                      className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
