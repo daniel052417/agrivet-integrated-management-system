@@ -274,6 +274,7 @@ const POSApp: React.FC<POSAppProps> = ({ user, onLogout }) => {
     );
   }
 
+
   return (
     <>
       <POSLayout

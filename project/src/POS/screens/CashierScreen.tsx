@@ -1778,7 +1778,7 @@ const CashierScreen: React.FC = () => {
               )}
             </div>
 
-            {/* Total and Proceed Button */}
+            {/* Total and Checkout Button */}
             {cart.length > 0 && (
               <div className="border-t-2 border-gray-200 pt-4 space-y-4 bg-white sticky bottom-0 -mx-4 -mb-4 px-4 pb-4">
                 <div className="flex justify-between items-center">
@@ -1796,7 +1796,7 @@ const CashierScreen: React.FC = () => {
                   fullWidth
                   icon={CreditCard}
                 >
-                  Proceed to Payment
+                  Checkout
                 </TouchButton>
               </div>
             )}
@@ -1804,27 +1804,30 @@ const CashierScreen: React.FC = () => {
         )}
 
         {/* Mobile Floating Cart Button */}
-        {isMobile && cart.length > 0 && (
-          <button
-            onClick={() => setShowMobileCart(true)}
-            className="mobile-floating-cart text-white touch-button"
-            aria-label="View cart and proceed to payment"
-          >
-            <div className="flex items-center justify-between px-4 py-3.5">
-              <div className="flex-1 min-w-0 text-left">
-                <div className="text-sm font-semibold">Proceed New Order</div>
-                <div className="text-xs opacity-95 flex items-center space-x-2 mt-0.5">
-                  <span className="font-medium">{cart.length} {cart.length === 1 ? 'Item' : 'Items'}</span>
-                  <span className="opacity-60">•</span>
-                  <span className="font-bold text-sm">₱{calculateTotal().toFixed(2)}</span>
+        {isMobile && cart.length > 0 && (() => {
+          const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
+          return (
+            <button
+              onClick={() => setShowMobileCart(true)}
+              className="mobile-floating-cart text-white touch-button"
+              aria-label="View cart and place order"
+            >
+              <div className="flex items-center justify-between px-4 py-3.5">
+                <div className="flex-1 min-w-0 text-left">
+                  <div className="text-base font-bold">Place Order</div>
+                  <div className="text-xs opacity-95 flex items-center space-x-2 mt-1">
+                    <span className="font-medium">{totalItems} {totalItems === 1 ? 'item' : 'items'}</span>
+                    <span className="opacity-60">•</span>
+                    <span className="font-bold text-sm">₱{calculateTotal().toFixed(2)}</span>
+                  </div>
+                </div>
+                <div className="flex-shrink-0 ml-3">
+                  <ChevronRight className="w-5 h-5" />
                 </div>
               </div>
-              <div className="flex-shrink-0 ml-3">
-                <ChevronRight className="w-5 h-5" />
-              </div>
-            </div>
-          </button>
-        )}
+            </button>
+          );
+        })()}
       </div>
 
       <Modal

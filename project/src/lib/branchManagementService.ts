@@ -22,6 +22,8 @@ export interface Branch {
   longitude?: number | null;
   attendance_pin?: string | null;
   attendance_security_settings?: AttendanceSecuritySettings | null;
+  // POS Device Access
+  allow_attendance_device_for_pos?: boolean;
   // Joined fields
   manager?: {
     id: string;
@@ -59,6 +61,8 @@ export interface CreateBranchData {
   longitude?: number | null;
   attendance_pin?: string | null;
   attendance_security_settings?: AttendanceSecuritySettings | null;
+  // POS Device Access
+  allow_attendance_device_for_pos?: boolean;
 }
 
 export interface UpdateBranchData extends Partial<CreateBranchData> {

@@ -107,16 +107,40 @@ class MFAAuthService {
         sidebar_config: sidebarConfig,
       };
 
+      // Check device access for cashier role BEFORE creating session
+      // This ensures unauthorized devices cannot create a session
+      if (userRole?.name === 'cashier' && customUser.branch_id) {
+        try {
+          const { posDeviceAccessService } = await import('../POS/services/posDeviceAccessService');
+          const deviceAccessResult = await posDeviceAccessService.checkDeviceAccessForLogin(
+            customUser.id,
+            customUser.branch_id,
+            userRole.name
+          );
+
+          if (!deviceAccessResult.allowed) {
+            throw new Error(deviceAccessResult.reason || 'Unauthorized device. This device is not registered for POS access.');
+          }
+        } catch (error: any) {
+          // If it's our custom error, throw it as-is (don't create session)
+          if (error.message && error.message.includes('Unauthorized device')) {
+            throw error;
+          }
+          // For other errors, log but don't block login (fallback behavior)
+          console.error('⚠️ Error checking device access during MFA login:', error);
+        }
+      }
+
       // Set current user
       customAuth.setCurrentUser(customUser);
 
-      // Create session with MFA used
+      // Create session with MFA used (only after device verification passes)
       const session = await customAuth.createSession(
         customUser.id,
         'mfa',
         true
       );
-      
+
       // Update last login
       const { supabase: supabaseClient } = await import('./supabase');
       await supabaseClient

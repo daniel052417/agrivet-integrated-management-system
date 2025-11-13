@@ -423,19 +423,43 @@ class CustomAuthService {
         sidebar_config: sidebarConfig,
       };
 
+      // 7. Check device access for cashier role BEFORE creating session
+      // This ensures unauthorized devices cannot create a session
+      if (userRole.name === 'cashier' && customUser.branch_id) {
+        try {
+          const { posDeviceAccessService } = await import('../POS/services/posDeviceAccessService');
+          const deviceAccessResult = await posDeviceAccessService.checkDeviceAccessForLogin(
+            customUser.id,
+            customUser.branch_id,
+            userRole.name
+          );
+
+          if (!deviceAccessResult.allowed) {
+            throw new Error(deviceAccessResult.reason || 'Unauthorized device. This device is not registered for POS access.');
+          }
+        } catch (error: any) {
+          // If it's our custom error, throw it as-is (don't create session)
+          if (error.message && error.message.includes('Unauthorized device')) {
+            throw error;
+          }
+          // For other errors, log but don't block login (fallback behavior)
+          console.error('⚠️ Error checking device access during login:', error);
+        }
+      }
+
       this.setCurrentUser(customUser);
 
-      // 7. Create session and JWT token
+      // 8. Create session and JWT token (only after device verification passes)
       // Determine login method and MFA usage
       const loginMethod: 'password' | 'mfa' | 'sso' = 'password'; // TODO: Detect actual login method
       const mfaUsed = customUser.mfa_enabled || false; // TODO: Check if MFA was actually used
       const session = await this.createSession(customUser.id, loginMethod, mfaUsed);
       this.currentSession = session;
 
-      // 9. Update last login and activity
+      // 10. Update last login and activity
       await this.updateLastLogin(customUser.id);
 
-      // 10. Create POS session if user is a cashier
+      // 11. Create POS session if user is a cashier
       if (userRole.name === 'cashier' && customUser.branch_id) {
         try {
           console.log('🔄 [POS Session] Validating POS session creation for cashier:', customUser.id);
@@ -810,6 +834,35 @@ class CustomAuthService {
         return null;
       }
 
+      // Check device access for cashier role (if attendance device access is enabled)
+      const userRoleName = user.role_name || user.role || 'user';
+      if (userRoleName === 'cashier' && user.branch_id) {
+        try {
+          const { posDeviceAccessService } = await import('../POS/services/posDeviceAccessService');
+          const deviceAccessResult = await posDeviceAccessService.checkDeviceAccessForLogin(
+            user.id,
+            user.branch_id,
+            userRoleName
+          );
+
+          if (!deviceAccessResult.allowed) {
+            // Device not authorized - clear session and return null
+            console.warn('⚠️ Device access denied during session restoration:', deviceAccessResult.reason);
+            this.clearSession();
+            return null;
+          }
+        } catch (error: any) {
+          // If it's our custom error, clear session
+          if (error.message && error.message.includes('Unauthorized device')) {
+            console.warn('⚠️ Unauthorized device detected during session restoration');
+            this.clearSession();
+            return null;
+          }
+          // For other errors, log but allow session restoration (fallback behavior)
+          console.error('⚠️ Error checking device access during session restoration:', error);
+        }
+      }
+
       this.setCurrentUser(user);
       this.currentSession = session;
 
@@ -1027,6 +1080,8 @@ class CustomAuthService {
   private clearSession(): void {
     localStorage.removeItem(this.SESSION_STORAGE_KEY);
     localStorage.removeItem(this.TOKEN_STORAGE_KEY);
+    this.currentUser = null;
+    this.currentSession = null;
   }
 
   // Update last login timestamp in the users table

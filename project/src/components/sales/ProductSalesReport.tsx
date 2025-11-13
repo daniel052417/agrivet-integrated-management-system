@@ -117,7 +117,7 @@ const ProductSalesReport: React.FC = () => {
       // Load product units for pricing information
       const { data: unitsData, error: unitsError } = await supabase
         .from('product_units')
-        .select('id, product_id, unit_name, price_per_unit, is_base_unit, conversion_factor')
+        .select('id, product_id, unit_name, unit_label, price_per_unit, is_base_unit, conversion_factor')
         .eq('is_sellable', true);
 
       if (unitsError) throw unitsError;
@@ -142,7 +142,7 @@ const ProductSalesReport: React.FC = () => {
 
       const { data: itemsData, error: itemsError } = await supabase
         .from('pos_transaction_items')
-        .select('product_id, quantity, unit_price, line_total, created_at, transaction_id')
+        .select('product_id, quantity, unit_price, line_total, unit_of_measure, created_at, transaction_id')
         .in('transaction_id', txIds);
 
       if (itemsError) throw itemsError;
@@ -160,7 +160,7 @@ const ProductSalesReport: React.FC = () => {
 
       const { data: prevItemsData, error: prevItemsError } = await supabase
         .from('pos_transaction_items')
-        .select('product_id, quantity, unit_price, line_total, created_at, transaction_id')
+        .select('product_id, quantity, unit_price, line_total, unit_of_measure, created_at, transaction_id')
         .in('transaction_id', prevTxIds);
 
       if (prevItemsError) throw prevItemsError;
@@ -208,18 +208,35 @@ const ProductSalesReport: React.FC = () => {
           const unitOfMeasure = item.unit_of_measure;
           
           // Find the unit that matches this transaction item
-          const matchingUnit = productUnits.find((unit: any) => 
-            unit.unit_name === unitOfMeasure || unit.unit_label === unitOfMeasure
-          );
+          // Try multiple matching strategies:
+          // 1. Exact match with unit_name
+          // 2. Exact match with unit_label
+          // 3. Case-insensitive match
+          // 4. Match with normalized names (lowercase, trimmed)
+          let matchingUnit = productUnits.find((unit: any) => {
+            const unitName = (unit.unit_name || '').toLowerCase().trim();
+            const unitLabel = (unit.unit_label || '').toLowerCase().trim();
+            const storedUnit = (unitOfMeasure || '').toLowerCase().trim();
+            
+            return unit.unit_name === unitOfMeasure || 
+                   unit.unit_label === unitOfMeasure ||
+                   unitName === storedUnit ||
+                   unitLabel === storedUnit;
+          });
           
           if (matchingUnit && baseUnitCost > 0) {
             // Calculate cost per unit for this specific unit
             // Formula: cost_per_unit = base_cost × (unit_conversion_factor / base_conversion_factor)
+            // Example: If base unit (sack) costs ₱1875 with conversion_factor 50,
+            //          and kg has conversion_factor 1,
+            //          then cost per kg = ₱1875 × (1 / 50) = ₱37.5 per kg
             const unitConversionFactor = Number(matchingUnit.conversion_factor || 1);
             const costPerThisUnit = baseUnitCost * (unitConversionFactor / baseConversionFactor);
             totalCost += quantity * costPerThisUnit;
           } else if (baseUnit && baseUnitCost > 0) {
             // Fallback: if no matching unit found, assume it's the base unit
+            // This handles cases where unit_of_measure might be stored incorrectly
+            // or if the product units structure changed after the transaction
             totalCost += quantity * baseUnitCost;
           }
           

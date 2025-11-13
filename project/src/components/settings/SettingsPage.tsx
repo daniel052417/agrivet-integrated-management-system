@@ -7,7 +7,7 @@ import {
   FileText, HardDrive, Edit3, Ban,
   TestTube, ShieldCheck, Activity, Settings2, User,
   Clock, DollarSign, Calendar, BarChart3, Users, LogOut,
-  Eye, Key
+  Eye, Key, ShoppingCart
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { settingsService } from '../../lib/settingsService';
@@ -180,7 +180,9 @@ const SettingsPage: React.FC = () => {
       requirePinForEachSession: false,
       pinSessionDurationHours: 24,
       enableActivityLogging: true
-    } as AttendanceSecuritySettings
+    } as AttendanceSecuritySettings,
+    // POS Device Access
+    allow_attendance_device_for_pos: false
   });
   
   // Branch settings state
@@ -1604,7 +1606,9 @@ const SettingsPage: React.FC = () => {
         latitude: branchFormData.latitude || null,
         longitude: branchFormData.longitude || null,
         attendance_pin: branchFormData.attendancePin || undefined,
-        attendance_security_settings: branchFormData.attendanceSecuritySettings
+        attendance_security_settings: branchFormData.attendanceSecuritySettings,
+        // POS Device Access
+        allow_attendance_device_for_pos: branchFormData.allow_attendance_device_for_pos
       });
 
       setSuccess('Branch created successfully!');
@@ -1663,7 +1667,9 @@ const SettingsPage: React.FC = () => {
         latitude: branchFormData.latitude || null,
         longitude: branchFormData.longitude || null,
         attendance_pin: branchFormData.attendancePin || undefined,
-        attendance_security_settings: branchFormData.attendanceSecuritySettings
+        attendance_security_settings: branchFormData.attendanceSecuritySettings,
+        // POS Device Access
+        allow_attendance_device_for_pos: branchFormData.allow_attendance_device_for_pos
       });
 
       setSuccess('Branch updated successfully!');
@@ -1757,7 +1763,9 @@ const SettingsPage: React.FC = () => {
       latitude: branch.latitude || null,
       longitude: branch.longitude || null,
       attendancePin: branch.attendance_pin || '',
-        attendanceSecuritySettings: branch.attendance_security_settings || defaultSecuritySettings
+      attendanceSecuritySettings: branch.attendance_security_settings || defaultSecuritySettings,
+      // POS Device Access
+      allow_attendance_device_for_pos: branch.allow_attendance_device_for_pos || false
     });
     setShowAddBranchModal(true);
   };
@@ -1796,7 +1804,9 @@ const SettingsPage: React.FC = () => {
         requirePinForEachSession: false,
         pinSessionDurationHours: 24,
         enableActivityLogging: true
-      }
+      },
+      // POS Device Access
+      allow_attendance_device_for_pos: false
     });
     setEditingBranch(null);
   };
@@ -4428,6 +4438,41 @@ const SettingsPage: React.FC = () => {
                       className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
                     />
                   </div>
+                </div>
+              </div>
+
+              {/* POS Device Access Settings */}
+              <div className="border-t border-gray-200 pt-6">
+                <div className="flex items-center space-x-3 mb-4">
+                  <div className="p-2 bg-green-50 rounded-lg">
+                    <ShoppingCart className="w-5 h-5 text-green-600" />
+                  </div>
+                  <h4 className="text-lg font-semibold text-gray-900">POS Device Access</h4>
+                </div>
+                <p className="text-sm text-gray-600 mb-6">
+                  Control whether attendance terminal devices registered for this branch can access the POS interface.
+                </p>
+
+                <div className="flex items-center justify-between p-4 bg-green-50 rounded-lg border border-green-200">
+                  <div className="flex items-center space-x-3">
+                    <Key className="w-5 h-5 text-green-600" />
+                    <div>
+                      <label className="text-sm font-medium text-gray-900">Allow Attendance Device to Access POS</label>
+                      <p className="text-xs text-gray-600">
+                        When enabled, attendance terminal devices registered for this branch can access POS. 
+                        When disabled, only POS-registered devices can access POS.
+                      </p>
+                    </div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={branchFormData.allow_attendance_device_for_pos}
+                    onChange={(e) => setBranchFormData({
+                      ...branchFormData,
+                      allow_attendance_device_for_pos: e.target.checked
+                    })}
+                    className="rounded border-gray-300 text-green-600 focus:ring-green-500"
+                  />
                 </div>
               </div>
             </div>
