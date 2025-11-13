@@ -242,9 +242,7 @@ const InventoryManagement: React.FC = () => {
           brand: formData.brand || null,
           unit_of_measure: baseUnitLabel,
           image_url: imageUrl || null,
-          is_active: true,
-          batch_no: formData.batch_no || null,
-          expiration_date: formData.expiration_date || null
+          is_active: true
         };
 
         console.log('Creating product with data:', productData);
@@ -292,7 +290,9 @@ const InventoryManagement: React.FC = () => {
             quantity_reserved: 0,
             reorder_level: parseFloat(formData.reorder_level) || Math.max(10, parseFloat(formData.stock_quantity) * 0.2),
             max_stock_level: parseFloat(formData.stock_quantity) * 2,
-            base_unit: baseUnit.unit_label
+            base_unit: baseUnit.unit_label,
+            batch_no: formData.batch_no || null,
+            expiration_date: formData.expiration_date || null
           };
 
           const { error: inventoryError } = await supabase
@@ -332,7 +332,9 @@ const InventoryManagement: React.FC = () => {
             quantity_reserved: 0,
             reorder_level: parseFloat(formData.reorder_level) || Math.max(10, parseFloat(formData.stock_quantity) * 0.2),
             max_stock_level: parseFloat(formData.stock_quantity) * 2,
-            base_unit: newUnit.unit_label
+            base_unit: newUnit.unit_label,
+            batch_no: formData.batch_no || null,
+            expiration_date: formData.expiration_date || null
           };
 
           const { error: inventoryError } = await supabase
@@ -355,9 +357,7 @@ const InventoryManagement: React.FC = () => {
           category_id: formData.category_id,
           brand: formData.brand || null,
           image_url: imageUrl || null,
-          supplier_id: formData.supplier_id,
-          batch_no: formData.batch_no || null,
-          expiration_date: formData.expiration_date || null
+          supplier_id: formData.supplier_id
         };
 
         const { error: productError } = await supabase
@@ -442,7 +442,9 @@ const InventoryManagement: React.FC = () => {
         const inventoryData = {
           quantity_on_hand: parseInt(formData.stock_quantity),
           reorder_level: parseInt(formData.reorder_level) || Math.max(10, parseInt(formData.stock_quantity) * 0.2),
-          max_stock_level: parseInt(formData.stock_quantity) * 2
+          max_stock_level: parseInt(formData.stock_quantity) * 2,
+          batch_no: formData.batch_no || null,
+          expiration_date: formData.expiration_date || null
         };
 
         const { error: inventoryError } = await supabase
@@ -700,13 +702,30 @@ const InventoryManagement: React.FC = () => {
   const openEditModal = async (product: InventoryManagementRow) => {
     try {
       // Fetch all units for this product
-      const { data: units, error } = await supabase
+      const { data: units, error: unitsError } = await supabase
         .from('product_units')
         .select('*')
         .eq('product_id', product.product_id)
         .order('is_base_unit', { ascending: false });
 
-      if (error) throw error;
+      if (unitsError) throw unitsError;
+
+      // Fetch inventory record to get correct batch_no and expiration_date for this specific inventory record
+      let batchNo = product.batch_no || '';
+      let expirationDate = product.expiration_date || '';
+      
+      if (product.inventory_id) {
+        const { data: inventoryRecord, error: inventoryError } = await supabase
+          .from('inventory')
+          .select('batch_no, expiration_date')
+          .eq('id', product.inventory_id)
+          .single();
+
+        if (!inventoryError && inventoryRecord) {
+          batchNo = inventoryRecord.batch_no || '';
+          expirationDate = inventoryRecord.expiration_date || '';
+        }
+      }
 
       // Check if product has multiple units
       const hasMultipleUnits = units && units.length > 1;
@@ -730,8 +749,8 @@ const InventoryManagement: React.FC = () => {
         barcode: product.barcode || '',
         brand: product.brand || '',
         enable_multi_unit: hasMultipleUnits,
-        batch_no: product.batch_no || '',
-        expiration_date: product.expiration_date || ''
+        batch_no: batchNo,
+        expiration_date: expirationDate ? (expirationDate.includes('T') ? expirationDate.split('T')[0] : expirationDate) : ''
       });
 
       // If product has multiple units, load them into productUnits state
