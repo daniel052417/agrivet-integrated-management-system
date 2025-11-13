@@ -35,6 +35,7 @@ const Expenses: React.FC = () => {
     expenses,
     expenseRequests,
     payrollRequests,
+    stockOutLosses, // New: Stock out losses from hook
     categories,
     branches,
     totalSales,
@@ -446,7 +447,7 @@ const Expenses: React.FC = () => {
 
   // Create unfiltered unified rows for summary calculations (before filtering)
   type UnifiedRow = {
-    kind: 'expense' | 'request' | 'payroll';
+    kind: 'expense' | 'request' | 'payroll' | 'stock_out';
     id: string;
     date: string;
     description: string;
@@ -456,6 +457,17 @@ const Expenses: React.FC = () => {
     amount: number;
     status: string;
     raw: any;
+  };
+
+  // Helper function to get stock out category name from reason
+  const getStockOutCategory = (reason: string): string => {
+    const categoryMap: Record<string, string> = {
+      'expired': 'Inventory Loss - Expired',
+      'damaged': 'Inventory Loss - Damaged',
+      'lost_missing': 'Inventory Loss - Shrinkage',
+      'returned_to_supplier': 'Supplier Returns'
+    };
+    return categoryMap[reason] || 'Inventory Loss';
   };
 
   // Unfiltered rows for summary calculations
@@ -499,8 +511,28 @@ const Expenses: React.FC = () => {
       raw: p
     }));
 
-    return [...expRows, ...reqRows, ...payrollRows];
-  }, [expenses, expenseRequests, payrollRequests]);
+    // Convert stock out losses to expense format
+    const stockOutRows: UnifiedRow[] = (stockOutLosses || []).map(s => ({
+      kind: 'stock_out' as const,
+      id: s.id,
+      date: s.stock_out_date ? s.stock_out_date.split('T')[0] : new Date().toISOString().split('T')[0],
+      description: `Stock Out - ${getStockOutCategory(s.stock_out_reason)} (${s.products?.name || 'Product'})`,
+      category: getStockOutCategory(s.stock_out_reason),
+      branch: s.branches?.name || '—',
+      source: 'Inventory',
+      amount: Number(s.total_loss_amount) || 0,
+      status: s.status === 'approved' || s.status === 'completed' ? 'Approved' : s.status,
+      raw: {
+        ...s,
+        reference: s.reference_number,
+        stock_out_reason: s.stock_out_reason,
+        quantity: s.quantity,
+        unit_cost: s.unit_cost
+      }
+    }));
+
+    return [...expRows, ...reqRows, ...payrollRows, ...stockOutRows];
+  }, [expenses, expenseRequests, payrollRequests, stockOutLosses]);
 
   // Computed values
   const notificationBadge: Notification = {
@@ -677,7 +709,27 @@ const Expenses: React.FC = () => {
       raw: p
     }));
 
-    let rows = [...expRows, ...reqRows, ...payrollRows];
+    // Convert stock out losses to expense format for unified table
+    const stockOutRows: UnifiedRow[] = (stockOutLosses || []).map(s => ({
+      kind: 'stock_out' as const,
+      id: s.id,
+      date: s.stock_out_date ? s.stock_out_date.split('T')[0] : new Date().toISOString().split('T')[0],
+      description: `Stock Out - ${getStockOutCategory(s.stock_out_reason)} (${s.products?.name || 'Product'})`,
+      category: getStockOutCategory(s.stock_out_reason),
+      branch: s.branches?.name || '—',
+      source: 'Inventory',
+      amount: Number(s.total_loss_amount) || 0,
+      status: s.status === 'approved' || s.status === 'completed' ? 'Approved' : s.status,
+      raw: {
+        ...s,
+        reference: s.reference_number,
+        stock_out_reason: s.stock_out_reason,
+        quantity: s.quantity,
+        unit_cost: s.unit_cost
+      }
+    }));
+
+    let rows = [...expRows, ...reqRows, ...payrollRows, ...stockOutRows];
     const selectedCategoryName = selectedCategory === 'all' ? null : (categories.find(c => c.id === selectedCategory)?.name || null);
 
     rows = rows.filter(r => {
@@ -693,7 +745,7 @@ const Expenses: React.FC = () => {
 
     rows.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     return rows;
-  }, [expenses, expenseRequests, payrollRequests, selectedCategory, searchTerm, selectedPeriod, statusFilter, sourceFilter, categories]);
+  }, [expenses, expenseRequests, payrollRequests, stockOutLosses, selectedCategory, searchTerm, selectedPeriod, statusFilter, sourceFilter, categories]);
 
   // Event handlers
   const handleCategoryChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
@@ -885,6 +937,8 @@ const Expenses: React.FC = () => {
         return <FileText className="h-4 w-4 text-gray-600" />;
       case 'hr':
         return <User className="h-4 w-4 text-purple-600" />;
+      case 'inventory':
+        return <Package className="h-4 w-4 text-orange-600" />;
       default:
         return <FileText className="h-4 w-4 text-gray-400" />;
     }
@@ -1257,7 +1311,7 @@ const Expenses: React.FC = () => {
                     <div className="flex items-center gap-1.5">
                       <span className="text-xs text-gray-500">Source:</span>
                       <div className="flex items-center gap-1">
-                        {['all', 'manual entry', 'pos', 'hr'].map(source => (
+                        {['all', 'manual entry', 'pos', 'hr', 'inventory'].map(source => (
                           <button
                             key={source}
                             onClick={() => setSourceFilter(source)}
@@ -1270,7 +1324,7 @@ const Expenses: React.FC = () => {
                             }`}
                           >
                             {source !== 'all' && getSourceIcon(source)}
-                            <span>{source === 'all' ? 'All' : source === 'manual entry' ? 'Manual' : source.toUpperCase()}</span>
+                            <span>{source === 'all' ? 'All' : source === 'manual entry' ? 'Manual' : source === 'inventory' ? 'Inventory' : source.toUpperCase()}</span>
                           </button>
                         ))}
                       </div>
@@ -1333,8 +1387,18 @@ const Expenses: React.FC = () => {
                                   {getSourceIcon(row.source)}
                                   <div className="flex-1">
                                     <div className="font-medium">{formatDescription(row)}</div>
-                                    {row.kind !== 'payroll' && row.raw?.reference && (
-                                      <div className="text-xs text-gray-500">Ref: {row.raw.reference}</div>
+                                    {/* Show reference number for all non-payroll items (including stock out) */}
+                                    {row.kind !== 'payroll' && (row.raw?.reference || row.raw?.reference_number) && (
+                                      <div className="text-xs text-gray-500">
+                                        Ref: {row.raw?.reference || row.raw?.reference_number}
+                                      </div>
+                                    )}
+                                    {/* Show reason and quantity specifically for stock out items */}
+                                    {row.kind === 'stock_out' && row.raw?.stock_out_reason && (
+                                      <div className="text-xs text-gray-500">
+                                        Reason: {row.raw.stock_out_reason.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                                        {row.raw.quantity && ` • Qty: ${row.raw.quantity}`}
+                                      </div>
                                     )}
                                   </div>
                                 </div>
@@ -1505,6 +1569,21 @@ const Expenses: React.FC = () => {
                                           )}
                                         </>
                                       )}
+                                      {row.kind === 'stock_out' && (
+                                        <>
+                                          <button
+                                            onClick={() => {
+                                              // Expand row to show details
+                                              toggleRowExpansion(`${row.kind}-${row.id}`);
+                                              setActionMenuOpen(null);
+                                            }}
+                                            className="w-full text-left px-4 py-2 text-sm text-blue-600 hover:bg-blue-50 flex items-center gap-2"
+                                          >
+                                            <Eye className="h-4 w-4" />
+                                            View Details
+                                          </button>
+                                        </>
+                                      )}
                                     </div>
                                   )}
                                 </div>
@@ -1517,7 +1596,7 @@ const Expenses: React.FC = () => {
                                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                                     <div>
                                       <span className="text-gray-500">Reference:</span>
-                                      <p className="font-medium">{row.raw?.reference || '—'}</p>
+                                      <p className="font-medium">{row.raw?.reference || row.raw?.reference_number || '—'}</p>
                                     </div>
                                     <div>
                                       <span className="text-gray-500">Source:</span>
@@ -1530,6 +1609,24 @@ const Expenses: React.FC = () => {
                                       <span className="text-gray-500">Payment Method:</span>
                                       <p className="font-medium">{row.raw?.payment_method || '—'}</p>
                                     </div>
+                                    {row.kind === 'stock_out' && (
+                                      <>
+                                        <div>
+                                          <span className="text-gray-500">Reason:</span>
+                                          <p className="font-medium">
+                                            {row.raw?.stock_out_reason?.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) || '—'}
+                                          </p>
+                                        </div>
+                                        <div>
+                                          <span className="text-gray-500">Quantity:</span>
+                                          <p className="font-medium">{row.raw?.quantity || '—'}</p>
+                                        </div>
+                                        <div>
+                                          <span className="text-gray-500">Unit Cost:</span>
+                                          <p className="font-medium">₱{Number(row.raw?.unit_cost || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                                        </div>
+                                      </>
+                                    )}
                                     {row.raw?.notes && (
                                       <div className="col-span-2 md:col-span-4">
                                         <span className="text-gray-500">Notes:</span>

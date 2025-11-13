@@ -17,7 +17,7 @@ import SalesByProduct from './SalesByProduct';
 // import TopPerformers from './TopPerformers';
 import RecentActivity from './RecentActivity';
 import LowStockAlert from './LowStockAlert';
-import SystemStatus from './SystemStatus';
+// import SystemStatus from './SystemStatus';
 import BranchPerformance from './BranchPerformance';
 import AuditLogs from './AuditLogs';
 
@@ -109,10 +109,10 @@ const Overview: React.FC = () => {
       </div>
 
       {/* System Status & Inventory Summary */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+      {/* <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
         <SystemStatus />
         <InventorySummary />
-      </div>
+      </div> */}
 
       {/* Sales Performance & Branch Performance */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">

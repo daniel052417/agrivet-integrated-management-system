@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Filter, Plus, Edit, Trash2, Eye, X, Save, Package, Upload, Image as ImageIcon } from 'lucide-react';
+import { Search, Filter, Plus, Edit, Trash2, Eye, X, Save, Package, Upload, Image as ImageIcon, Minus } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { InventoryManagementRow, ProductFormData } from '../../types/inventory';
 import { useInventoryManagementData } from '../../hooks/useInventoryManagementData';
+import { StockOutService, StockOutData } from '../../lib/stockOutService';
+import { simplifiedAuth } from '../../lib/simplifiedAuth';
 
 const InventoryManagement: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -51,6 +53,30 @@ const InventoryManagement: React.FC = () => {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Stock Out modal state
+  const [isStockOutModalOpen, setIsStockOutModalOpen] = useState(false);
+  const [selectedProductForStockOut, setSelectedProductForStockOut] = useState<InventoryManagementRow | null>(null);
+  const [stockOutFormData, setStockOutFormData] = useState({
+    reason: '',
+    quantity: '',
+    notes: '',
+    stockOutAll: false,
+    destination_branch_id: '', // For transferred reason
+    supplier_return_reference: '', // For returned_to_supplier reason
+    adjustment_type: 'missing_stock' as 'clerical_error' | 'missing_stock' // For adjustment_correction reason
+  });
+  const [isProcessingStockOut, setIsProcessingStockOut] = useState(false);
+
+  // Stock out reasons
+  const stockOutReasons = [
+    { value: 'expired', label: 'Expired', description: 'Product shelf life has ended.' },
+    { value: 'damaged', label: 'Damaged', description: 'Product is no longer sellable due to physical damage or spoilage.' },
+    { value: 'returned_to_supplier', label: 'Returned to Supplier', description: 'Sent back to supplier (defective, wrong delivery, etc.).' },
+    { value: 'transferred', label: 'Transferred', description: 'Moved to another branch or warehouse.' },
+    { value: 'adjustment_correction', label: 'Adjustment / Correction', description: 'Manual correction after audit or data error.' },
+    { value: 'lost_missing', label: 'Lost / Missing', description: 'Unaccounted for after audit or suspected theft.' }
+  ];
 
   // Product units state for multi-unit management
   interface ProductUnit {
@@ -699,6 +725,151 @@ const InventoryManagement: React.FC = () => {
     setIsModalOpen(true);
   };
 
+  const openStockOutModal = (product: InventoryManagementRow) => {
+    setSelectedProductForStockOut(product);
+    setStockOutFormData({
+      reason: '',
+      quantity: '',
+      notes: '',
+      stockOutAll: false,
+      destination_branch_id: '',
+      supplier_return_reference: '',
+      adjustment_type: 'missing_stock'
+    });
+    setIsStockOutModalOpen(true);
+  };
+
+  const closeStockOutModal = () => {
+    setIsStockOutModalOpen(false);
+    setSelectedProductForStockOut(null);
+    setStockOutFormData({
+      reason: '',
+      quantity: '',
+      notes: '',
+      stockOutAll: false,
+      destination_branch_id: '',
+      supplier_return_reference: '',
+      adjustment_type: 'missing_stock'
+    });
+    setLocalError(null);
+  };
+
+  const handleStockOutAllToggle = (checked: boolean) => {
+    if (checked && selectedProductForStockOut) {
+      setStockOutFormData(prev => ({
+        ...prev,
+        stockOutAll: true,
+        quantity: String(selectedProductForStockOut.quantity_available || 0)
+      }));
+    } else {
+      setStockOutFormData(prev => ({
+        ...prev,
+        stockOutAll: false,
+        quantity: ''
+      }));
+    }
+  };
+
+  const handleStockOutSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!selectedProductForStockOut) {
+      setLocalError('No product selected for stock out');
+      return;
+    }
+
+    // Validate quantity
+    const quantity = parseFloat(stockOutFormData.quantity);
+    if (isNaN(quantity) || quantity <= 0) {
+      setLocalError('Please enter a valid quantity');
+      return;
+    }
+
+    if (quantity > selectedProductForStockOut.quantity_available) {
+      setLocalError(`Insufficient stock. Available: ${selectedProductForStockOut.quantity_available} ${selectedProductForStockOut.unit_label}`);
+      return;
+    }
+
+    // Validate reason-specific requirements
+    if (!stockOutFormData.reason) {
+      setLocalError('Please select a reason for stock out');
+      return;
+    }
+
+    if (stockOutFormData.reason === 'transferred' && !stockOutFormData.destination_branch_id) {
+      setLocalError('Please select a destination branch for transfer');
+      return;
+    }
+
+    setIsProcessingStockOut(true);
+    setLocalError(null);
+    setSuccess(null);
+
+    try {
+      const stockOutData: StockOutData = {
+        inventory_id: selectedProductForStockOut.inventory_id,
+        product_id: selectedProductForStockOut.product_id,
+        branch_id: selectedProductForStockOut.branch_id,
+        stock_out_reason: stockOutFormData.reason as StockOutData['stock_out_reason'],
+        quantity: quantity,
+        notes: stockOutFormData.notes || undefined,
+        destination_branch_id: stockOutFormData.destination_branch_id || undefined,
+        supplier_return_reference: stockOutFormData.supplier_return_reference || undefined,
+        adjustment_type: stockOutFormData.adjustment_type
+      };
+
+      // Try to get current user and pass it to the service
+      // Since system uses public.users (not auth.users), query by email
+      let currentUserId: string | undefined;
+      try {
+        const currentUser = simplifiedAuth.getCurrentUser();
+        if (currentUser?.id) {
+          currentUserId = currentUser.id;
+        } else {
+          // Fallback: Get email from Supabase Auth and query public.users by email
+          const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
+          if (!authError && authUser?.email) {
+            const { data: dbUser, error: dbError } = await supabase
+              .from('users')
+              .select('id')
+              .eq('email', authUser.email)
+              .eq('is_active', true)
+              .single();
+            
+            if (!dbError && dbUser?.id) {
+              currentUserId = dbUser.id;
+            }
+          }
+        }
+      } catch (error) {
+        console.warn('Could not get current user in component:', error);
+      }
+
+      const result = await StockOutService.processStockOut(stockOutData, currentUserId);
+
+      setSuccess(`Stock out processed successfully! Reference: ${result.reference_number}`);
+      
+      // Refresh products to show updated inventory
+      await refreshProducts({
+        searchTerm,
+        selectedBranch,
+        selectedCategory
+      });
+
+      // Close modal after a short delay
+      setTimeout(() => {
+        closeStockOutModal();
+        setTimeout(() => setSuccess(null), 3000);
+      }, 1500);
+
+    } catch (error: any) {
+      console.error('Error processing stock out:', error);
+      setLocalError(error.message || 'Failed to process stock out. Please try again.');
+    } finally {
+      setIsProcessingStockOut(false);
+    }
+  };
+
   const openEditModal = async (product: InventoryManagementRow) => {
     try {
       // Fetch all units for this product
@@ -984,10 +1155,17 @@ const InventoryManagement: React.FC = () => {
                     <button className="text-blue-600 hover:text-blue-900" title="View (coming soon)">
                       <Eye className="w-4 h-4" />
                     </button>
-                    <button onClick={() => openEditModal(product)} className="text-green-600 hover:text-green-900">
+                    <button onClick={() => openEditModal(product)} className="text-green-600 hover:text-green-900" title="Edit">
                       <Edit className="w-4 h-4" />
                     </button>
-                    <button onClick={() => handleDelete(product.product_id)} className="text-red-600 hover:text-red-900">
+                    <button 
+                      onClick={() => openStockOutModal(product)} 
+                      className="text-orange-600 hover:text-orange-900" 
+                      title="Stock Out"
+                    >
+                      <Minus className="w-4 h-4" />
+                    </button>
+                    <button onClick={() => handleDelete(product.product_id)} className="text-red-600 hover:text-red-900" title="Delete">
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
@@ -1561,6 +1739,240 @@ const InventoryManagement: React.FC = () => {
                   <>
                     <Save className="w-4 h-4" />
                     <span>{modalMode === 'add' ? 'Add Product' : 'Save Changes'}</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Stock Out Modal */}
+      {isStockOutModalOpen && selectedProductForStockOut && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full mx-4">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <div className="flex items-center space-x-3">
+                <div className="p-2 bg-orange-100 rounded-lg">
+                  <Minus className="w-6 h-6 text-orange-600" />
+                </div>
+                <h3 className="text-xl font-semibold text-gray-900">Stock Out</h3>
+              </div>
+              <button
+                onClick={closeStockOutModal}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            <div className="p-6">
+              {/* Product Information */}
+              <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <div className="flex items-start space-x-3">
+                  {selectedProductForStockOut.image_url && (
+                    <img
+                      src={selectedProductForStockOut.image_url}
+                      alt={selectedProductForStockOut.product_name}
+                      className="w-16 h-16 object-cover rounded-lg"
+                    />
+                  )}
+                  <div className="flex-1">
+                    <h4 className="text-lg font-semibold text-gray-900">
+                      {selectedProductForStockOut.product_name}
+                    </h4>
+                    <div className="mt-1 space-y-1 text-sm text-gray-600">
+                      <div>SKU: {selectedProductForStockOut.sku}</div>
+                      <div>Available Stock: <span className="font-semibold text-gray-900">{selectedProductForStockOut.quantity_available}</span> {selectedProductForStockOut.unit_label}</div>
+                      {selectedProductForStockOut.batch_no && (
+                        <div>Batch No: {selectedProductForStockOut.batch_no}</div>
+                      )}
+                      {selectedProductForStockOut.branch_name && (
+                        <div>Branch: {selectedProductForStockOut.branch_name}</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <form id="stockOutForm" onSubmit={handleStockOutSubmit} className="space-y-6">
+                <div>
+                  <label htmlFor="stockOutReason" className="block text-sm font-medium text-gray-700 mb-2">
+                    Reason for Stock Out *
+                  </label>
+                  <select
+                    id="stockOutReason"
+                    value={stockOutFormData.reason}
+                    onChange={(e) => setStockOutFormData(prev => ({ ...prev, reason: e.target.value }))}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                    required
+                  >
+                    <option value="">Select a reason</option>
+                    {stockOutReasons.map((reason) => (
+                      <option key={reason.value} value={reason.value}>
+                        {reason.label}
+                      </option>
+                    ))}
+                  </select>
+                  {stockOutFormData.reason && (
+                    <p className="mt-2 text-sm text-gray-600">
+                      {stockOutReasons.find(r => r.value === stockOutFormData.reason)?.description}
+                    </p>
+                  )}
+                </div>
+
+                {/* Additional fields based on reason */}
+                {stockOutFormData.reason === 'transferred' && (
+                  <div>
+                    <label htmlFor="destinationBranch" className="block text-sm font-medium text-gray-700 mb-2">
+                      Destination Branch *
+                    </label>
+                    <select
+                      id="destinationBranch"
+                      value={stockOutFormData.destination_branch_id}
+                      onChange={(e) => setStockOutFormData(prev => ({ ...prev, destination_branch_id: e.target.value }))}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                      required
+                    >
+                      <option value="">Select destination branch</option>
+                      {branches
+                        .filter(b => b.id !== selectedProductForStockOut.branch_id)
+                        .map((branch) => (
+                          <option key={branch.id} value={branch.id}>
+                            {branch.name}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                )}
+
+                {stockOutFormData.reason === 'returned_to_supplier' && (
+                  <div>
+                    <label htmlFor="supplierReturnRef" className="block text-sm font-medium text-gray-700 mb-2">
+                      Supplier Return Reference (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      id="supplierReturnRef"
+                      value={stockOutFormData.supplier_return_reference}
+                      onChange={(e) => setStockOutFormData(prev => ({ ...prev, supplier_return_reference: e.target.value }))}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                      placeholder="e.g., CR-2025-001"
+                    />
+                  </div>
+                )}
+
+                {stockOutFormData.reason === 'adjustment_correction' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Adjustment Type *
+                    </label>
+                    <div className="space-y-2">
+                      <label className="flex items-center space-x-2">
+                        <input
+                          type="radio"
+                          name="adjustment_type"
+                          value="clerical_error"
+                          checked={stockOutFormData.adjustment_type === 'clerical_error'}
+                          onChange={(e) => setStockOutFormData(prev => ({ ...prev, adjustment_type: e.target.value as 'clerical_error' | 'missing_stock' }))}
+                          className="w-4 h-4 text-orange-600 focus:ring-orange-500"
+                        />
+                        <span className="text-sm text-gray-700">Clerical Error (Neutral - No loss)</span>
+                      </label>
+                      <label className="flex items-center space-x-2">
+                        <input
+                          type="radio"
+                          name="adjustment_type"
+                          value="missing_stock"
+                          checked={stockOutFormData.adjustment_type === 'missing_stock'}
+                          onChange={(e) => setStockOutFormData(prev => ({ ...prev, adjustment_type: e.target.value as 'clerical_error' | 'missing_stock' }))}
+                          className="w-4 h-4 text-orange-600 focus:ring-orange-500"
+                        />
+                        <span className="text-sm text-gray-700">Missing Stock (Loss)</span>
+                      </label>
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label htmlFor="stockOutQuantity" className="block text-sm font-medium text-gray-700">
+                      Quantity to Stock Out *
+                    </label>
+                    <label className="flex items-center space-x-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={stockOutFormData.stockOutAll}
+                        onChange={(e) => handleStockOutAllToggle(e.target.checked)}
+                        className="w-4 h-4 text-orange-600 border-gray-300 rounded focus:ring-orange-500"
+                      />
+                      <span className="text-sm text-gray-700 font-medium">Stock Out All</span>
+                    </label>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      id="stockOutQuantity"
+                      value={stockOutFormData.quantity}
+                      onChange={(e) => setStockOutFormData(prev => ({ ...prev, quantity: e.target.value, stockOutAll: false }))}
+                      className={`w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent ${
+                        stockOutFormData.stockOutAll ? 'bg-gray-50 cursor-not-allowed' : ''
+                      }`}
+                      placeholder="0"
+                      min="0"
+                      max={selectedProductForStockOut.quantity_available}
+                      step="0.01"
+                      disabled={stockOutFormData.stockOutAll}
+                      required
+                    />
+                    <span className="absolute right-3 top-1/2 transform -translate-y-1/2 text-sm text-gray-500">
+                      {selectedProductForStockOut.unit_label}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs text-gray-500">
+                    Maximum available: {selectedProductForStockOut.quantity_available} {selectedProductForStockOut.unit_label}
+                  </p>
+                </div>
+
+                <div>
+                  <label htmlFor="stockOutNotes" className="block text-sm font-medium text-gray-700 mb-2">
+                    Notes (Optional)
+                  </label>
+                  <textarea
+                    id="stockOutNotes"
+                    value={stockOutFormData.notes}
+                    onChange={(e) => setStockOutFormData(prev => ({ ...prev, notes: e.target.value }))}
+                    rows={3}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                    placeholder="Add any additional details or comments..."
+                  />
+                </div>
+              </form>
+            </div>
+
+            <div className="flex items-center justify-end space-x-3 p-6 border-t border-gray-200 bg-gray-50">
+              <button
+                onClick={closeStockOutModal}
+                disabled={isProcessingStockOut}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                form="stockOutForm"
+                disabled={isProcessingStockOut}
+                className="flex items-center space-x-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+              >
+                {isProcessingStockOut ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    <span>Processing...</span>
+                  </>
+                ) : (
+                  <>
+                    <Minus className="w-4 h-4" />
+                    <span>Process Stock Out</span>
                   </>
                 )}
               </button>

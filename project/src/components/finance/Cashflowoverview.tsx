@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Activity, TrendingUp, TrendingDown, DollarSign, Calendar, ArrowUpRight, ArrowDownRight, RefreshCw } from 'lucide-react';
+import { Activity, TrendingUp, TrendingDown, DollarSign, Calendar, ArrowUpRight, ArrowDownRight, RefreshCw, Package } from 'lucide-react';
 import { useCashFlowData } from '../../hooks/useCashFlowData';
 
 type Period = 'week' | 'month' | 'quarter' | 'year';
@@ -282,35 +282,48 @@ const CashFlowOverview: React.FC = () => {
               <div className="text-center py-8 text-gray-500">No recent transactions</div>
             ) : (
               <div className="space-y-3">
-                {recentTransactions.map((transaction) => (
-                <div key={transaction.id} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-b-0">
-                  <div className="flex items-center gap-3">
-                    <div className={`p-2 rounded-lg ${
-                      transaction.type === 'inflow' ? 'bg-green-100' : 'bg-red-100'
-                    }`}>
-                      {transaction.type === 'inflow' ? (
-                        <ArrowUpRight className={`h-4 w-4 ${
-                          transaction.type === 'inflow' ? 'text-green-600' : 'text-red-600'
-                        }`} />
-                      ) : (
-                        <ArrowDownRight className="h-4 w-4 text-red-600" />
-                      )}
+                {recentTransactions.map((transaction) => {
+                  // Check if this is an inventory loss transaction
+                  const isInventoryLoss = transaction.category?.includes('Inventory Loss') || 
+                                         transaction.category?.includes('Supplier Returns') ||
+                                         transaction.description?.includes('Stock Out');
+                  
+                  return (
+                    <div key={transaction.id} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-b-0">
+                      <div className="flex items-center gap-3">
+                        <div className={`p-2 rounded-lg ${
+                          transaction.type === 'inflow' ? 'bg-green-100' : 
+                          isInventoryLoss ? 'bg-orange-100' : 'bg-red-100'
+                        }`}>
+                          {transaction.type === 'inflow' ? (
+                            <ArrowUpRight className={`h-4 w-4 ${
+                              transaction.type === 'inflow' ? 'text-green-600' : 'text-red-600'
+                            }`} />
+                          ) : isInventoryLoss ? (
+                            <Package className="h-4 w-4 text-orange-600" />
+                          ) : (
+                            <ArrowDownRight className="h-4 w-4 text-red-600" />
+                          )}
+                        </div>
+                        <div>
+                          <div className="text-sm font-medium text-gray-900">{transaction.description}</div>
+                          <div className="text-xs text-gray-500">{transaction.time}</div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className={`text-sm font-semibold ${
+                          transaction.type === 'inflow' ? 'text-green-600' : 
+                          isInventoryLoss ? 'text-orange-600' : 'text-red-600'
+                        }`}>
+                          {transaction.type === 'inflow' ? '+' : '-'}₱{transaction.amount.toLocaleString()}
+                        </div>
+                        <div className={`text-xs ${isInventoryLoss ? 'text-orange-600 font-medium' : 'text-gray-500'}`}>
+                          {transaction.category}
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <div className="text-sm font-medium text-gray-900">{transaction.description}</div>
-                      <div className="text-xs text-gray-500">{transaction.time}</div>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className={`text-sm font-semibold ${
-                      transaction.type === 'inflow' ? 'text-green-600' : 'text-red-600'
-                    }`}>
-                      {transaction.type === 'inflow' ? '+' : '-'}₱{transaction.amount.toLocaleString()}
-                    </div>
-                    <div className="text-xs text-gray-500">{transaction.category}</div>
-                  </div>
-                </div>
-                ))}
+                  );
+                })}
               </div>
             )}
             <button className="w-full mt-4 py-2 px-4 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
@@ -374,33 +387,53 @@ const CashFlowOverview: React.FC = () => {
               <div className="text-center py-8 text-gray-500">No outflow data available</div>
             ) : (
               <div className="space-y-4">
-                {cashFlowCategories.outflow.map((category, index) => (
-                <div key={index} className="border border-gray-200 rounded-lg p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <h4 className="font-medium text-gray-900">{category.category}</h4>
-                    <div className="flex items-center gap-2">
-                      <span className={`text-sm ${category.positive ? 'text-green-600' : 'text-red-600'}`}>
-                        {category.trend}
-                      </span>
-                      {category.positive ? (
-                        <TrendingDown className="h-4 w-4 text-green-600" />
-                      ) : (
-                        <TrendingUp className="h-4 w-4 text-red-600" />
-                      )}
+                {cashFlowCategories.outflow.map((category, index) => {
+                  // Check if this is an inventory loss category
+                  const isInventoryLoss = category.category?.includes('Inventory Loss') || 
+                                         category.category?.includes('Supplier Returns');
+                  
+                  return (
+                    <div key={index} className={`border rounded-lg p-4 ${
+                      isInventoryLoss ? 'border-orange-300 bg-orange-50/30' : 'border-gray-200'
+                    }`}>
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          {isInventoryLoss && (
+                            <Package className="h-4 w-4 text-orange-600" />
+                          )}
+                          <h4 className={`font-medium ${isInventoryLoss ? 'text-orange-900' : 'text-gray-900'}`}>
+                            {category.category}
+                          </h4>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-sm ${category.positive ? 'text-green-600' : 
+                            isInventoryLoss ? 'text-orange-600' : 'text-red-600'}`}>
+                            {category.trend}
+                          </span>
+                          {category.positive ? (
+                            <TrendingDown className="h-4 w-4 text-green-600" />
+                          ) : (
+                            <TrendingUp className={`h-4 w-4 ${isInventoryLoss ? 'text-orange-600' : 'text-red-600'}`} />
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className={`text-sm ${isInventoryLoss ? 'text-orange-700' : 'text-gray-600'}`}>
+                          {category.percentage.toFixed(1)}% of total
+                        </span>
+                        <span className={`font-semibold ${isInventoryLoss ? 'text-orange-900' : 'text-gray-900'}`}>
+                          ₱{category.amount.toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div 
+                          className={`h-2 rounded-full ${isInventoryLoss ? 'bg-orange-500' : 'bg-red-500'}`}
+                          style={{ width: `${category.percentage}%` }}
+                        ></div>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm text-gray-600">{category.percentage}% of total</span>
-                    <span className="font-semibold text-gray-900">₱{category.amount.toLocaleString()}</span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div 
-                      className="bg-red-500 h-2 rounded-full" 
-                      style={{ width: `${category.percentage}%` }}
-                    ></div>
-                  </div>
-                </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

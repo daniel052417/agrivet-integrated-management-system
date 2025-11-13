@@ -148,6 +148,17 @@ export const useCashFlowData = (): UseCashFlowDataReturn => {
     return 0;
   };
 
+  // Helper function to get stock out category name from reason
+  const getStockOutCategory = (reason: string): string => {
+    const categoryMap: Record<string, string> = {
+      'expired': 'Inventory Loss - Expired',
+      'damaged': 'Inventory Loss - Damaged',
+      'lost_missing': 'Inventory Loss - Shrinkage',
+      'returned_to_supplier': 'Supplier Returns'
+    };
+    return categoryMap[reason] || 'Inventory Loss';
+  };
+
   // Fetch total inflow (from pos_transactions) with RBAC filtering
   const fetchTotalInflow = useCallback(async (startDate: string, endDate: string): Promise<number> => {
     try {
@@ -183,7 +194,7 @@ export const useCashFlowData = (): UseCashFlowDataReturn => {
     }
   }, [getFilterConfig]);
 
-  // Fetch total outflow (from expenses and payroll) with RBAC filtering
+  // Fetch total outflow (from expenses, payroll, and stock out losses) with RBAC filtering
   const fetchTotalOutflow = useCallback(async (startDate: string, endDate: string): Promise<number> => {
     try {
       const filterConfig = getFilterConfig();
@@ -219,6 +230,27 @@ export const useCashFlowData = (): UseCashFlowDataReturn => {
       const { data: payrollData, error: payrollError } = await payrollQuery;
       
       if (payrollError) throw payrollError;
+
+      // Get stock out losses with branch filtering (non-cash expenses but still affect profitability)
+      let stockOutQuery = supabase
+        .from('stock_out_transactions')
+        .select('total_loss_amount')
+        .eq('financial_impact', 'loss')
+        .in('status', ['approved', 'completed'])
+        .gt('total_loss_amount', 0)
+        .gte('stock_out_date', `${startDate}T00:00:00`)
+        .lte('stock_out_date', `${endDate}T23:59:59`);
+
+      if (filterConfig.shouldFilter && filterConfig.branchId) {
+        stockOutQuery = stockOutQuery.eq('branch_id', filterConfig.branchId);
+      }
+
+      const { data: stockOutData, error: stockOutError } = await stockOutQuery;
+      
+      // Don't throw error if table doesn't exist (backward compatibility)
+      if (stockOutError && stockOutError.code !== 'PGRST116' && !stockOutError.message?.includes('does not exist')) {
+        console.warn('Error fetching stock out losses:', stockOutError);
+      }
       
       const expensesTotal = expensesData?.reduce((sum, e) => {
         const amount = parseFloat(e.amount?.toString() || '0') || 0;
@@ -229,8 +261,13 @@ export const useCashFlowData = (): UseCashFlowDataReturn => {
         const amount = parseFloat(p.total_net?.toString() || '0') || 0;
         return sum + amount;
       }, 0) || 0;
+
+      const stockOutTotal = stockOutData?.reduce((sum, s) => {
+        const amount = parseFloat(s.total_loss_amount?.toString() || '0') || 0;
+        return sum + amount;
+      }, 0) || 0;
       
-      return expensesTotal + payrollTotal;
+      return expensesTotal + payrollTotal + stockOutTotal;
     } catch (err) {
       console.error('Error fetching total outflow:', err);
       return 0;
@@ -390,6 +427,34 @@ export const useCashFlowData = (): UseCashFlowDataReturn => {
           day.outflow += amount;
         }
       });
+
+      // Fetch and aggregate stock out losses by date
+      let stockOutQuery = supabase
+        .from('stock_out_transactions')
+        .select('stock_out_date, total_loss_amount')
+        .eq('financial_impact', 'loss')
+        .in('status', ['approved', 'completed'])
+        .gt('total_loss_amount', 0)
+        .gte('stock_out_date', `${startDate}T00:00:00`)
+        .lte('stock_out_date', `${endDate}T23:59:59`);
+
+      if (filterConfig.shouldFilter && filterConfig.branchId) {
+        stockOutQuery = stockOutQuery.eq('branch_id', filterConfig.branchId);
+      }
+
+      const { data: stockOutData, error: stockOutError } = await stockOutQuery;
+      
+      // Don't throw error if table doesn't exist (backward compatibility)
+      if (!stockOutError) {
+        stockOutData?.forEach(stockOut => {
+          const date = new Date(stockOut.stock_out_date).toISOString().split('T')[0];
+          const day = days.find(d => d.date === date);
+          if (day) {
+            const amount = parseFloat(stockOut.total_loss_amount?.toString() || '0') || 0;
+            day.outflow += amount;
+          }
+        });
+      }
       
       // Calculate net for each day
       days.forEach(day => {
@@ -481,6 +546,39 @@ export const useCashFlowData = (): UseCashFlowDataReturn => {
       const payrollTotal = payrollData?.reduce((sum, p) => sum + (parseFloat(p.total_net?.toString() || '0') || 0), 0) || 0;
       if (payrollTotal > 0) {
         outflowMap.set('Payroll & Benefits', (outflowMap.get('Payroll & Benefits') || 0) + payrollTotal);
+      }
+
+      // Fetch and add stock out losses (inventory losses)
+      let stockOutQuery = supabase
+        .from('stock_out_transactions')
+        .select('stock_out_reason, total_loss_amount')
+        .eq('financial_impact', 'loss')
+        .in('status', ['approved', 'completed'])
+        .gt('total_loss_amount', 0)
+        .gte('stock_out_date', `${startDate}T00:00:00`)
+        .lte('stock_out_date', `${endDate}T23:59:59`);
+
+      if (filterConfig.shouldFilter && filterConfig.branchId) {
+        stockOutQuery = stockOutQuery.eq('branch_id', filterConfig.branchId);
+      }
+
+      const { data: stockOutData, error: stockOutError } = await stockOutQuery;
+      
+      // Don't throw error if table doesn't exist (backward compatibility)
+      if (!stockOutError && stockOutData) {
+        // Group stock out losses by category
+        const inventoryLossMap = new Map<string, number>();
+        
+        stockOutData.forEach(stockOut => {
+          const category = getStockOutCategory(stockOut.stock_out_reason);
+          const amount = parseFloat(stockOut.total_loss_amount?.toString() || '0') || 0;
+          inventoryLossMap.set(category, (inventoryLossMap.get(category) || 0) + amount);
+        });
+
+        // Add inventory losses to outflow map
+        inventoryLossMap.forEach((amount, category) => {
+          outflowMap.set(category, (outflowMap.get(category) || 0) + amount);
+        });
       }
       
       // Convert to arrays with percentages and trends
@@ -579,6 +677,41 @@ export const useCashFlowData = (): UseCashFlowDataReturn => {
           category: categoryName
         });
       });
+
+      // Fetch recent stock out losses (outflow) with branch filtering
+      // Using explicit foreign key constraint to avoid relationship ambiguity
+      let stockOutQuery = supabase
+        .from('stock_out_transactions')
+        .select('id, stock_out_date, stock_out_reason, total_loss_amount, products!stock_out_transactions_product_id_fkey(name)')
+        .eq('financial_impact', 'loss')
+        .in('status', ['approved', 'completed'])
+        .gt('total_loss_amount', 0)
+        .order('stock_out_date', { ascending: false })
+        .limit(limit);
+
+      if (filterConfig.shouldFilter && filterConfig.branchId) {
+        stockOutQuery = stockOutQuery.eq('branch_id', filterConfig.branchId);
+      }
+
+      const { data: stockOutData, error: stockOutError } = await stockOutQuery;
+      
+      // Don't throw error if table doesn't exist (backward compatibility)
+      if (!stockOutError && stockOutData) {
+        stockOutData.forEach(stockOut => {
+          const categoryName = getStockOutCategory(stockOut.stock_out_reason);
+          const productName = (stockOut.products as any)?.name || 'Product';
+          const timeAgo = getTimeAgo(new Date(stockOut.stock_out_date));
+          
+          transactions.push({
+            id: parseInt(stockOut.id.substring(0, 8), 16) + 1000000000, // Offset to avoid ID conflicts
+            type: 'outflow',
+            description: `Stock Out - ${categoryName} (${productName})`,
+            amount: parseFloat(stockOut.total_loss_amount?.toString() || '0') || 0,
+            time: timeAgo,
+            category: categoryName
+          });
+        });
+      }
       
       // Sort by time and limit
       transactions.sort((a, b) => {

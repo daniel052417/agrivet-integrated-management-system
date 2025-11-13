@@ -455,6 +455,75 @@
   .mobile-p-4 {
     padding: 1rem;
   }
+
+  /* Enhanced touch targets for mobile */
+  .touch-button {
+    min-height: 48px;
+    min-width: 48px;
+    padding: 0.75rem 1rem;
+    font-size: 1rem;
+  }
+
+  /* Better spacing for mobile */
+  .product-card {
+    padding: 1rem;
+    margin-bottom: 1rem;
+  }
+
+  /* Improved typography for mobile readability */
+  .pos-system {
+    font-size: 16px; /* Prevent iOS zoom on input focus */
+  }
+
+  /* Better modal sizing on mobile */
+  .modal-content {
+    width: 95vw;
+    max-width: 95vw;
+    margin: 1rem auto;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+
+  /* Optimized grid for mobile */
+  .product-grid-mobile {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+  }
+
+  /* Better cart panel on mobile */
+  .cart-panel {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  /* Improved search bar for mobile */
+  .search-input-mobile {
+    font-size: 16px; /* Prevent zoom on iOS */
+    padding: 0.875rem 1rem;
+    min-height: 48px;
+  }
+
+  /* Better button sizes on mobile */
+  button, .btn {
+    min-height: 44px;
+    padding: 0.625rem 1rem;
+    font-size: 1rem;
+  }
+
+  /* Improved quantity controls */
+  .quantity-btn {
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    min-height: 36px;
+  }
+
+  /* Better spacing in forms */
+  input, select, textarea {
+    font-size: 16px; /* Prevent iOS zoom */
+    padding: 0.75rem;
+    min-height: 48px;
+  }
 }
 
 /* Tablet-specific styles */
@@ -462,12 +531,71 @@
   .tablet-grid-2 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .tablet-grid-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  /* Better touch targets for tablets */
+  .touch-button {
+    min-height: 48px;
+    min-width: 48px;
+  }
+
+  /* Optimized product grid for tablets */
+  .product-grid-tablet {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1rem;
+  }
+
+  /* Better sidebar width for tablets */
+  .sidebar-tablet {
+    width: 240px;
+  }
 }
 
 /* Desktop-specific styles */
 @media (min-width: 1024px) {
   .desktop-grid-4 {
     grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+/* Common responsive improvements */
+@media (max-width: 1024px) {
+  /* Better readability with larger text */
+  h1 { font-size: 1.75rem; }
+  h2 { font-size: 1.5rem; }
+  h3 { font-size: 1.25rem; }
+  
+  /* Improved spacing */
+  .container-padding {
+    padding: 1rem;
+  }
+
+  /* Better scrollbar visibility on touch devices */
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+  }
+
+  /* Better modal positioning */
+  .modal-overlay {
+    padding: 1rem;
+  }
+}
+
+/* Landscape mobile optimization */
+@media (max-width: 768px) and (orientation: landscape) {
+  .mobile-landscape {
+    max-height: 100vh;
+    overflow-y: auto;
+  }
+
+  /* Compact header in landscape */
+  .header-landscape {
+    padding: 0.5rem 1rem;
+    min-height: 56px;
   }
 }
 

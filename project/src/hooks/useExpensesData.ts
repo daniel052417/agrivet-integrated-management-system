@@ -11,10 +11,29 @@ import type {
   ExpenseRequestWithRelations
 } from '../lib/supabase';
 
+interface StockOutLoss {
+  id: string;
+  stock_out_date: string;
+  stock_out_reason: string;
+  total_loss_amount: number;
+  reference_number: string;
+  branch_id: string;
+  product_id: string;
+  quantity: number;
+  unit_cost: number;
+  notes?: string;
+  status: string;
+  created_by: string;
+  products?: { id: string; name: string; sku: string };
+  branches?: { id: string; name: string };
+  users?: { id: string; first_name: string; last_name: string; email: string };
+}
+
 interface UseExpensesDataReturn {
   expenses: ExpenseWithRelations[];
   expenseRequests: ExpenseRequestWithRelations[];
   payrollRequests: any[];
+  stockOutLosses: StockOutLoss[]; // New: Stock out losses as expenses
   categories: ExpenseCategory[];
   branches: Branch[];
   totalSales: number;
@@ -34,6 +53,7 @@ export const useExpensesData = (): UseExpensesDataReturn => {
   const [expenses, setExpenses] = useState<ExpenseWithRelations[]>([]);
   const [expenseRequests, setExpenseRequests] = useState<ExpenseRequestWithRelations[]>([]);
   const [payrollRequests, setPayrollRequests] = useState<any[]>([]);
+  const [stockOutLosses, setStockOutLosses] = useState<StockOutLoss[]>([]); // New: Stock out losses
   const [categories, setCategories] = useState<ExpenseCategory[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [totalSales, setTotalSales] = useState<number>(0);
@@ -129,6 +149,63 @@ export const useExpensesData = (): UseExpensesDataReturn => {
     } catch (err) {
       console.error('Error fetching expenses:', err);
       setError('Failed to load expenses');
+    }
+  }, [getFilterConfig]);
+
+  // Fetch stock out losses with RBAC filtering
+  const fetchStockOutLosses = useCallback(async () => {
+    try {
+      const filterConfig = getFilterConfig();
+      
+      // Only fetch stock out transactions with financial_impact = 'loss' and status = 'approved'
+      // These represent inventory losses that should appear as expenses
+      // Using explicit foreign key constraint names to avoid relationship ambiguity
+      // Note: stock_out_transactions has both branch_id and destination_branch_id, so we must specify which FK to use
+      let query = supabase
+        .from('stock_out_transactions')
+        .select(`
+          id,
+          stock_out_date,
+          stock_out_reason,
+          total_loss_amount,
+          reference_number,
+          branch_id,
+          product_id,
+          quantity,
+          unit_cost,
+          notes,
+          status,
+          created_by,
+          products!stock_out_transactions_product_id_fkey(id, name, sku),
+          branches!stock_out_transactions_branch_id_fkey(id, name),
+          users!stock_out_transactions_created_by_fkey(id, first_name, last_name, email)
+        `)
+        .eq('financial_impact', 'loss')
+        .in('status', ['approved', 'completed'])
+        .gt('total_loss_amount', 0); // Only include losses with actual amount
+
+      // Apply branch filter for non-super-admin users
+      if (filterConfig.shouldFilter && filterConfig.branchId) {
+        query = query.eq('branch_id', filterConfig.branchId);
+      }
+
+      const { data, error } = await query.order('stock_out_date', { ascending: false });
+      
+      if (error) {
+        // If table doesn't exist, just return empty array (for backward compatibility)
+        if (error.code === 'PGRST116' || error.message?.includes('does not exist')) {
+          console.warn('stock_out_transactions table not found, skipping stock out losses');
+          setStockOutLosses([]);
+          return;
+        }
+        throw error;
+      }
+      
+      setStockOutLosses(data || []);
+    } catch (err) {
+      console.error('Error fetching stock out losses:', err);
+      // Don't set error state for stock out losses to avoid breaking expense loading
+      setStockOutLosses([]);
     }
   }, [getFilterConfig]);
 
@@ -322,6 +399,7 @@ export const useExpensesData = (): UseExpensesDataReturn => {
         fetchExpenses(),
         fetchExpenseRequests(),
         fetchPayrollRequests(),
+        fetchStockOutLosses(), // New: Fetch stock out losses
         fetchTotalSales()
       ]);
     } catch (err) {
@@ -329,7 +407,7 @@ export const useExpensesData = (): UseExpensesDataReturn => {
     } finally {
       setLoading(false);
     }
-  }, [fetchCategories, fetchBranches, fetchExpenses, fetchExpenseRequests, fetchPayrollRequests, fetchTotalSales]);
+  }, [fetchCategories, fetchBranches, fetchExpenses, fetchExpenseRequests, fetchPayrollRequests, fetchStockOutLosses, fetchTotalSales]);
 
   // Initial data load
   useEffect(() => {
@@ -340,6 +418,7 @@ export const useExpensesData = (): UseExpensesDataReturn => {
     expenses,
     expenseRequests,
     payrollRequests,
+    stockOutLosses, // New: Return stock out losses
     categories,
     branches,
     totalSales,

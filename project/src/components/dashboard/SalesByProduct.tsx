@@ -255,7 +255,7 @@ const SalesByProduct: React.FC = () => {
           <div className="text-sm text-gray-600">Total Product Sales</div>
         </div>
 
-        <div className="space-y-4">
+        <div className="space-y-4 max-h-96 overflow-y-auto">
           {productMetrics.map((product, index) => {
             const percentage = totalSales > 0 ? (product.sales / totalSales) * 100 : 0;
             

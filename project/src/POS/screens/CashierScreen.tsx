@@ -188,6 +188,8 @@ const CashierScreen: React.FC = () => {
       }
 
       // Load products grouped with ALL their units (not flattened)
+      // Using explicit foreign key constraint names to avoid relationship ambiguity
+      // Note: expiry_date, batch_number, batch_no, expiration_date are now in inventory table, not products
       const { data, error } = await supabase
         .from('inventory')
         .select(`
@@ -199,17 +201,20 @@ const CashierScreen: React.FC = () => {
           reorder_level,
           max_stock_level,
           base_unit,
-          products!inner(
+          batch_number,
+          expiry_date,
+          batch_no,
+          expiration_date,
+          products!inventory_product_id_fkey(
             id,
             name,
             sku,
             barcode,
             cost,
             unit_of_measure,
-            expiry_date,
             is_active,
             image_url,
-            categories!inner(
+            categories!products_category_id_fkey(
               id,
               name
             ),
@@ -313,8 +318,8 @@ const CashierScreen: React.FC = () => {
             max_stock_level: item.max_stock_level,
             base_unit: item.base_unit
           },
-          // Metadata
-          requires_expiry_date: product.expiry_date ? true : false,
+          // Metadata - expiry_date, batch_number are now in inventory table, not products
+          requires_expiry_date: item.expiry_date || item.expiration_date ? true : false,
           is_active: product.is_active,
           // Backward compatibility fields
           price: defaultUnit?.price_per_unit || 0,
@@ -323,13 +328,13 @@ const CashierScreen: React.FC = () => {
           variant_value: '',
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
-          category_id: product.category_id,
+          category_id: product.category_id || category.id,
           pos_pricing_type: 'fixed' as const,
           unit_of_measure: product.unit_of_measure,
           weight: product.weight || 0,
-          requires_batch_tracking: false,
-          batch_number: undefined,
-          expiry_date: product.expiry_date,
+          requires_batch_tracking: item.batch_number || item.batch_no ? true : false,
+          batch_number: item.batch_number || item.batch_no || undefined,
+          expiry_date: item.expiry_date || item.expiration_date || undefined,
           is_quick_sale: false,
           products: {
             id: product.id,
@@ -355,6 +360,8 @@ const CashierScreen: React.FC = () => {
       console.log('Loading products directly from products table...');
       const branchId = getCurrentBranchId();
       
+      // Using explicit foreign key constraint name to avoid relationship ambiguity
+      // Note: expiry_date, batch_number are now in inventory table, not products
       const { data, error } = await supabase
         .from('products')
         .select(`
@@ -362,13 +369,11 @@ const CashierScreen: React.FC = () => {
           name,
           sku,
           barcode,
-          unit_price,
-          cost_price,
+          cost,
           unit_of_measure,
-          expiry_date,
           is_active,
           image_url,
-          categories!inner(
+          categories!products_category_id_fkey(
             id,
             name
           ),
@@ -393,7 +398,7 @@ const CashierScreen: React.FC = () => {
 
       // Transform the data without inventory
       const transformedProducts: ProductVariant[] = data?.map((item: any) => {
-        const category = item.categories;
+        const category = item.categories || { id: null, name: 'Uncategorized' };
         
         // Filter and sort sellable units from product_units table
         const sellableUnits = (item.product_units || [])
@@ -409,13 +414,15 @@ const CashierScreen: React.FC = () => {
           id: item.id,
           name: item.name,
           sku: item.sku,
-          price: item.unit_price || 0,
+          price: 0, // Price will come from product_units.price_per_unit
           barcode: item.barcode,
           image_url: item.image_url || '',
-          requires_expiry_date: item.expiry_date ? true : false,
+          // Note: expiry_date, batch_number are in inventory table, not products
+          // When loading directly from products (no inventory), these will be undefined
+          requires_expiry_date: false,
           requires_batch_tracking: false,
           batch_number: undefined,
-          expiry_date: item.expiry_date,
+          expiry_date: undefined,
           is_quick_sale: false,
           is_active: item.is_active,
           product_id: item.id,
@@ -423,14 +430,14 @@ const CashierScreen: React.FC = () => {
           variant_value: '',
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
-          category_id: item.category_id,
+          category_id: category.id || item.category_id || null,
           pos_pricing_type: 'fixed' as const,
           unit_of_measure: item.unit_of_measure,
           weight: item.weight || 0,
-          cost: item.cost_price || 0,
+          cost: item.cost || 0,
           category: {
-            id: category.id,
-            name: category.name,
+            id: category.id || null,
+            name: category.name || 'Uncategorized',
             sort_order: 0,
             is_active: true,
             created_at: new Date().toISOString()
@@ -1115,8 +1122,8 @@ const CashierScreen: React.FC = () => {
 
     // Grid View (existing layout)
     return (
-      <div className="product-card">
-        <div className="w-full h-32 bg-gray-100 rounded-t-lg flex items-center justify-center mb-3 overflow-hidden">
+      <div className="product-card cursor-pointer">
+        <div className="w-full h-24 md:h-32 bg-gray-100 rounded-t-lg flex items-center justify-center mb-2 md:mb-3 overflow-hidden">
           {product.image_url ? (
             <img
               src={product.image_url}
@@ -1129,30 +1136,30 @@ const CashierScreen: React.FC = () => {
             />
           ) : null}
           <div className={`w-full h-full flex items-center justify-center ${product.image_url ? 'hidden' : ''}`}>
-            <ImageIcon className="w-8 h-8 text-gray-400" />
+            <ImageIcon className="w-6 h-6 md:w-8 md:h-8 text-gray-400" />
           </div>
         </div>
         
-        <div className="p-3">
-          <div className="flex items-start justify-between mb-2">
-            <h3 className="font-semibold text-gray-900 text-sm leading-tight">
+        <div className="p-2 md:p-3">
+          <div className="flex items-start justify-between mb-1 md:mb-2 gap-1">
+            <h3 className="font-semibold text-gray-900 text-xs md:text-sm leading-tight flex-1 min-w-0 line-clamp-2">
               {product.name}
             </h3>
             {isLowStock && (
-              <span className="low-stock-badge">
-                {isOutOfStock ? 'Out of Stock' : 'Low Stock'}
+              <span className="low-stock-badge text-xs px-1.5 py-0.5 flex-shrink-0">
+                {isOutOfStock ? 'Out' : 'Low'}
               </span>
             )}
           </div>
           
-          <div className="text-xs text-gray-500 mb-2">
+          <div className="text-xs text-gray-500 mb-1 md:mb-2 truncate">
             SKU: {product.sku}
           </div>
           
-          <div className="mb-3">
+          <div className="mb-2 md:mb-3">
             <div className="flex justify-between text-xs text-gray-600 mb-1">
               <span>Stock</span>
-              <span>{stockQuantity} left</span>
+              <span className="font-medium">{stockQuantity}</span>
             </div>
             <div className="stock-progress">
               <div 
@@ -1164,30 +1171,36 @@ const CashierScreen: React.FC = () => {
 
           {/* Enhanced Unit Selector */}
           {availableUnits.length > 1 && (
-            <div className="mb-3">
-              <div className="text-xs text-gray-600 mb-2">Select Unit:</div>
+            <div className="mb-2 md:mb-3">
+              <div className="text-xs text-gray-600 mb-1 md:mb-2">Unit:</div>
               <div className="flex flex-wrap gap-1">
-                {availableUnits.map((unit: any) => (
+                {availableUnits.slice(0, 3).map((unit: any) => (
                   <button
                     key={unit.id}
-                    onClick={() => selectUnit(product.id, unit.id)}
-                    className={`px-2 py-1 text-xs rounded-md transition-colors ${
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      selectUnit(product.id, unit.id);
+                    }}
+                    className={`px-1.5 md:px-2 py-0.5 md:py-1 text-xs rounded-md transition-colors touch-button ${
                       selectedUnit?.id === unit.id
                         ? 'bg-emerald-600 text-white'
-                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300 active:bg-gray-400'
                     }`}
                     title={`${unit.unit_name} - ₱${unit.price.toFixed(2)}`}
                   >
                     {unit.unit_label || unit.label}
                   </button>
                 ))}
+                {availableUnits.length > 3 && (
+                  <span className="text-xs text-gray-500 px-1">+{availableUnits.length - 3}</span>
+                )}
               </div>
             </div>
           )}
           
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 md:gap-0 mb-2 md:mb-3">
             <div>
-              <span className="text-lg font-bold text-emerald-600">
+              <span className="text-base md:text-lg font-bold text-emerald-600">
                 ₱{(currentPrice || 0).toFixed(2)}
               </span>
               {selectedUnit && (
@@ -1198,8 +1211,11 @@ const CashierScreen: React.FC = () => {
             </div>
             {!isOutOfStock && (
               <button
-                onClick={() => addToCart(product)}
-                className="touch-button bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  addToCart(product);
+                }}
+                className="touch-button bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white px-3 md:px-4 py-2 rounded-lg text-xs md:text-sm font-medium transition-colors w-full md:w-auto"
               >
                 Add to Cart
               </button>
@@ -1226,17 +1242,17 @@ const CashierScreen: React.FC = () => {
   };
 
   return (
-    <div className="pos-system h-screen flex flex-col">
-      <div className="bg-white shadow-lg p-4 flex-shrink-0">
-        <div className="flex space-x-4">
+    <div className="pos-system h-screen flex flex-col overflow-hidden">
+      <div className="bg-white shadow-lg p-3 md:p-4 flex-shrink-0">
+        <div className="flex flex-col md:flex-row gap-3 md:space-x-4 md:gap-0">
           <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-6 h-6" />
+            <Search className="absolute left-3 md:left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5 md:w-6 md:h-6" />
             <input
               type="text"
-              placeholder="Search products by name, SKU, or scan barcode..."
+              placeholder="Search products, SKU, or scan barcode..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-12 pr-4 py-4 text-lg border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+              className="w-full pl-10 md:pl-12 pr-4 py-3 md:py-4 text-base md:text-lg border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent search-input-mobile"
               onKeyPress={(e) => {
                 if (e.key === 'Enter' && searchQuery.length > 3) {
                   handleBarcodeScan(searchQuery);
@@ -1245,29 +1261,31 @@ const CashierScreen: React.FC = () => {
             />
           </div>
           
-          <div className="flex space-x-2">
+          <div className="flex space-x-2 md:space-x-2">
             {/* View Toggle Buttons - Hidden on mobile */}
             {!isMobile && (
               <div className="flex bg-gray-100 rounded-lg p-1">
                 <button
                   onClick={() => setViewMode('grid')}
-                  className={`p-2 rounded-md transition-colors ${
+                  className={`p-2 rounded-md transition-colors touch-button ${
                     viewMode === 'grid'
                       ? 'bg-white text-emerald-600 shadow-sm'
                       : 'text-gray-500 hover:text-gray-700'
                   }`}
                   title="Grid View"
+                  aria-label="Grid View"
                 >
                   <Grid3X3 className="w-5 h-5" />
                 </button>
                 <button
                   onClick={() => setViewMode('list')}
-                  className={`p-2 rounded-md transition-colors ${
+                  className={`p-2 rounded-md transition-colors touch-button ${
                     viewMode === 'list'
                       ? 'bg-white text-emerald-600 shadow-sm'
                       : 'text-gray-500 hover:text-gray-700'
                   }`}
                   title="List View"
+                  aria-label="List View"
                 >
                   <List className="w-5 h-5" />
                 </button>
@@ -1279,48 +1297,37 @@ const CashierScreen: React.FC = () => {
               onClick={() => setShowExpenseModal(true)}
               variant="outline"
               icon={DollarSign}
-              className="px-6"
+              className="px-4 md:px-6 text-sm md:text-base"
+              size={isMobile ? "md" : "lg"}
             >
-              Add Expense
+              <span className="hidden sm:inline">Add Expense</span>
+              <span className="sm:hidden">Expense</span>
             </TouchButton>
-            
-            {/* <TouchButton
-              onClick={() => barcodeInputRef.current?.focus()}
-              variant="outline"
-              icon={Barcode}
-              className="px-6"
-            >
-              Scan
-            </TouchButton> */}
           </div>
         </div>
       </div>
 
       <div className="flex-1 flex overflow-hidden min-h-0">
-        <div className="flex-1 p-4 overflow-y-auto min-h-0">
+        <div className="flex-1 p-3 md:p-4 overflow-y-auto min-h-0 custom-scrollbar">
           {isLoading ? (
             <div className="flex items-center justify-center h-64">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-600"></div>
             </div>
           ) : filteredProducts.length === 0 ? (
-            <div className="text-center py-12">
-              <ShoppingCart className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-              <p className="text-gray-500 text-lg font-semibold">No products found</p>
-              <p className="text-gray-400">Try adjusting your search or check your database connection</p>
-              <div className="mt-4 text-xs text-gray-400">
-                <p>Debug: Products loaded: {products.length}</p>
-                <p>Search query: "{searchQuery}"</p>
-              </div>
+            <div className="text-center py-8 md:py-12">
+              <ShoppingCart className="w-12 h-12 md:w-16 md:h-16 text-gray-400 mx-auto mb-4" />
+              <p className="text-gray-500 text-base md:text-lg font-semibold">No products found</p>
+              <p className="text-gray-400 text-sm md:text-base mt-2">Try adjusting your search or check your database connection</p>
             </div>
           ) : (
             viewMode === 'grid' ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 md:gap-4 product-grid-mobile product-grid-tablet">
                 {filteredProducts.map(product => (
                   <ProductCard key={product.id} product={product} viewMode="grid" />
                 ))}
               </div>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-2 md:space-y-3">
                 {filteredProducts.map(product => (
                   <ProductCard key={product.id} product={product} viewMode="list" />
                 ))}
@@ -1330,17 +1337,18 @@ const CashierScreen: React.FC = () => {
         </div>
 
         {!isMobile && (
-        <div className="w-96 bg-white shadow-lg border-l border-gray-200 flex flex-col" style={{ height: 'calc(100vh - 120px)' }}>
+        <div className="w-full md:w-80 lg:w-96 bg-white shadow-lg border-l border-gray-200 flex flex-col" style={{ height: 'calc(100vh - 120px)' }}>
           {/* Cart Header - Fixed */}
-          <div className="p-4 border-b border-gray-200 flex-shrink-0">
+          <div className="p-3 md:p-4 border-b border-gray-200 flex-shrink-0">
             <div className="flex items-center justify-between">
-              <h2 className="text-xl font-bold text-gray-900 flex items-center">
-                <ShoppingCart className="w-6 h-6 mr-2" />
-                Cart ({cart.length})
+              <h2 className="text-lg md:text-xl font-bold text-gray-900 flex items-center">
+                <ShoppingCart className="w-5 h-5 md:w-6 md:h-6 mr-2" />
+                <span>Cart ({cart.length})</span>
               </h2>
               <button
                 onClick={() => setCart([])}
-                className="text-red-500 hover:text-red-700 p-2 rounded-lg hover:bg-red-50"
+                className="text-red-500 hover:text-red-700 p-2 rounded-lg hover:bg-red-50 active:bg-red-100 touch-button"
+                aria-label="Clear cart"
               >
                 <Trash2 className="w-5 h-5" />
               </button>
@@ -1348,9 +1356,9 @@ const CashierScreen: React.FC = () => {
           </div>
 
           {/* Customer Section - Fixed */}
-          <div className="p-4 border-b border-gray-200 flex-shrink-0">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-gray-700">Customer:</span>
+          <div className="p-3 md:p-4 border-b border-gray-200 flex-shrink-0">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs md:text-sm font-medium text-gray-700 flex-shrink-0">Customer:</span>
               <button
                 onClick={() => {
                   const mockCustomer: Customer = {
@@ -1378,10 +1386,10 @@ const CashierScreen: React.FC = () => {
                   };
                   setSelectedCustomer(selectedCustomer ? null : mockCustomer);
                 }}
-                className="flex items-center space-x-2 text-emerald-600 hover:text-emerald-700 bg-emerald-50 px-3 py-2 rounded-lg hover:bg-emerald-100 transition-colors"
+                className="flex items-center space-x-2 text-emerald-600 hover:text-emerald-700 bg-emerald-50 px-2 md:px-3 py-2 rounded-lg hover:bg-emerald-100 active:bg-emerald-200 transition-colors touch-button text-xs md:text-sm flex-1 min-w-0"
               >
-                <User className="w-4 h-4" />
-                <span>{selectedCustomer ? `${selectedCustomer.first_name} ${selectedCustomer.last_name}` : 'Add Customer'}</span>
+                <User className="w-4 h-4 flex-shrink-0" />
+                <span className="truncate">{selectedCustomer ? `${selectedCustomer.first_name} ${selectedCustomer.last_name}` : 'Add Customer'}</span>
               </button>
             </div>
             {selectedCustomer && (
@@ -1392,34 +1400,33 @@ const CashierScreen: React.FC = () => {
           </div>
 
           {/* Cart Items - Scrollable Area */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
+          <div className="flex-1 overflow-y-auto p-3 md:p-4 space-y-2 md:space-y-3 min-h-0 custom-scrollbar">
             {cart.length === 0 ? (
               <div className="text-center text-gray-500 py-8">
-                <ShoppingCart className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-                <p className="font-medium">Cart is empty</p>
-                <p className="text-sm">Add products to get started</p>
+                <ShoppingCart className="w-10 h-10 md:w-12 md:h-12 mx-auto mb-2 text-gray-300" />
+                <p className="font-medium text-sm md:text-base">Cart is empty</p>
+                <p className="text-xs md:text-sm">Add products to get started</p>
               </div>
             ) : (
               cart.map(item => (
-                <div key={item.id} className="product-card">
+                <div key={item.id} className="product-card p-3 md:p-4">
                   <div className="flex justify-between items-start mb-2">
-                    <h4 className="font-medium text-gray-900 text-sm">{item.product.name}</h4>
+                    <h4 className="font-medium text-gray-900 text-xs md:text-sm flex-1 min-w-0 pr-2">{item.product.name}</h4>
                     <button
                       onClick={() => removeFromCart(item.id)}
-                      className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-50"
+                      className="text-red-500 hover:text-red-700 p-1.5 md:p-2 rounded hover:bg-red-50 active:bg-red-100 touch-button flex-shrink-0"
+                      aria-label="Remove item"
                     >
-                      <X className="w-4 h-4" />
+                      <X className="w-4 h-4 md:w-5 md:h-5" />
                     </button>
                   </div>
                   
-                  <div className="flex justify-between items-center mb-2">
-                    <div className="text-sm text-gray-600">
+                  <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-2 mb-2">
+                    <div className="text-xs md:text-sm text-gray-600">
                       {(() => {
                         if (item.isBaseUnit) {
-                          // Base unit pricing
                           return `₱${item.unitPrice.toFixed(2)} per ${item.selectedUnit?.unit_label || 'unit'}`;
                         } else {
-                          // Sub-unit pricing (per kg)
                           return `₱${item.unitPrice.toFixed(2)} per 1kg`;
                         }
                       })()}
@@ -1435,7 +1442,7 @@ const CashierScreen: React.FC = () => {
                           let newQuantity = parseFloat(e.target.value) || 0;
                           updateQuantity(item.id, newQuantity);
                         }}
-                        className="w-16 px-2 py-1 text-sm border border-gray-300 rounded text-center focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        className="w-20 md:w-16 px-2 py-1.5 md:py-1 text-xs md:text-sm border border-gray-300 rounded text-center focus:ring-2 focus:ring-green-500 focus:border-transparent"
                       />
 
                       <span className="text-xs text-gray-500">
@@ -1445,7 +1452,7 @@ const CashierScreen: React.FC = () => {
                   </div>
                   
                   <div className="text-right">
-                    <span className="font-semibold text-emerald-600">
+                    <span className="font-semibold text-emerald-600 text-sm md:text-base">
                       ₱{item.lineTotal.toFixed(2)}
                     </span>
                   </div>
@@ -1456,9 +1463,9 @@ const CashierScreen: React.FC = () => {
 
           {/* Payment Section - Completely Static at Bottom */}
           {cart.length > 0 && (
-            <div className="p-4 border-t border-gray-200 space-y-3 bg-white shadow-lg">
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between text-xl font-bold text-emerald-600">
+            <div className="p-3 md:p-4 border-t border-gray-200 space-y-3 bg-white shadow-lg flex-shrink-0">
+              <div className="space-y-2">
+                <div className="flex justify-between text-lg md:text-xl font-bold text-emerald-600">
                   <span>Total:</span>
                   <span>₱{calculateTotal().toFixed(2)}</span>
                 </div>
@@ -1467,7 +1474,7 @@ const CashierScreen: React.FC = () => {
               <TouchButton
                 onClick={() => setShowPaymentModal(true)}
                 variant="success"
-                size="xl"
+                size={isMobile ? "lg" : "xl"}
                 fullWidth
                 icon={CreditCard}
               >

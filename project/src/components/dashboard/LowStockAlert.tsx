@@ -219,9 +219,9 @@ const LowStockAlert: React.FC = () => {
             <p className="text-gray-500">No low stock alerts at this time.</p>
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-3 max-h-96 overflow-y-auto">
             {lowStockItems.map((item, index) => (
-              <div key={item.id} className={`p-3 rounded-lg border ${getUrgencyColor(item.urgency)}`}>
+              <div key={index} className={`p-3 rounded-lg border ${getUrgencyColor(item.urgency)}`}>
                 <div className="flex items-start space-x-3">
                   <div className="flex-shrink-0 mt-0.5">
                     {getUrgencyIcon(item.urgency)}
