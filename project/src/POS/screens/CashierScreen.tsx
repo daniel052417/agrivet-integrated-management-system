@@ -9,7 +9,6 @@ import {
   Plus, 
   Minus,
   Trash2,
-  Barcode,
   User,
   Receipt,
   Zap,
@@ -19,12 +18,12 @@ import {
   List,
   DollarSign,
   Camera,
-  Upload
+  Upload,
+  ChevronRight
 } from 'lucide-react';
 import TouchButton from '../components/shared/TouchButton';
 import Modal from '../components/shared/Modal';
 import MobileBottomSheet from '../components/shared/MobileBottomSheet';
-import FloatingActionButton from '../components/shared/FloatingActionButton';
 import { ProductVariant, CartItem, Customer } from '../../types/pos';
 import { supabase } from '../../lib/supabase';
 import { customAuth } from '../../lib/customAuth';
@@ -39,14 +38,18 @@ const CashierScreen: React.FC = () => {
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'gcash' | 'paymaya' | null>(null);
   const [cashAmount, setCashAmount] = useState('');
   const [isMobile, setIsMobile] = useState(false);
+  const [isTablet, setIsTablet] = useState(false);
+  const [isTabletLandscape, setIsTabletLandscape] = useState(false);
   const [showMobileCart, setShowMobileCart] = useState(false);
   const [products, setProducts] = useState<ProductVariant[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedUnits, setSelectedUnits] = useState<Record<string, string>>({}); // productId -> unitId
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [productQuantities, setProductQuantities] = useState<Record<string, number>>({}); // productId -> quantity in cart
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [paymentSuccess, setPaymentSuccess] = useState(false);
   const barcodeInputRef = useRef<HTMLInputElement>(null);
+  const viewModeManuallySet = useRef(false); // Track if user manually changed view mode
   
   // Expense states
   const [showExpenseModal, setShowExpenseModal] = useState(false);
@@ -77,13 +80,43 @@ const CashierScreen: React.FC = () => {
   
 
   useEffect(() => {
-    const checkMobile = () => {
-      setIsMobile(window.innerWidth < 768);
+    const checkDevice = () => {
+      const width = window.innerWidth;
+      const height = window.innerHeight;
+      // Tablet range: min 768×1024 or 1024×768, max 800×1280 or 1280×800
+      const minDimension = Math.min(width, height);
+      const maxDimension = Math.max(width, height);
+      const mobile = width < 768;
+      const tablet = 
+        minDimension >= 768 && minDimension <= 800 && 
+        maxDimension >= 1024 && maxDimension <= 1280;
+      setIsMobile(mobile);
+      setIsTablet(tablet);
+      setIsTabletLandscape(tablet && width > height);
+      
+      // Only auto-set view mode on initial load, not on resize (unless mobile)
+      // Mobile always uses list mode
+      if (mobile) {
+        setViewMode('list');
+      } else if (!viewModeManuallySet.current) {
+        // Only set default view mode if user hasn't manually changed it
+        if (tablet) {
+          // Tablet: prefer grid mode for better space utilization
+          setViewMode('grid');
+        } else {
+          // Desktop: default to grid
+          setViewMode('grid');
+        }
+      }
     };
     
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
+    checkDevice();
+    window.addEventListener('resize', checkDevice);
+    window.addEventListener('orientationchange', checkDevice);
+    return () => {
+      window.removeEventListener('resize', checkDevice);
+      window.removeEventListener('orientationchange', checkDevice);
+    };
   }, []);
 
   useEffect(() => {
@@ -549,12 +582,13 @@ const CashierScreen: React.FC = () => {
   };
 
 
-  const addToCart = (product: ProductVariant) => {
+  const addToCart = (product: ProductVariant, quantity?: number) => {
     const selectedUnit = getSelectedUnit(product);
     const currentPrice = getCurrentPrice(product); // This is the exact price_per_unit from database
     
-    // Use the minimum sellable quantity from the selected unit or default to 1
+    // Use provided quantity or minimum sellable quantity from the selected unit or default to 1
     const minQuantity = parseFloat((selectedUnit as any)?.min_sellable_quantity || '1');
+    const addQuantity = quantity || minQuantity;
     
     // Find existing item with the same product AND same unit
     const existingItem = cart.find(item => 
@@ -563,8 +597,8 @@ const CashierScreen: React.FC = () => {
     );
     
     if (existingItem) {
-      // Add minimum quantity to existing item
-      const newQuantity = existingItem.quantity + minQuantity;
+      // Add quantity to existing item
+      const newQuantity = existingItem.quantity + addQuantity;
       
       setCart(cart.map(item =>
         item.id === existingItem.id
@@ -575,6 +609,14 @@ const CashierScreen: React.FC = () => {
             }
           : item
       ));
+      
+      // Update product quantity state for mobile
+      if (isMobile) {
+        setProductQuantities(prev => ({
+          ...prev,
+          [product.id]: newQuantity
+        }));
+      }
     } else {
       // Create new cart item with the selected unit and its price
       const newItem: CartItem = {
@@ -584,10 +626,10 @@ const CashierScreen: React.FC = () => {
           price: currentPrice || 0,
           unit_of_measure: selectedUnit?.unit_label || product.unit_of_measure
         },
-        quantity: minQuantity,
+        quantity: addQuantity,
         unitPrice: currentPrice || 0, // Use the exact price_per_unit from database
         discount: 0,
-        lineTotal: (currentPrice || 0) * minQuantity,
+        lineTotal: (currentPrice || 0) * addQuantity,
         minimum_stock: (selectedUnit as any)?.minimum_stock ?? product.minimum_stock ?? 0,
         selectedUnit: {
           id: selectedUnit?.id || '',
@@ -603,6 +645,14 @@ const CashierScreen: React.FC = () => {
       };
       
       setCart([...cart, newItem]);
+      
+      // Update product quantity state for mobile
+      if (isMobile) {
+        setProductQuantities(prev => ({
+          ...prev,
+          [product.id]: addQuantity
+        }));
+      }
     }
   };
 
@@ -627,11 +677,21 @@ const CashierScreen: React.FC = () => {
 
             const lineTotal = validQuantity * item.unitPrice;
 
-            return {
+            const updatedItem = {
               ...item,
               quantity: validQuantity,
               lineTotal: lineTotal - (item.discount || 0),
             };
+            
+            // Update product quantity state for mobile
+            if (isMobile) {
+              setProductQuantities(prev => ({
+                ...prev,
+                [item.product.id]: validQuantity
+              }));
+            }
+            
+            return updatedItem;
           }
           return item;
         }).filter(Boolean) as CartItem[]
@@ -640,7 +700,58 @@ const CashierScreen: React.FC = () => {
 
 
   const removeFromCart = (itemId: string) => {
+    const item = cart.find(i => i.id === itemId);
     setCart(cart.filter(item => item.id !== itemId));
+    
+    // Update product quantity state for mobile
+    if (isMobile && item) {
+      setProductQuantities(prev => {
+        const newState = { ...prev };
+        delete newState[item.product.id];
+        return newState;
+      });
+    }
+  };
+  
+  // Get quantity in cart for a product (mobile)
+  const getProductQuantityInCart = (productId: string, unitId?: string): number => {
+    if (unitId) {
+      const cartItem = cart.find(item => 
+        item.product.id === productId && 
+        item.selectedUnit?.id === unitId
+      );
+      return cartItem ? cartItem.quantity : 0;
+    }
+    // If no unit specified, sum all quantities for this product
+    const cartItems = cart.filter(item => item.product.id === productId);
+    if (cartItems.length > 0) {
+      return cartItems.reduce((sum, item) => sum + item.quantity, 0);
+    }
+    return productQuantities[productId] || 0;
+  };
+  
+  // Handle quantity change for mobile (direct from product list)
+  const handleMobileQuantityChange = (product: ProductVariant, change: number) => {
+    const selectedUnit = getSelectedUnit(product);
+    const minQty = parseFloat((selectedUnit as any)?.min_sellable_quantity || '1');
+    const currentQty = getProductQuantityInCart(product.id);
+    const newQty = Math.max(0, currentQty + (change * minQty));
+    
+    if (newQty <= 0) {
+      // Remove from cart
+      const cartItem = cart.find(item => item.product.id === product.id && item.selectedUnit?.id === selectedUnit?.id);
+      if (cartItem) {
+        removeFromCart(cartItem.id);
+      }
+      setProductQuantities(prev => {
+        const newState = { ...prev };
+        delete newState[product.id];
+        return newState;
+      });
+    } else {
+      // Add or update in cart
+      addToCart(product, change * minQty);
+    }
   };
 
   const calculateSubtotal = () => {
@@ -1014,12 +1125,20 @@ const CashierScreen: React.FC = () => {
     const availableUnits = generateDynamicUnits(product);
     const selectedUnit = getSelectedUnit(product);
     const currentPrice = getCurrentPrice(product);
+    // Access isTablet from parent scope
 
     if (viewMode === 'list') {
+      const displayQuantity = isMobile 
+        ? getProductQuantityInCart(product.id, selectedUnit?.id)
+        : (cart.find(item => 
+            item.product.id === product.id && 
+            item.selectedUnit?.id === selectedUnit?.id
+          )?.quantity || 0);
+      
       return (
-        <div className="product-card flex items-center space-x-4 p-4 bg-white rounded-lg border border-gray-200 hover:shadow-md transition-shadow">
+        <div className="product-card flex items-center space-x-3 md:space-x-4 p-3 md:p-4 bg-white rounded-lg border border-gray-200 hover:shadow-md transition-shadow">
           {/* Product Image */}
-          <div className="w-20 h-20 bg-gray-100 rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0">
+          <div className="w-16 h-16 md:w-20 md:h-20 bg-gray-100 rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0">
             {product.image_url ? (
               <img
                 src={product.image_url}
@@ -1032,88 +1151,132 @@ const CashierScreen: React.FC = () => {
               />
             ) : null}
             <div className={`w-full h-full flex items-center justify-center ${product.image_url ? 'hidden' : ''}`}>
-              <ImageIcon className="w-6 h-6 text-gray-400" />
+              <ImageIcon className="w-5 h-5 md:w-6 md:h-6 text-gray-400" />
             </div>
           </div>
 
           {/* Product Info */}
           <div className="flex-1 min-w-0">
-            <div className="flex items-start justify-between mb-2">
+            <div className="flex items-start justify-between mb-1 md:mb-2 gap-2">
               <div className="flex-1 min-w-0">
-                <h3 className="font-semibold text-gray-900 text-sm leading-tight truncate">
+                <h3 className="font-semibold text-gray-900 text-sm md:text-base leading-tight line-clamp-2">
                   {product.name}
                 </h3>
-                <div className="text-xs text-gray-500 mt-1">
+                <div className="text-xs text-gray-500 mt-0.5">
                   SKU: {product.sku}
                 </div>
               </div>
               {isLowStock && (
-                <span className="low-stock-badge ml-2 flex-shrink-0">
-                  {isOutOfStock ? 'Out of Stock' : 'Low Stock'}
+                <span className="low-stock-badge ml-2 flex-shrink-0 text-xs px-1.5 py-0.5">
+                  {isOutOfStock ? 'Out' : 'Low'}
                 </span>
               )}
             </div>
 
-            {/* Stock Info */}
-            <div className="flex items-center space-x-4 mb-2">
-              <div className="text-xs text-gray-600">
-                Stock: {stockQuantity} left
-              </div>
-              <div className="flex-1 max-w-24">
-                <div className="stock-progress">
-                  <div 
-                    className={`stock-progress-fill ${isLowStock ? 'stock-progress-low' : ''}`}
-                    style={{ width: `${Math.min(stockPercentage, 100)}%` }}
-                  />
+            {/* Stock Info - Hidden on mobile to save space */}
+            {!isMobile && (
+              <div className="flex items-center space-x-4 mb-2">
+                <div className="text-xs text-gray-600">
+                  Stock: {stockQuantity} left
                 </div>
-              </div>
-            </div>
-
-            {/* Enhanced Unit Selector */}
-            {availableUnits.length > 1 && (
-              <div className="mb-2">
-                <div className="flex items-center space-x-2">
-                  <span className="text-xs text-gray-600">Unit:</span>
-                  <div className="flex flex-wrap gap-1">
-                    {availableUnits.map((unit: any) => (
-                      <button
-                        key={unit.id}
-                        onClick={() => selectUnit(product.id, unit.id)}
-                        className={`px-2 py-1 text-xs rounded-md transition-colors ${
-                          selectedUnit?.id === unit.id
-                            ? 'bg-emerald-600 text-white'
-                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                        }`}
-                        title={`${unit.unit_name} - ₱${unit.price.toFixed(2)}`}
-                      >
-                        {unit.unit_label || unit.label}
-                      </button>
-                    ))}
+                <div className="flex-1 max-w-24">
+                  <div className="stock-progress">
+                    <div 
+                      className={`stock-progress-fill ${isLowStock ? 'stock-progress-low' : ''}`}
+                      style={{ width: `${Math.min(stockPercentage, 100)}%` }}
+                    />
                   </div>
                 </div>
               </div>
             )}
-          </div>
 
-          {/* Price and Add Button */}
-          <div className="flex flex-col items-end space-y-2 flex-shrink-0">
-            <div className="text-right">
-              <div className="text-lg font-bold text-emerald-600">
-                ₱{(currentPrice || 0).toFixed(2)}
-              </div>
-              {selectedUnit && (
-                <div className="text-xs text-gray-500">
-                  per {selectedUnit.unit_label}
+            {/* Unit Selector with Prices - Mobile optimized */}
+            <div className="mb-2">
+              {availableUnits.length > 1 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {availableUnits.map((unit: any) => (
+                    <button
+                      key={unit.id}
+                      onClick={() => selectUnit(product.id, unit.id)}
+                      className={`px-2 py-1 text-xs rounded-md transition-colors touch-button ${
+                        selectedUnit?.id === unit.id
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300 active:bg-gray-400'
+                      }`}
+                      title={`${unit.unit_name} - ₱${unit.price.toFixed(2)}`}
+                    >
+                      <span className="font-medium">{unit.unit_label || unit.label}</span>
+                      <span className="ml-1 text-xs opacity-90">₱{unit.price.toFixed(2)}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-xs text-gray-600">
+                  <span className="font-medium">{selectedUnit?.unit_label || product.unit_of_measure}</span>
+                  <span className="ml-1 text-emerald-600 font-semibold">₱{(currentPrice || 0).toFixed(2)}</span>
                 </div>
               )}
             </div>
-            {!isOutOfStock && (
-              <button
-                onClick={() => addToCart(product)}
-                className="touch-button bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-              >
-                Add to Cart
-              </button>
+          </div>
+
+          {/* Price and Quantity Controls */}
+          <div className="flex flex-col items-end space-y-2 flex-shrink-0">
+            {!isMobile && (
+              <div className="text-right">
+                <div className="text-base md:text-lg font-bold text-emerald-600">
+                  ₱{(currentPrice || 0).toFixed(2)}
+                </div>
+                {selectedUnit && (
+                  <div className="text-xs text-gray-500">
+                    per {selectedUnit.unit_label}
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {!isOutOfStock ? (
+              isMobile ? (
+                // Mobile: Quantity controls (- 1 +)
+                <div className="flex items-center space-x-2 bg-gray-50 rounded-lg p-1 border border-gray-200">
+                  <button
+                    onClick={() => handleMobileQuantityChange(product, -1)}
+                    disabled={displayQuantity <= 0}
+                    className="w-8 h-8 md:w-9 md:h-9 flex items-center justify-center rounded-md bg-white hover:bg-gray-100 active:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed touch-button transition-colors border border-gray-300"
+                    aria-label="Decrease quantity"
+                  >
+                    <Minus className="w-4 h-4 text-gray-700" />
+                  </button>
+                  
+                  <div className="min-w-[2.5rem] text-center">
+                    <div className="text-sm md:text-base font-bold text-gray-900">
+                      {displayQuantity > 0 ? displayQuantity : '0'}
+                    </div>
+                    {selectedUnit && displayQuantity > 0 && (
+                      <div className="text-xs text-gray-500">
+                        {selectedUnit.unit_label}
+                      </div>
+                    )}
+                  </div>
+                  
+                  <button
+                    onClick={() => handleMobileQuantityChange(product, 1)}
+                    className="w-8 h-8 md:w-9 md:h-9 flex items-center justify-center rounded-md bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white touch-button transition-colors"
+                    aria-label="Increase quantity"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                // Desktop: Add to Cart button
+                <button
+                  onClick={() => addToCart(product)}
+                  className="touch-button bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                >
+                  Add to Cart
+                </button>
+              )
+            ) : (
+              <span className="text-xs text-red-600 font-medium">Out of Stock</span>
             )}
           </div>
         </div>
@@ -1122,8 +1285,12 @@ const CashierScreen: React.FC = () => {
 
     // Grid View (existing layout)
     return (
-      <div className="product-card cursor-pointer">
-        <div className="w-full h-24 md:h-32 bg-gray-100 rounded-t-lg flex items-center justify-center mb-2 md:mb-3 overflow-hidden">
+      <div className="product-card cursor-pointer h-full flex flex-col">
+        <div className={`w-full ${
+          isTablet 
+            ? (isTabletLandscape ? 'h-36' : 'h-40') 
+            : 'h-24 md:h-32'
+        } bg-gray-100 rounded-t-lg flex items-center justify-center mb-2 md:mb-3 overflow-hidden flex-shrink-0`}>
           {product.image_url ? (
             <img
               src={product.image_url}
@@ -1136,28 +1303,48 @@ const CashierScreen: React.FC = () => {
             />
           ) : null}
           <div className={`w-full h-full flex items-center justify-center ${product.image_url ? 'hidden' : ''}`}>
-            <ImageIcon className="w-6 h-6 md:w-8 md:h-8 text-gray-400" />
+            <ImageIcon className={`${
+              isTablet 
+                ? (isTabletLandscape ? 'w-10 h-10' : 'w-12 h-12') 
+                : 'w-6 h-6 md:w-8 md:h-8'
+            } text-gray-400`} />
           </div>
         </div>
         
-        <div className="p-2 md:p-3">
+        <div className={`${
+          isTablet 
+            ? (isTabletLandscape ? 'p-2.5' : 'p-3') 
+            : 'p-2 md:p-3'
+        } flex-1 flex flex-col`}>
           <div className="flex items-start justify-between mb-1 md:mb-2 gap-1">
-            <h3 className="font-semibold text-gray-900 text-xs md:text-sm leading-tight flex-1 min-w-0 line-clamp-2">
+            <h3 className={`font-semibold text-gray-900 ${
+              isTablet 
+                ? (isTabletLandscape ? 'text-xs' : 'text-sm') 
+                : 'text-xs md:text-sm'
+            } leading-tight flex-1 min-w-0 line-clamp-2`}>
               {product.name}
             </h3>
             {isLowStock && (
-              <span className="low-stock-badge text-xs px-1.5 py-0.5 flex-shrink-0">
+              <span className={`low-stock-badge ${
+                isTablet 
+                  ? (isTabletLandscape ? 'text-xs px-1.5 py-0.5' : 'text-xs px-2 py-1') 
+                  : 'text-xs px-1.5 py-0.5'
+              } flex-shrink-0`}>
                 {isOutOfStock ? 'Out' : 'Low'}
               </span>
             )}
           </div>
           
-          <div className="text-xs text-gray-500 mb-1 md:mb-2 truncate">
+          <div className={`text-gray-500 mb-1 md:mb-2 truncate ${
+            isTablet && isTabletLandscape ? 'text-xs' : 'text-xs'
+          }`}>
             SKU: {product.sku}
           </div>
           
-          <div className="mb-2 md:mb-3">
-            <div className="flex justify-between text-xs text-gray-600 mb-1">
+          <div className={`${isTablet && isTabletLandscape ? 'mb-1.5' : 'mb-2 md:mb-3'}`}>
+            <div className={`flex justify-between text-gray-600 mb-1 ${
+              isTablet && isTabletLandscape ? 'text-xs' : 'text-xs'
+            }`}>
               <span>Stock</span>
               <span className="font-medium">{stockQuantity}</span>
             </div>
@@ -1171,17 +1358,23 @@ const CashierScreen: React.FC = () => {
 
           {/* Enhanced Unit Selector */}
           {availableUnits.length > 1 && (
-            <div className="mb-2 md:mb-3">
-              <div className="text-xs text-gray-600 mb-1 md:mb-2">Unit:</div>
+            <div className={`${isTablet && isTabletLandscape ? 'mb-1.5' : 'mb-2 md:mb-3'}`}>
+              <div className={`text-gray-600 mb-1 ${
+                isTablet && isTabletLandscape ? 'text-xs' : 'text-xs md:text-xs'
+              }`}>Unit:</div>
               <div className="flex flex-wrap gap-1">
-                {availableUnits.slice(0, 3).map((unit: any) => (
+                {availableUnits.slice(0, isTablet ? (isTabletLandscape ? 3 : 4) : 3).map((unit: any) => (
                   <button
                     key={unit.id}
                     onClick={(e) => {
                       e.stopPropagation();
                       selectUnit(product.id, unit.id);
                     }}
-                    className={`px-1.5 md:px-2 py-0.5 md:py-1 text-xs rounded-md transition-colors touch-button ${
+                    className={`${
+                      isTablet 
+                        ? (isTabletLandscape ? 'px-1.5 py-0.5 text-xs' : 'px-2 py-1 text-xs') 
+                        : 'px-1.5 md:px-2 py-0.5 md:py-1 text-xs'
+                    } rounded-md transition-colors touch-button ${
                       selectedUnit?.id === unit.id
                         ? 'bg-emerald-600 text-white'
                         : 'bg-gray-200 text-gray-700 hover:bg-gray-300 active:bg-gray-400'
@@ -1191,16 +1384,24 @@ const CashierScreen: React.FC = () => {
                     {unit.unit_label || unit.label}
                   </button>
                 ))}
-                {availableUnits.length > 3 && (
-                  <span className="text-xs text-gray-500 px-1">+{availableUnits.length - 3}</span>
+                {availableUnits.length > (isTablet ? (isTabletLandscape ? 3 : 4) : 3) && (
+                  <span className="text-xs text-gray-500 px-1">+{availableUnits.length - (isTablet ? (isTabletLandscape ? 3 : 4) : 3)}</span>
                 )}
               </div>
             </div>
           )}
           
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 md:gap-0 mb-2 md:mb-3">
+          <div className={`flex flex-col ${
+            isTablet 
+              ? (isTabletLandscape ? 'gap-1.5' : 'gap-2') 
+              : 'md:flex-row md:items-center md:justify-between gap-2 md:gap-0'
+          } mb-2 md:mb-3 mt-auto`}>
             <div>
-              <span className="text-base md:text-lg font-bold text-emerald-600">
+              <span className={`font-bold text-emerald-600 ${
+                isTablet 
+                  ? (isTabletLandscape ? 'text-base' : 'text-lg') 
+                  : 'text-base md:text-lg'
+              }`}>
                 ₱{(currentPrice || 0).toFixed(2)}
               </span>
               {selectedUnit && (
@@ -1215,7 +1416,11 @@ const CashierScreen: React.FC = () => {
                   e.stopPropagation();
                   addToCart(product);
                 }}
-                className="touch-button bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white px-3 md:px-4 py-2 rounded-lg text-xs md:text-sm font-medium transition-colors w-full md:w-auto"
+                className={`touch-button bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white ${
+                  isTablet 
+                    ? (isTabletLandscape ? 'px-3 py-2 text-xs' : 'px-4 py-2.5 text-sm') 
+                    : 'px-3 md:px-4 py-2 text-xs md:text-sm'
+                } rounded-lg font-medium transition-colors w-full md:w-auto`}
               >
                 Add to Cart
               </button>
@@ -1266,7 +1471,10 @@ const CashierScreen: React.FC = () => {
             {!isMobile && (
               <div className="flex bg-gray-100 rounded-lg p-1">
                 <button
-                  onClick={() => setViewMode('grid')}
+                  onClick={() => {
+                    viewModeManuallySet.current = true;
+                    setViewMode('grid');
+                  }}
                   className={`p-2 rounded-md transition-colors touch-button ${
                     viewMode === 'grid'
                       ? 'bg-white text-emerald-600 shadow-sm'
@@ -1278,7 +1486,10 @@ const CashierScreen: React.FC = () => {
                   <Grid3X3 className="w-5 h-5" />
                 </button>
                 <button
-                  onClick={() => setViewMode('list')}
+                  onClick={() => {
+                    viewModeManuallySet.current = true;
+                    setViewMode('list');
+                  }}
                   className={`p-2 rounded-md transition-colors touch-button ${
                     viewMode === 'list'
                       ? 'bg-white text-emerald-600 shadow-sm'
@@ -1308,7 +1519,7 @@ const CashierScreen: React.FC = () => {
       </div>
 
       <div className="flex-1 flex overflow-hidden min-h-0">
-        <div className="flex-1 p-3 md:p-4 overflow-y-auto min-h-0 custom-scrollbar">
+        <div className={`flex-1 p-3 md:p-4 overflow-y-auto min-h-0 custom-scrollbar ${isMobile && cart.length > 0 ? 'pb-24' : ''}`}>
           {isLoading ? (
             <div className="flex items-center justify-center h-64">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-600"></div>
@@ -1319,14 +1530,27 @@ const CashierScreen: React.FC = () => {
               <p className="text-gray-500 text-base md:text-lg font-semibold">No products found</p>
               <p className="text-gray-400 text-sm md:text-base mt-2">Try adjusting your search or check your database connection</p>
             </div>
-          ) : (
-            viewMode === 'grid' ? (
-              <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 md:gap-4 product-grid-mobile product-grid-tablet">
+            ) : (
+            isMobile ? (
+              // Mobile: Always list mode
+              <div className="space-y-2">
+                {filteredProducts.map(product => (
+                  <ProductCard key={product.id} product={product} viewMode="list" />
+                ))}
+              </div>
+            ) : viewMode === 'grid' ? (
+              // Grid mode (Tablet or Desktop)
+              <div className={`grid ${
+                isTablet 
+                  ? (isTabletLandscape ? 'gap-3 grid-cols-4' : 'gap-4 grid-cols-3')
+                  : 'grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 md:gap-4 product-grid-mobile product-grid-tablet'
+              }`}>
                 {filteredProducts.map(product => (
                   <ProductCard key={product.id} product={product} viewMode="grid" />
                 ))}
               </div>
             ) : (
+              // List mode (Tablet or Desktop)
               <div className="space-y-2 md:space-y-3">
                 {filteredProducts.map(product => (
                   <ProductCard key={product.id} product={product} viewMode="list" />
@@ -1489,79 +1713,10 @@ const CashierScreen: React.FC = () => {
           <MobileBottomSheet
             isOpen={showMobileCart}
             onClose={() => setShowMobileCart(false)}
-            title={`Cart (${cart.length})`}
+            title="Order Summary"
           >
-            {/* Mobile View Toggle */}
-            <div className="mb-4 flex justify-center">
-              <div className="flex bg-gray-100 rounded-lg p-1">
-                <button
-                  onClick={() => setViewMode('grid')}
-                  className={`p-2 rounded-md transition-colors ${
-                    viewMode === 'grid'
-                      ? 'bg-white text-emerald-600 shadow-sm'
-                      : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                  title="Grid View"
-                >
-                  <Grid3X3 className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => setViewMode('list')}
-                  className={`p-2 rounded-md transition-colors ${
-                    viewMode === 'list'
-                      ? 'bg-white text-emerald-600 shadow-sm'
-                      : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                  title="List View"
-                >
-                  <List className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-            <div className="mb-4">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-gray-700">Customer:</span>
-                <button
-                  onClick={() => {
-                    const mockCustomer: Customer = {
-                      id: '1',
-                      customer_number: 'C000001',
-                      first_name: 'John',
-                      last_name: 'Doe',
-                      email: 'john.doe@example.com',
-                      phone: '+1234567890',
-                      address: '123 Main St',
-                      city: 'Manila',
-                      province: 'Metro Manila',
-                      customer_type: 'regular',
-                      is_active: true,
-                      created_at: new Date().toISOString(),
-                      user_id: 'user-1',
-                      customer_code: 'C000001',
-                      date_of_birth: '1990-01-01',
-                      registration_date: new Date().toISOString(),
-                      total_spent: 5000,
-                      last_purchase_date: new Date().toISOString(),
-                      loyalty_points: 150,
-                      loyalty_tier: 'silver',
-                      total_lifetime_spent: 5000
-                    };
-                    setSelectedCustomer(selectedCustomer ? null : mockCustomer);
-                  }}
-                  className="flex items-center space-x-2 text-emerald-600 hover:text-emerald-700 bg-emerald-50 px-3 py-2 rounded-lg hover:bg-emerald-100 transition-colors"
-                >
-                  <User className="w-4 h-4" />
-                  <span>{selectedCustomer ? `${selectedCustomer.first_name} ${selectedCustomer.last_name}` : 'Add Customer'}</span>
-                </button>
-              </div>
-              {selectedCustomer && (
-                <div className="mt-2 text-xs text-gray-500">
-                  Points: {selectedCustomer.loyalty_points}
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-3 mb-4">
+            {/* Cart Items List */}
+            <div className="space-y-4 mb-4">
               {cart.length === 0 ? (
                 <div className="text-center text-gray-500 py-8">
                   <ShoppingCart className="w-12 h-12 mx-auto mb-2 text-gray-300" />
@@ -1570,67 +1725,72 @@ const CashierScreen: React.FC = () => {
                 </div>
               ) : (
                 cart.map(item => (
-                  <div key={item.id} className="product-card">
-                    <div className="flex justify-between items-start mb-2">
-                      <h4 className="font-medium text-gray-900 text-sm">{item.product.name}</h4>
+                  <div key={item.id} className="bg-white border border-gray-200 rounded-lg p-4">
+                    {/* Product Name and Remove Button */}
+                    <div className="flex justify-between items-start mb-3">
+                      <h4 className="font-semibold text-gray-900 text-base flex-1 pr-2">{item.product.name}</h4>
                       <button
                         onClick={() => removeFromCart(item.id)}
-                        className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-50"
+                        className="text-red-500 hover:text-red-700 active:bg-red-50 p-1.5 rounded-lg transition-colors touch-button flex-shrink-0"
+                        aria-label="Remove item"
                       >
-                        <X className="w-4 h-4" />
+                        <X className="w-5 h-5" />
                       </button>
                     </div>
                     
-                    <div className="flex justify-between items-center mb-2">
-                      <div className="text-sm text-gray-600">
-                        ₱{item.unitPrice.toFixed(2)} per {item.selectedUnit?.unit_label || 'unit'}
-                      </div>
-                      <div className="quantity-control">
-                        <button
-                          onClick={() => {
-                            const minQty = parseFloat((item.selectedUnit as any)?.min_sellable_quantity || '0.01');
-                            updateQuantity(item.id, Math.max(minQty, item.quantity - minQty));
+                    {/* Price per Unit */}
+                    <div className="text-sm text-gray-600 mb-3">
+                      ₱{item.unitPrice.toFixed(2)} per {item.selectedUnit?.unit_label || item.product.unit_of_measure || 'unit'}
+                    </div>
+                    
+                    {/* Quantity Control */}
+                    <div className="flex items-center justify-between mb-3">
+                      <label className="text-sm font-medium text-gray-700">Quantity:</label>
+                      <div className="flex items-center space-x-2">
+                        <input
+                          type="number"
+                          min={item.selectedUnit?.is_base_unit ? 1 : item.selectedUnit?.min_sellable_quantity ?? 0.01}
+                          step={item.selectedUnit?.is_base_unit ? 1 : item.selectedUnit?.min_sellable_quantity ?? 0.01}
+                          value={item.quantity}
+                          onChange={(e) => {
+                            let newQuantity = parseFloat(e.target.value) || 0;
+                            updateQuantity(item.id, newQuantity);
                           }}
-                          className="quantity-btn"
-                        >
-                          <Minus className="w-4 h-4" />
-                        </button>
-                        <span className="quantity-display">
-                          {item.quantity} {item.selectedUnit?.unit_label || 'unit'}
+                          className="w-20 px-3 py-2 border border-gray-300 rounded-lg text-center font-semibold text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                        />
+                        <span className="text-sm text-gray-600 min-w-[3rem]">
+                          {item.selectedUnit?.unit_label || item.product.unit_of_measure || 'unit'}
                         </span>
-                        <button
-                          onClick={() => {
-                            const minQty = parseFloat((item.selectedUnit as any)?.min_sellable_quantity || '0.01');
-                            updateQuantity(item.id, item.quantity + minQty);
-                          }}
-                          className="quantity-btn"
-                        >
-                          <Plus className="w-4 h-4" />
-                        </button>
                       </div>
                     </div>
                     
-                    <div className="text-right">
-                      <span className="font-semibold text-emerald-600">
-                        ₱{item.lineTotal.toFixed(2)}
-                      </span>
+                    {/* Subtotal */}
+                    <div className="flex justify-end pt-2 border-t border-gray-100">
+                      <div className="text-right">
+                        <span className="text-xs text-gray-500 mr-2">Subtotal:</span>
+                        <span className="text-base font-bold text-emerald-600">
+                          ₱{item.lineTotal.toFixed(2)}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 ))
               )}
             </div>
 
+            {/* Total and Proceed Button */}
             {cart.length > 0 && (
-              <div className="border-t border-gray-200 pt-4 space-y-3">
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between text-xl font-bold text-emerald-600">
-                    <span>Total:</span>
-                    <span>₱{calculateTotal().toFixed(2)}</span>
-                  </div>
+              <div className="border-t-2 border-gray-200 pt-4 space-y-4 bg-white sticky bottom-0 -mx-4 -mb-4 px-4 pb-4">
+                <div className="flex justify-between items-center">
+                  <span className="text-lg font-bold text-gray-900">Total:</span>
+                  <span className="text-2xl font-bold text-emerald-600">₱{calculateTotal().toFixed(2)}</span>
                 </div>
                 
                 <TouchButton
-                  onClick={() => setShowPaymentModal(true)}
+                  onClick={() => {
+                    setShowMobileCart(false);
+                    setShowPaymentModal(true);
+                  }}
                   variant="success"
                   size="xl"
                   fullWidth
@@ -1643,14 +1803,27 @@ const CashierScreen: React.FC = () => {
           </MobileBottomSheet>
         )}
 
+        {/* Mobile Floating Cart Button */}
         {isMobile && cart.length > 0 && (
-          <FloatingActionButton
+          <button
             onClick={() => setShowMobileCart(true)}
-            icon={ShoppingCart}
-            label="View Cart"
-            variant="primary"
-            className="fixed bottom-6 right-6 z-50"
-          />
+            className="mobile-floating-cart text-white touch-button"
+            aria-label="View cart and proceed to payment"
+          >
+            <div className="flex items-center justify-between px-4 py-3.5">
+              <div className="flex-1 min-w-0 text-left">
+                <div className="text-sm font-semibold">Proceed New Order</div>
+                <div className="text-xs opacity-95 flex items-center space-x-2 mt-0.5">
+                  <span className="font-medium">{cart.length} {cart.length === 1 ? 'Item' : 'Items'}</span>
+                  <span className="opacity-60">•</span>
+                  <span className="font-bold text-sm">₱{calculateTotal().toFixed(2)}</span>
+                </div>
+              </div>
+              <div className="flex-shrink-0 ml-3">
+                <ChevronRight className="w-5 h-5" />
+              </div>
+            </div>
+          </button>
         )}
       </div>
 

@@ -44,7 +44,7 @@ const MobileBottomSheet: React.FC<MobileBottomSheetProps> = ({
         </div>
         
         {/* Content */}
-        <div className="p-4 max-h-[calc(100vh-180px)] overflow-y-auto custom-scrollbar">
+        <div className="p-4 max-h-[calc(100vh-200px)] overflow-y-auto custom-scrollbar pb-24">
           {children}
         </div>
       </div>

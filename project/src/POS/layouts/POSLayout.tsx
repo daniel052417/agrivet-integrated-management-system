@@ -38,6 +38,8 @@ const POSLayout: React.FC<POSLayoutProps> = ({
 }) => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [companyLogo, setCompanyLogo] = useState<string | null>(null);
+  const [isTablet, setIsTablet] = useState(false);
+  const [isTabletLandscape, setIsTabletLandscape] = useState(false);
   const { branchTerminalData, loading, error } = useBranchTerminal(user);
 
   useEffect(() => {
@@ -54,6 +56,32 @@ const POSLayout: React.FC<POSLayoutProps> = ({
     loadSettings();
   }, []);
 
+  // Detect tablet device (768×1024 to 1280×800 range) and orientation
+  useEffect(() => {
+    const checkTablet = () => {
+      const width = window.innerWidth;
+      const height = window.innerHeight;
+      // Tablet range: min 768×1024 or 1024×768, max 800×1280 or 1280×800
+      // Check if both width and height are within tablet range
+      const minDimension = Math.min(width, height);
+      const maxDimension = Math.max(width, height);
+      const isTabletDevice = 
+        minDimension >= 768 && minDimension <= 800 && 
+        maxDimension >= 1024 && maxDimension <= 1280;
+      setIsTablet(isTabletDevice);
+      // Check if tablet is in landscape (width > height)
+      setIsTabletLandscape(isTabletDevice && width > height);
+    };
+    
+    checkTablet();
+    window.addEventListener('resize', checkTablet);
+    window.addEventListener('orientationchange', checkTablet);
+    return () => {
+      window.removeEventListener('resize', checkTablet);
+      window.removeEventListener('orientationchange', checkTablet);
+    };
+  }, []);
+
   const navigationItems = [
     { id: 'cashier', label: 'Cashier', icon: ShoppingCart, color: 'bg-green-500' },
     { id: 'inventory', label: 'Inventory', icon: Package, color: 'bg-blue-500' },
@@ -66,18 +94,26 @@ const POSLayout: React.FC<POSLayoutProps> = ({
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <header className="bg-white shadow-lg border-b-2 border-gray-200 sticky top-0 z-30">
-        <div className="px-3 sm:px-4 md:px-6 lg:px-8">
-          <div className="flex justify-between items-center min-h-[64px] md:h-16 py-2 md:py-0">
+      <header className={`bg-white shadow-lg border-b-2 border-gray-200 sticky top-0 z-30 ${
+        isTablet && isTabletLandscape ? 'tablet-landscape-header' : ''
+      }`}>
+        <div className={`${
+          isTablet && isTabletLandscape ? 'px-4' : 'px-3 sm:px-4 md:px-6 lg:px-8'
+        }`}>
+          <div className={`flex justify-between items-center ${
+            isTablet && isTabletLandscape ? 'min-h-[56px] py-1' : 'min-h-[64px] md:h-16 py-2 md:py-0'
+          }`}>
             {/* Logo and Title */}
             <div className="flex items-center space-x-2 md:space-x-4 flex-1 min-w-0">
-              <button
-                onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                className="lg:hidden p-2 md:p-3 rounded-lg hover:bg-gray-100 active:bg-gray-200 touch-button flex-shrink-0"
-                aria-label="Toggle menu"
-              >
-                {isSidebarOpen ? <X className="w-6 h-6 md:w-7 md:h-7" /> : <Menu className="w-6 h-6 md:w-7 md:h-7" />}
-              </button>
+              {!isTablet && (
+                <button
+                  onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                  className="lg:hidden p-2 md:p-3 rounded-lg hover:bg-gray-100 active:bg-gray-200 touch-button flex-shrink-0"
+                  aria-label="Toggle menu"
+                >
+                  {isSidebarOpen ? <X className="w-6 h-6 md:w-7 md:h-7" /> : <Menu className="w-6 h-6 md:w-7 md:h-7" />}
+                </button>
+              )}
               
               <div className="flex items-center space-x-2 md:space-x-3 min-w-0 flex-1">
                 <img 
@@ -175,28 +211,66 @@ const POSLayout: React.FC<POSLayoutProps> = ({
       <div className="flex">
         {/* Sidebar */}
         <aside className={`${
-          isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
-        } lg:translate-x-0 fixed lg:static inset-y-0 left-0 z-50 w-72 md:w-64 lg:w-64 bg-white shadow-xl lg:shadow-none transition-transform duration-300 ease-in-out sidebar-tablet`}>
+          isTablet ? 'translate-x-0' : (isSidebarOpen ? 'translate-x-0' : '-translate-x-full')
+        } lg:translate-x-0 fixed lg:static inset-y-0 left-0 z-50 ${
+          isTablet ? 'w-20' : 'w-72 md:w-64 lg:w-64'
+        } bg-white shadow-xl lg:shadow-none transition-all duration-300 ease-in-out sidebar-tablet`}>
           <div className="flex flex-col h-full">
-            <div className="p-4 md:p-6 border-b border-gray-200 flex-shrink-0">
-              <div className="flex items-center justify-between">
-                <h2 className="text-base md:text-lg font-semibold text-gray-900">Navigation</h2>
-                <button
-                  onClick={() => setIsSidebarOpen(false)}
-                  className="lg:hidden p-2 rounded-lg hover:bg-gray-100 active:bg-gray-200 touch-button"
-                  aria-label="Close menu"
-                >
-                  <X className="w-5 h-5" />
-                </button>
+            {!isTablet && (
+              <div className="p-4 md:p-6 border-b border-gray-200 flex-shrink-0">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-base md:text-lg font-semibold text-gray-900">Navigation</h2>
+                  <button
+                    onClick={() => setIsSidebarOpen(false)}
+                    className="lg:hidden p-2 rounded-lg hover:bg-gray-100 active:bg-gray-200 touch-button"
+                    aria-label="Close menu"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
             
-            <nav className="flex-1 p-3 md:p-4 space-y-2 overflow-y-auto">
+            <nav className={`flex-1 ${isTablet ? 'p-2' : 'p-3 md:p-4'} space-y-2 overflow-y-auto`}>
               {navigationItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = currentScreen === item.id;
                 const showBadge = item.id === 'online-orders' && onlineOrdersCount > 0;
                 
+                if (isTablet) {
+                  // Tablet: Collapsed sidebar with icon and label below
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => {
+                        onScreenChange(item.id);
+                        setIsSidebarOpen(false);
+                      }}
+                      className={`w-full flex flex-col items-center justify-center py-3 px-2 rounded-xl transition-all duration-200 relative touch-button ${
+                        isActive
+                          ? 'bg-green-50 text-green-700'
+                          : 'text-gray-700 hover:bg-gray-50 active:bg-gray-100'
+                      }`}
+                      title={item.label}
+                    >
+                      <div className={`p-2 rounded-lg ${item.color} mb-2 ${
+                        isActive ? 'bg-green-500' : ''
+                      }`}>
+                        <Icon className="w-5 h-5 text-white" />
+                      </div>
+                      <span className="text-xs font-medium text-center leading-tight">{item.label}</span>
+                      
+                      {/* Notification Badge */}
+                      {showBadge && (
+                        <div className="absolute top-1 right-1 bg-red-500 text-white text-xs rounded-full h-4 w-4 flex items-center justify-center font-semibold">
+                          {onlineOrdersCount > 9 ? '9+' : onlineOrdersCount}
+                        </div>
+                      )}
+                    </button>
+                  );
+                }
+                
+                // Desktop/Mobile: Full sidebar
                 return (
                   <button
                     key={item.id}
@@ -245,8 +319,8 @@ const POSLayout: React.FC<POSLayoutProps> = ({
           </div>
         </aside>
 
-        {/* Overlay for mobile */}
-        {isSidebarOpen && (
+        {/* Overlay for mobile (not for tablets) */}
+        {isSidebarOpen && !isTablet && (
           <div 
             className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
             onClick={() => setIsSidebarOpen(false)}
@@ -254,7 +328,7 @@ const POSLayout: React.FC<POSLayoutProps> = ({
         )}
 
         {/* Main Content */}
-        <main className="flex-1 lg:ml-0 w-full min-w-0">
+        <main className={`flex-1 lg:ml-0 w-full min-w-0 ${isTablet ? 'ml-20' : ''}`}>
           <div className="h-full w-full">
             {children}
           </div>
