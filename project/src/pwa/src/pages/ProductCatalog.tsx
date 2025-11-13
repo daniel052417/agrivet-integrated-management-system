@@ -33,7 +33,7 @@ const useDebounce = <T,>(value: T, delay: number): T => {
 
 const ProductCatalog: React.FC = () => {
   const navigate = useNavigate()
-  const { selectedBranch } = useBranch()
+  const { selectedBranch, clearBranch } = useBranch()
   const { addItem } = useCart()
   const isLoadingPromotionsRef = useRef(false)
   
@@ -90,12 +90,12 @@ const ProductCatalog: React.FC = () => {
 
   useEffect(() => {
     if (!selectedBranch) {
-      navigate('/branch-selection')
+      navigate('/branch-selection', { replace: true })
       return
     }
     loadCategories()
     loadPromotions()
-  }, [selectedBranch])
+  }, [selectedBranch, navigate])
 
   // ✅ Separate effect for products with debounced search
   useEffect(() => {
@@ -434,8 +434,12 @@ const ProductCatalog: React.FC = () => {
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center space-x-2 sm:space-x-3 flex-1 min-w-0">
               <button
-                onClick={() => navigate('/branch-selection')}
+                onClick={() => {
+                  clearBranch()
+                  navigate('/branch-selection?change=true', { replace: true })
+                }}
                 className="p-1.5 sm:p-2 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
+                aria-label="Back to branch selection"
               >
                 <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5" />
               </button>
@@ -560,7 +564,10 @@ const ProductCatalog: React.FC = () => {
                     Clear All Filters
                   </button>
                   <button
-                    onClick={() => navigate('/branch-selection')}
+                    onClick={() => {
+                      clearBranch()
+                      navigate('/branch-selection?change=true', { replace: true })
+                    }}
                     className="btn-outline"
                   >
                     Change Branch

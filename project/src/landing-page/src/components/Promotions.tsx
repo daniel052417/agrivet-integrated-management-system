@@ -1,4 +1,4 @@
-import { Tag, TrendingUp, Gift, ArrowRight, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { Tag, ArrowRight, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import AnimatedSection from './AnimatedSection';
 import { supabase, Promotion } from '../lib/supabaseClient';

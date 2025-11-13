@@ -77,6 +77,9 @@ const BranchSelection: React.FC = () => {
       return
     }
     
+    // Clear the explicit branch change flag when user selects a branch
+    sessionStorage.removeItem('explicit-branch-change')
+    
     if (isAuthenticated && user) {
       try {
         const { error } = await supabase
@@ -115,6 +118,8 @@ const BranchSelection: React.FC = () => {
   const handleBrowseAnyway = () => {
     console.log('🛒 BranchSelection: Browse anyway clicked')
     if (selectedClosedBranch) {
+      // Clear the explicit branch change flag when user selects a branch
+      sessionStorage.removeItem('explicit-branch-change')
       selectBranch(selectedClosedBranch)
       navigate('/auth-selection')
     }

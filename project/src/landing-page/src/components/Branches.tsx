@@ -164,7 +164,6 @@ const Branches = () => {
               const imageUrl = null; // You can add image_url field to branches table later
               const fallbackImage = fallbackImages[index % fallbackImages.length];
               const gradientColor = gradientColors[index % gradientColors.length];
-              const mapEmbedUrl = getMapEmbedUrl(branch.name, branch.latitude, branch.longitude);
               const mapDirectionsUrl = generateMapDirectionsUrl(branch.latitude, branch.longitude, fullAddress);
 
               return (

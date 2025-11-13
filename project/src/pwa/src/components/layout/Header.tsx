@@ -1,9 +1,10 @@
 import React from 'react'
-import { ShoppingCart, MapPin, Menu, User, Package } from 'lucide-react'
+import { ShoppingCart, MapPin, User, Package } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useCart } from '../../contexts/CartContext'
 import { useAuth } from '../../contexts/AuthContext'
 import { Branch } from '../../types'
+import logo from '../../assets/logo.png'
 
 interface HeaderProps {
   branch: Branch | null
@@ -24,9 +25,11 @@ const Header: React.FC<HeaderProps> = ({ branch }) => {
               onClick={() => navigate('/')}
               className="flex items-center space-x-2"
             >
-              <div className="w-8 h-8 bg-agrivet-green rounded-lg flex items-center justify-center">
-                <span className="text-white font-bold text-sm">A</span>
-              </div>
+              <img 
+                src={logo} 
+                alt="AgriVet Logo" 
+                className="h-8 w-auto object-contain"
+              />
               <span className="font-bold text-gray-900 text-lg">AgriVet</span>
             </button>
             
