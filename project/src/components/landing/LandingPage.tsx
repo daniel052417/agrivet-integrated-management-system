@@ -92,26 +92,39 @@ const LandingPage: React.FC = () => {
       
       setCurrentBranch(mainBranch);
       
-      // Try to get user location
+      // Try to get user location (only if geo-location verification is enabled)
+      // This prevents unnecessary location permission requests
       let location: { latitude: number; longitude: number } | null = null;
-      try {
-        if (navigator.geolocation) {
-          const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-            navigator.geolocation.getCurrentPosition(resolve, reject, {
-              enableHighAccuracy: false,
-              timeout: 5000,
-              maximumAge: 60000
+      const securitySettings = mainBranch.attendance_security_settings;
+      const needsLocation = securitySettings && 
+                           typeof securitySettings === 'object' && 
+                           (securitySettings as AttendanceSecuritySettings).enableGeoLocationVerification === true;
+      
+      if (needsLocation) {
+        try {
+          if (navigator.geolocation) {
+            console.log('📍 Geo-location verification enabled, requesting location permission...');
+            const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+              navigator.geolocation.getCurrentPosition(resolve, reject, {
+                enableHighAccuracy: false,
+                timeout: 5000,
+                maximumAge: 60000
+              });
             });
-          });
-          location = {
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude
-          };
-          setUserLocation(location);
+            location = {
+              latitude: position.coords.latitude,
+              longitude: position.coords.longitude
+            };
+            setUserLocation(location);
+            console.log('✅ Location obtained:', location);
+          }
+        } catch (geoError) {
+          console.warn('⚠️ Failed to get user location:', geoError);
+          // Don't block - location is optional, but log the error
+          // If geo-location is required, the AttendanceTerminal component will handle the error
         }
-      } catch (geoError) {
-        console.warn('⚠️ Failed to get user location:', geoError);
-        // Don't block - location is optional
+      } else {
+        console.log('ℹ️ Geo-location verification not enabled, skipping location request');
       }
       
       // Get stable device UUID from localStorage (primary identifier)
