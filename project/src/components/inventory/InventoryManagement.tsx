@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Search, Filter, Plus, Edit, Trash2, Eye, X, Save, Package, Upload, Image as ImageIcon, Minus } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { InventoryManagementRow, ProductFormData } from '../../types/inventory';
@@ -10,6 +10,7 @@ const InventoryManagement: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedBranch, setSelectedBranch] = useState('all');
+  const [selectedStatus, setSelectedStatus] = useState('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
@@ -946,6 +947,29 @@ const InventoryManagement: React.FC = () => {
 
   // Combine data error and local error for display
   const displayError = localError || dataError;
+
+  // Filter and sort products
+  const filteredAndSortedProducts = useMemo(() => {
+    let filtered = [...products];
+
+    // Filter by status
+    if (selectedStatus !== 'all') {
+      filtered = filtered.filter(product => {
+        const { stockStatus, expiryStatus } = getProductStatus(product);
+        return stockStatus === selectedStatus || expiryStatus === selectedStatus;
+      });
+    }
+
+    // Sort by quantity_available (highest to lowest)
+    filtered.sort((a, b) => {
+      const quantityA = a.quantity_available || 0;
+      const quantityB = b.quantity_available || 0;
+      return quantityB - quantityA; // Descending order
+    });
+
+    return filtered;
+  }, [products, selectedStatus]);
+
   return (
     <div className="p-6 space-y-6">
       {/* Success/Error Messages */}
@@ -1015,10 +1039,18 @@ const InventoryManagement: React.FC = () => {
               ))}
             </select>
 
-            <button className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
-              <Filter className="w-4 h-4" />
-              <span>More Filters</span>
-            </button>
+            <select
+              value={selectedStatus}
+              onChange={(e) => setSelectedStatus(e.target.value)}
+              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+            >
+              <option value="all">All Status</option>
+              <option value="In Stock">In Stock</option>
+              <option value="Low Stock">Low Stock</option>
+              <option value="Out of Stock">Out of Stock</option>
+              <option value="Expired">Expired</option>
+              <option value="Near Expiry">Near Expiry</option>
+            </select>
           </div>
         </div>
       </div>
@@ -1062,7 +1094,7 @@ const InventoryManagement: React.FC = () => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {(isLoadingProducts ? [] : products).map((product) => {
+              {(isLoadingProducts ? [] : filteredAndSortedProducts).map((product) => {
                 return (
               <tr key={product.inventory_id} className="hover:bg-gray-50">
                 <td className="px-6 py-4 whitespace-nowrap">
@@ -1179,8 +1211,12 @@ const InventoryManagement: React.FC = () => {
         {isLoadingProducts && (
           <div className="p-6 text-sm text-gray-500">Loading products...</div>
         )}
-        {!isLoadingProducts && products.length === 0 && (
-          <div className="p-6 text-sm text-gray-500">No products found</div>
+        {!isLoadingProducts && filteredAndSortedProducts.length === 0 && (
+          <div className="p-6 text-sm text-gray-500">
+            {products.length === 0 
+              ? 'No products found' 
+              : 'No products match the selected filters'}
+          </div>
         )}
       </div>
 

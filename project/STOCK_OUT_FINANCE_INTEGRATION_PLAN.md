@@ -209,3 +209,4 @@ const convertStockOutToExpense = (stockOut: StockOutTransaction): ExpenseRow => 
 - **Transfers** are neutral and shouldn't appear as expenses (just inventory movement)
 - **Adjustments** depend on whether they result in a loss or just a correction
 
+

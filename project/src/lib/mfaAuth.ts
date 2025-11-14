@@ -2,6 +2,7 @@ import { mfaService } from './mfaService';
 import { customAuth, CustomUser } from './customAuth';
 import { posSessionService } from './posSessionService';
 import { getManilaTimestamp } from './utils/manilaTimestamp';
+import { activityLogger } from './activityLogger';
 
 /**
  * MFA Authentication Service
@@ -35,6 +36,8 @@ class MFAAuthService {
       );
 
       if (!verificationResult.success || !verificationResult.verified) {
+        // Log failed MFA login attempt
+        await activityLogger.logLoginFailure(mfaData.userEmail, `MFA verification failed: ${verificationResult.error || 'Invalid OTP code'}`);
         throw new Error(verificationResult.error || 'Invalid OTP code');
       }
 
@@ -62,6 +65,8 @@ class MFAAuthService {
         .single();
 
       if (fetchError || !userData) {
+        // Log failed MFA login attempt (user data fetch failed)
+        await activityLogger.logLoginFailure(mfaData.userEmail, 'Failed to fetch user data after MFA verification');
         throw new Error('Failed to fetch user data after MFA verification');
       }
 
@@ -119,11 +124,14 @@ class MFAAuthService {
           );
 
           if (!deviceAccessResult.allowed) {
+            // Log failed MFA login attempt (unauthorized device)
+            await activityLogger.logLoginFailure(mfaData.userEmail, deviceAccessResult.reason || 'Unauthorized device');
             throw new Error(deviceAccessResult.reason || 'Unauthorized device. This device is not registered for POS access.');
           }
         } catch (error: any) {
           // If it's our custom error, throw it as-is (don't create session)
           if (error.message && error.message.includes('Unauthorized device')) {
+            // Error already logged above, just re-throw
             throw error;
           }
           // For other errors, log but don't block login (fallback behavior)
@@ -150,6 +158,9 @@ class MFAAuthService {
           last_activity: getManilaTimestamp()
         })
         .eq('id', customUser.id);
+
+      // Log successful MFA login
+      await activityLogger.logLoginSuccess('mfa', true);
 
       // Create POS session if cashier
       if (userRole?.name === 'cashier' && customUser.branch_id) {

@@ -423,3 +423,4 @@ class StockOutService {
 - [ ] Unit tests for service layer
 - [ ] Integration tests for full flow
 
+

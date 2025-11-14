@@ -2,6 +2,7 @@ import { supabase } from './supabase';
 import bcrypt from 'bcryptjs';
 import { posSessionService } from './posSessionService';
 import { mfaService } from './mfaService';
+import { activityLogger } from './activityLogger';
 
 // Custom user interface based on your actual users table schema
 export interface CustomUser {
@@ -172,6 +173,8 @@ class CustomAuthService {
 
       if (basicUserError || !basicUserData) {
         console.log('❌ User not found in basic query:', basicUserError);
+        // Log failed login attempt (user not found)
+        await activityLogger.logLoginFailure(email, 'User not found');
         throw new Error('Invalid credentials or user not found.');
       }
 
@@ -208,12 +211,16 @@ class CustomAuthService {
 
       // 2. Check if account is locked
       if (finalUserData.locked_until && new Date(finalUserData.locked_until) > new Date()) {
+        // Log failed login attempt (account locked)
+        await activityLogger.logLoginFailure(email, 'Account is temporarily locked');
         throw new Error('Account is temporarily locked due to too many failed login attempts.');
       }
 
       // 3. Compare provided password with hashed password
       if (!finalUserData.password_hash) {
         console.log('❌ No password hash found for user');
+        // Log failed login attempt (account not set up)
+        await activityLogger.logLoginFailure(email, 'Account not properly set up');
         throw new Error('Account not properly set up. Please contact support.');
       }
 
@@ -231,15 +238,23 @@ class CustomAuthService {
         console.log('❌ Password does not match');
         // Increment failed login attempts
         await this.incrementFailedLoginAttempts(finalUserData.id);
+        
+        // Log failed login attempt
+        await activityLogger.logLoginFailure(email, 'Invalid password');
+        
         throw new Error('Invalid credentials.');
       }
 
       // 4. Check account status and verification
       if (finalUserData.account_status !== 'active' || !finalUserData.is_active) {
+        // Log failed login attempt (account not active)
+        await activityLogger.logLoginFailure(email, 'Account is not active');
         throw new Error('Account is not active. Please contact support.');
       }
 
       if (!finalUserData.email_verified) {
+        // Log failed login attempt (email not verified)
+        await activityLogger.logLoginFailure(email, 'Email not verified');
         throw new Error('Please verify your email before logging in.');
       }
 
@@ -335,6 +350,9 @@ class CustomAuthService {
 
         // 8. Update last login and activity
         await this.updateLastLogin(customUser.id);
+
+        // 8.5. Log successful login
+        await activityLogger.logLoginSuccess(loginMethod, mfaUsed);
 
         // 9. Create POS session if user is a cashier
         if (defaultRole.name === 'cashier' && customUser.branch_id) {
@@ -435,11 +453,14 @@ class CustomAuthService {
           );
 
           if (!deviceAccessResult.allowed) {
+            // Log failed login attempt (unauthorized device)
+            await activityLogger.logLoginFailure(customUser.email, deviceAccessResult.reason || 'Unauthorized device');
             throw new Error(deviceAccessResult.reason || 'Unauthorized device. This device is not registered for POS access.');
           }
         } catch (error: any) {
           // If it's our custom error, throw it as-is (don't create session)
           if (error.message && error.message.includes('Unauthorized device')) {
+            // Error already logged above, just re-throw
             throw error;
           }
           // For other errors, log but don't block login (fallback behavior)
@@ -458,6 +479,9 @@ class CustomAuthService {
 
       // 10. Update last login and activity
       await this.updateLastLogin(customUser.id);
+
+      // 10.5. Log successful login
+      await activityLogger.logLoginSuccess(loginMethod, mfaUsed);
 
       // 11. Create POS session if user is a cashier
       if (userRole.name === 'cashier' && customUser.branch_id) {
@@ -1065,6 +1089,17 @@ class CustomAuthService {
             current_session_id: null
           })
           .eq('id', this.currentUser.id);
+
+        // Log logout activity
+        await activityLogger.logActivity({
+          activityType: 'view', // Using 'view' as there's no 'logout' action type in the schema
+          description: 'User logged out',
+          module: 'Dashboard',
+          metadata: {
+            action: 'logout',
+            session_id: this.currentSession?.id
+          }
+        });
       }
 
       this.clearSession();

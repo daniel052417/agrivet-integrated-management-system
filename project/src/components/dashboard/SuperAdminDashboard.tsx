@@ -6,7 +6,7 @@ import { CustomUser } from '../../lib/customAuth';
 // Import all admin components for super admin access
 import Overview from '../dashboard/Overview';
 import AllSalesRecords from '../sales/AllSalesRecords';
-import SalesDashboard from '../sales/SalesMonitoring';
+// import SalesDashboard from '../sales/SalesMonitoring'; // Hidden
 import DailySalesSummary from '../sales/DailySalesSummary';
 import ProductSalesReport from '../sales/ProductSalesReport';
 // import SalesIncomeSummary from '../finance/Salesincomesummary';
@@ -61,8 +61,8 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, onLogou
         return <Overview />;
       case 'sales-records':
         return <AllSalesRecords />;
-      case 'sales-monitoring':
-        return <SalesDashboard />;
+      // case 'sales-monitoring': // Hidden
+      //   return <SalesDashboard />;
       case 'daily-sales':
         return <DailySalesSummary />;
       case 'product-sales':

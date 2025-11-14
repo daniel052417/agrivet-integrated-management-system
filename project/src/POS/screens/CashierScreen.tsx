@@ -35,8 +35,9 @@ const CashierScreen: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'gcash' | 'paymaya' | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'gcash' | null>(null);
   const [cashAmount, setCashAmount] = useState('');
+  const [gcashReferenceNumber, setGcashReferenceNumber] = useState('');
   const [isMobile, setIsMobile] = useState(false);
   const [isTablet, setIsTablet] = useState(false);
   const [isTabletLandscape, setIsTabletLandscape] = useState(false);
@@ -781,6 +782,11 @@ const CashierScreen: React.FC = () => {
       return;
     }
 
+    if (paymentMethod === 'gcash' && gcashReferenceNumber.length !== 13) {
+      alert('Please enter a valid 13-digit GCash reference number');
+      return;
+    }
+
     if (cart.length === 0) {
       alert('Cart is empty');
       return;
@@ -830,7 +836,7 @@ const CashierScreen: React.FC = () => {
         notes: `Payment via ${paymentMethod}`,
         payment_method: paymentMethod,
         cash_amount: paymentMethod === 'cash' ? parseFloat(cashAmount) : undefined,
-        reference_number: paymentMethod !== 'cash' ? `REF-${Date.now()}` : undefined
+        reference_number: paymentMethod === 'gcash' ? gcashReferenceNumber : undefined
       };
 
       console.log('Creating transaction:', transactionData);
@@ -872,6 +878,7 @@ const CashierScreen: React.FC = () => {
         setSelectedCustomer(null);
         setPaymentMethod(null);
         setCashAmount('');
+        setGcashReferenceNumber('');
         setShowPaymentModal(false);
         setPaymentSuccess(false);
         setIsProcessingPayment(false);
@@ -1832,7 +1839,14 @@ const CashierScreen: React.FC = () => {
 
       <Modal
         isOpen={showPaymentModal}
-        onClose={() => !isProcessingPayment && setShowPaymentModal(false)}
+        onClose={() => {
+          if (!isProcessingPayment) {
+            setShowPaymentModal(false);
+            setPaymentMethod(null);
+            setCashAmount('');
+            setGcashReferenceNumber('');
+          }
+        }}
         title={paymentSuccess ? "Payment Successful!" : "Payment"}
         size="lg"
       >
@@ -1860,9 +1874,12 @@ const CashierScreen: React.FC = () => {
             <>
               <div>
                 <h4 className="text-lg font-semibold mb-4">Select Payment Method</h4>
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-2 gap-4">
                   <TouchButton
-                    onClick={() => setPaymentMethod('cash')}
+                    onClick={() => {
+                      setPaymentMethod('cash');
+                      setGcashReferenceNumber('');
+                    }}
                     variant={paymentMethod === 'cash' ? 'primary' : 'outline'}
                     icon={Banknote}
                     className="py-6"
@@ -1871,22 +1888,16 @@ const CashierScreen: React.FC = () => {
                     Cash
                   </TouchButton>
                   <TouchButton
-                    onClick={() => setPaymentMethod('gcash')}
+                    onClick={() => {
+                      setPaymentMethod('gcash');
+                      setCashAmount('');
+                    }}
                     variant={paymentMethod === 'gcash' ? 'primary' : 'outline'}
                     icon={Smartphone}
                     className="py-6"
                     disabled={isProcessingPayment}
                   >
                     GCash
-                  </TouchButton>
-                  <TouchButton
-                    onClick={() => setPaymentMethod('paymaya')}
-                    variant={paymentMethod === 'paymaya' ? 'primary' : 'outline'}
-                    icon={Smartphone}
-                    className="py-6"
-                    disabled={isProcessingPayment}
-                  >
-                    PayMaya
                   </TouchButton>
                 </div>
               </div>
@@ -1907,6 +1918,43 @@ const CashierScreen: React.FC = () => {
                   {cashAmount && (
                     <div className="mt-2 text-sm text-gray-600">
                       Change: ₱{(parseFloat(cashAmount) - calculateTotal()).toFixed(2)}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {paymentMethod === 'gcash' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Reference Number <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={gcashReferenceNumber}
+                    onChange={(e) => {
+                      // Only allow digits and limit to 13 digits
+                      const value = e.target.value.replace(/\D/g, '').slice(0, 13);
+                      setGcashReferenceNumber(value);
+                    }}
+                    placeholder="Enter 13-digit reference number"
+                    maxLength={13}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-lg"
+                    disabled={isProcessingPayment}
+                  />
+                  {gcashReferenceNumber && (
+                    <div className={`mt-2 text-sm ${
+                      gcashReferenceNumber.length === 13 
+                        ? 'text-green-600' 
+                        : 'text-red-600'
+                    }`}>
+                      {gcashReferenceNumber.length === 13 
+                        ? '✓ Valid reference number' 
+                        : `${gcashReferenceNumber.length}/13 digits`}
+                    </div>
+                  )}
+                  {!gcashReferenceNumber && (
+                    <div className="mt-2 text-xs text-gray-500">
+                      Please enter the 13-digit GCash reference number
                     </div>
                   )}
                 </div>
@@ -1935,7 +1983,11 @@ const CashierScreen: React.FC = () => {
                   variant="success"
                   className="flex-1"
                   icon={Receipt}
-                  disabled={isProcessingPayment || (paymentMethod === 'cash' && (!cashAmount || parseFloat(cashAmount) < calculateTotal()))}
+                  disabled={
+                    isProcessingPayment || 
+                    (paymentMethod === 'cash' && (!cashAmount || parseFloat(cashAmount) < calculateTotal())) ||
+                    (paymentMethod === 'gcash' && gcashReferenceNumber.length !== 13)
+                  }
                 >
                   {isProcessingPayment ? 'Processing...' : 'Complete Payment'}
                 </TouchButton>

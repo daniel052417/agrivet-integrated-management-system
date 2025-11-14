@@ -120,7 +120,6 @@ const NonAdminSidebar: React.FC<NonAdminSidebarProps> = ({ user, activeSection, 
       category: 'Sales',
       children: [
         { id: 'sales-records', label: 'All Sales Records', icon: BarChart3, category: 'Sales' },
-        { id: 'sales-monitoring', label: 'Sales Monitoring', icon: TrendingUp, category: 'Sales' },
         { id: 'daily-sales', label: 'Daily Sales Summary', icon: Calendar, category: 'Sales' },
         { id: 'product-sales', label: 'Product Sales Report', icon: FileText, category: 'Sales' },
       ]
