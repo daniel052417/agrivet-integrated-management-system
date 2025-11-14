@@ -77,6 +77,8 @@ interface Employee {
 
 const PayrollCompensation: React.FC = () => {
   const [success, setSuccess] = useState<string | null>(null);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'periods' | 'records'>('periods');
   const [selectedPeriod, setSelectedPeriod] = useState<string>('');
   const [selectedBranch, setSelectedBranch] = useState<string>('all');
@@ -99,8 +101,8 @@ const PayrollCompensation: React.FC = () => {
     payrollRecords: hookPayrollRecords,
     branches,
     hrSettings,
-    loading,
-    error,
+    loading: hookLoading,
+    error: hookError,
     refreshPeriods,
     refreshRecords,
     loadBranches,

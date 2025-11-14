@@ -730,6 +730,9 @@ const AttendanceDashboard: React.FC = () => {
             </h3>
             <p className="text-sm text-gray-600 mt-1">
               Summary used for payroll allowance computation
+              {!hrSettings?.include_allowance_in_pay && (
+                <span className="ml-2 text-orange-600 italic">(Allowances disabled in HR settings)</span>
+              )}
             </p>
           </div>
           <div className="overflow-x-auto">
@@ -802,12 +805,20 @@ const AttendanceDashboard: React.FC = () => {
                       )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-bold text-green-600">
-                        {summary.allowance_eligible_days} days
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        ₱{(summary.allowance_eligible_days * 100).toLocaleString()} allowance
-                      </div>
+                      {hrSettings?.include_allowance_in_pay ? (
+                        <>
+                          <div className="text-sm font-bold text-green-600">
+                            {summary.allowance_eligible_days} days
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            ₱{(summary.allowance_eligible_days * 100).toLocaleString()} allowance
+                          </div>
+                        </>
+                      ) : (
+                        <div className="text-sm text-gray-400 italic">
+                          Allowances disabled
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}

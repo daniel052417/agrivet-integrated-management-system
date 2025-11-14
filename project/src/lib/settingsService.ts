@@ -210,24 +210,27 @@ class SettingsService {
   async getHRSettings(): Promise<HRSettings> {
     const allSettings = await this.getSettings();
     
+    // Extract nested hr object (priority) and flat keys (fallback)
+    const hr = allSettings?.hr || {};
+    
     return {
-      enable_deduction_for_absences: allSettings?.enable_deduction_for_absences ?? true,
-      enable_overtime_tracking: allSettings?.enable_overtime_tracking ?? true,
-      auto_mark_late_employees: allSettings?.auto_mark_late_employees ?? true,
-      late_threshold_minutes: allSettings?.late_threshold_minutes ?? 15,
-      include_allowance_in_pay: allSettings?.include_allowance_in_pay ?? true,
-      enable_tax_computation: allSettings?.enable_tax_computation ?? true,
-      include_sss_deductions: allSettings?.include_sss_deductions ?? true,
-      include_philhealth_deductions: allSettings?.include_philhealth_deductions ?? true,
-      include_pagibig_deductions: allSettings?.include_pagibig_deductions ?? true,
-      payroll_period: allSettings?.payroll_period ?? 'semi-monthly',
-      enable_leave_management: allSettings?.enable_leave_management ?? true,
-      max_leave_days_per_month: allSettings?.max_leave_days_per_month ?? 2,
-      require_leave_approval: allSettings?.require_leave_approval ?? true,
-      enable_hr_reports_dashboard: allSettings?.enable_hr_reports_dashboard ?? true,
-      include_attendance_summary: allSettings?.include_attendance_summary ?? true,
-      enable_performance_reviews: allSettings?.enable_performance_reviews ?? false,
-      enable_employee_self_service: allSettings?.enable_employee_self_service ?? true,
+      enable_deduction_for_absences: hr.enableDeductionForAbsences ?? allSettings?.enable_deduction_for_absences ?? true,
+      enable_overtime_tracking: hr.enableOvertimeTracking ?? allSettings?.enable_overtime_tracking ?? true,
+      auto_mark_late_employees: hr.autoMarkLateEmployees ?? allSettings?.auto_mark_late_employees ?? true,
+      late_threshold_minutes: hr.lateThresholdMinutes ?? allSettings?.late_threshold_minutes ?? 15,
+      include_allowance_in_pay: hr.includeAllowanceInPay ?? allSettings?.include_allowance_in_pay ?? true,
+      enable_tax_computation: hr.enableTaxComputation ?? allSettings?.enable_tax_computation ?? true,
+      include_sss_deductions: hr.includeSSSDeductions ?? allSettings?.include_sss_deductions ?? true,
+      include_philhealth_deductions: hr.includePhilHealthDeductions ?? allSettings?.include_philhealth_deductions ?? true,
+      include_pagibig_deductions: hr.includePagIBIGDeductions ?? allSettings?.include_pagibig_deductions ?? true,
+      payroll_period: hr.payrollPeriod ?? allSettings?.payroll_period ?? 'semi-monthly',
+      enable_leave_management: hr.enableLeaveManagement ?? allSettings?.enable_leave_management ?? true,
+      max_leave_days_per_month: hr.maxLeaveDaysPerMonth ?? allSettings?.max_leave_days_per_month ?? 2,
+      require_leave_approval: hr.requireLeaveApproval ?? allSettings?.require_leave_approval ?? true,
+      enable_hr_reports_dashboard: hr.enableHRReportsDashboard ?? allSettings?.enable_hr_reports_dashboard ?? true,
+      include_attendance_summary: hr.includeAttendanceSummary ?? allSettings?.include_attendance_summary ?? true,
+      enable_performance_reviews: hr.enablePerformanceReviews ?? allSettings?.enable_performance_reviews ?? false,
+      enable_employee_self_service: hr.enableEmployeeSelfService ?? allSettings?.enable_employee_self_service ?? true,
     };
   }
 
