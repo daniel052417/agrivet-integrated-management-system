@@ -33,6 +33,8 @@ DECLARE
     v_overtime_hours DECIMAL := 0;
     v_overtime_pay DECIMAL := 0;
     v_absent_days INTEGER := 0;
+    v_total_working_days INTEGER := 0;
+    v_days_with_records INTEGER := 0;
     v_gross_pay DECIMAL := 0;
     v_tax_deduction DECIMAL := 0;
     v_sss_deduction DECIMAL := 0;
@@ -163,10 +165,17 @@ BEGIN
         v_total_deductions := 0;
         v_net_pay := 0;
         
+        -- Calculate total working days in period (excluding weekends)
+        SELECT COUNT(*)::INTEGER
+        INTO v_total_working_days
+        FROM generate_series(v_start_date, v_end_date, '1 day'::interval) AS day
+        WHERE EXTRACT(DOW FROM day) NOT IN (0, 6); -- Exclude Sunday (0) and Saturday (6)
+        
         -- Get attendance data for this period
         SELECT 
-            COUNT(*) FILTER (WHERE status = 'present') as days_present,
-            COUNT(*) FILTER (WHERE status = 'absent') as absent_days,
+            COUNT(*) FILTER (WHERE status = 'present' OR status = 'late' OR status = 'half_day') as days_present,
+            COUNT(*) FILTER (WHERE status = 'absent') as absent_days_from_records,
+            COUNT(*) as total_records, -- Count all attendance records (present, absent, late, etc.)
             COALESCE(SUM(overtime_hours), 0) as total_overtime_hours
         INTO v_attendance
         FROM attendance
@@ -176,8 +185,20 @@ BEGIN
         
         IF v_attendance IS NOT NULL THEN
             v_days_present := COALESCE(v_attendance.days_present, 0);
-            v_absent_days := COALESCE(v_attendance.absent_days, 0);
+            v_days_with_records := COALESCE(v_attendance.total_records, 0);
             v_overtime_hours := COALESCE(v_attendance.total_overtime_hours, 0);
+            
+            -- Calculate absent days: explicit absent records + days with no attendance record
+            v_absent_days := COALESCE(v_attendance.absent_days_from_records, 0);
+            
+            -- Add days with no attendance record as absent days
+            -- (days that should have attendance but don't have any record)
+            IF v_total_working_days > v_days_with_records THEN
+                v_absent_days := v_absent_days + (v_total_working_days - v_days_with_records);
+            END IF;
+        ELSE
+            -- No attendance records at all - all working days are absent
+            v_absent_days := v_total_working_days;
         END IF;
         
         -- Calculate allowances if enabled
