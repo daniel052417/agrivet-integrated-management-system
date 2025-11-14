@@ -33,6 +33,7 @@ DECLARE
     v_allowance_eligible_days INTEGER;
     v_attendance_record RECORD;
     v_working_days INTEGER;
+    v_hours_calculated NUMERIC(10, 2);
 BEGIN
     -- Calculate total working days in the period (excluding weekends)
     SELECT COUNT(*)::INTEGER
@@ -101,10 +102,16 @@ BEGIN
                 END CASE;
 
                 -- Accumulate hours
+                -- Use total_hours if available, otherwise calculate from time_in and time_out
                 IF v_attendance_record.total_hours IS NOT NULL THEN
                     v_total_hours := v_total_hours + COALESCE(v_attendance_record.total_hours, 0);
+                ELSIF v_attendance_record.time_in IS NOT NULL AND v_attendance_record.time_out IS NOT NULL THEN
+                    -- Calculate hours from time_in and time_out
+                    v_hours_calculated := EXTRACT(EPOCH FROM (v_attendance_record.time_out - v_attendance_record.time_in)) / 3600.0;
+                    v_total_hours := v_total_hours + COALESCE(v_hours_calculated, 0);
                 END IF;
 
+                -- Accumulate overtime hours
                 IF v_attendance_record.overtime_hours IS NOT NULL THEN
                     v_overtime_hours := v_overtime_hours + COALESCE(v_attendance_record.overtime_hours, 0);
                 END IF;

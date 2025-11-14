@@ -104,6 +104,34 @@ const AttendanceDashboard: React.FC = () => {
   // Combine data error and local error
   const error = dataError || localError;
 
+  // Calculate stats from summary data when in summary view
+  const computedStats = useMemo(() => {
+    if (viewMode === 'summary' && staffSummaries.length > 0) {
+      const totalStaff = staffSummaries.length;
+      const presentDays = staffSummaries.reduce((sum, s) => sum + s.present_days, 0);
+      const absentDays = staffSummaries.reduce((sum, s) => sum + s.absent_days, 0);
+      const lateDays = staffSummaries.reduce((sum, s) => sum + s.late_days, 0);
+      const leaveDays = staffSummaries.reduce((sum, s) => sum + s.leave_days, 0);
+      const totalHours = staffSummaries.reduce((sum, s) => sum + s.total_hours, 0);
+      const totalOvertime = staffSummaries.reduce((sum, s) => sum + s.overtime_hours, 0);
+      const totalWorkingDays = staffSummaries.reduce((sum, s) => sum + s.total_days, 0);
+      const attendanceRate = totalWorkingDays > 0 ? (presentDays / totalWorkingDays) * 100 : 0;
+
+      return {
+        totalStaff,
+        presentToday: presentDays,
+        absentToday: absentDays,
+        lateToday: lateDays,
+        onLeaveToday: leaveDays,
+        averageHours: totalStaff > 0 ? totalHours / totalStaff : 0,
+        totalOvertime,
+        attendanceRate
+      };
+    }
+    // Use hook stats for daily view
+    return stats;
+  }, [viewMode, staffSummaries, stats]);
+
   useEffect(() => {
     loadInitialData();
     loadHRSettings();
@@ -420,9 +448,9 @@ const AttendanceDashboard: React.FC = () => {
         <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">Present Today</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.presentToday}</p>
-              <p className="text-xs text-gray-500 mt-1">{stats.attendanceRate.toFixed(1)}% attendance rate</p>
+              <p className="text-sm font-medium text-gray-600">Present</p>
+              <p className="text-2xl font-bold text-gray-900">{computedStats.presentToday}</p>
+              <p className="text-xs text-gray-500 mt-1">{computedStats.attendanceRate.toFixed(1)}% attendance rate</p>
             </div>
             <div className="p-3 bg-green-100 rounded-lg">
               <CheckCircle className="w-6 h-6 text-green-600" />
@@ -433,8 +461,8 @@ const AttendanceDashboard: React.FC = () => {
         <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">Absent Today</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.absentToday}</p>
+              <p className="text-sm font-medium text-gray-600">Absent</p>
+              <p className="text-2xl font-bold text-gray-900">{computedStats.absentToday}</p>
               <p className="text-xs text-gray-500 mt-1">Requires attention</p>
             </div>
             <div className="p-3 bg-red-100 rounded-lg">
@@ -447,7 +475,7 @@ const AttendanceDashboard: React.FC = () => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600">Late Arrivals</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.lateToday}</p>
+              <p className="text-2xl font-bold text-gray-900">{computedStats.lateToday}</p>
               <p className="text-xs text-gray-500 mt-1">Monitor punctuality</p>
             </div>
             <div className="p-3 bg-yellow-100 rounded-lg">
@@ -460,7 +488,7 @@ const AttendanceDashboard: React.FC = () => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600">Total Overtime</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.totalOvertime.toFixed(1)}h</p>
+              <p className="text-2xl font-bold text-gray-900">{computedStats.totalOvertime.toFixed(1)}h</p>
               <p className="text-xs text-gray-500 mt-1">Extra compensation</p>
             </div>
             <div className="p-3 bg-purple-100 rounded-lg">
