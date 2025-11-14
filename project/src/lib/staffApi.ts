@@ -41,6 +41,13 @@ export interface Staff {
   attendance_id?: string;
   payment_method?: string;
   work_schedule_id?: string;
+  use_default_schedule?: boolean;
+  work_days?: string[] | null;
+  time_in?: string | null;
+  time_out?: string | null;
+  break_start?: string | null;
+  break_end?: string | null;
+  user_account_id?: string | null;
 }
 
 // Enhanced Staff with User Account Information
@@ -86,6 +93,12 @@ export interface CreateStaffData {
   attendance_id?: string;
   payment_method?: string;
   work_schedule_id?: string;
+  use_default_schedule?: boolean;
+  work_days?: string[] | null;
+  time_in?: string | null;
+  time_out?: string | null;
+  break_start?: string | null;
+  break_end?: string | null;
 }
 
 // Enhanced Staff Creation with Account Option
@@ -305,6 +318,12 @@ export const staffApi = {
       attendance_id: staffData.attendance_id || null,
       payment_method: staffData.payment_method || null,
       work_schedule_id: staffData.work_schedule_id || null,
+      use_default_schedule: staffData.use_default_schedule ?? true,
+      work_days: staffData.work_days ? staffData.work_days : null,
+      time_in: staffData.time_in || null,
+      time_out: staffData.time_out || null,
+      break_start: staffData.break_start || null,
+      break_end: staffData.break_end || null,
       // Set created_by to current user if available
       created_by: customAuth.getCurrentUser()?.id || null,
       updated_by: null
@@ -326,10 +345,20 @@ export const staffApi = {
   // Update staff member
   async updateStaff(staffData: UpdateStaffData): Promise<Staff> {
     const { id, ...updateData } = staffData;
-    
+    const sanitizedPayload: Record<string, any> = {
+      updated_at: new Date().toISOString(),
+      updated_by: customAuth.getCurrentUser()?.id || null,
+    };
+
+    Object.entries(updateData).forEach(([key, value]) => {
+      if (value !== undefined) {
+        sanitizedPayload[key] = value;
+      }
+    });
+
     const { data, error } = await supabase
       .from('staff')
-      .update(updateData)
+      .update(sanitizedPayload)
       .eq('id', id)
       .select()
       .single();

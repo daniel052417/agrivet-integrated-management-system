@@ -1,9 +1,13 @@
 import React from 'react'
 import { Phone, Mail, MapPin, Clock } from 'lucide-react'
 
-const Footer: React.FC = () => {
+interface FooterProps {
+  className?: string
+}
+
+const Footer: React.FC<FooterProps> = ({ className = '' }) => {
   return (
-    <footer className="bg-gray-900 text-white">
+    <footer className={`bg-gray-900 text-white ${className}`}>
       <div className="max-w-7xl mx-auto px-4 py-8">
         <div className="grid gap-8 md:grid-cols-4">
           {/* Company Info */}

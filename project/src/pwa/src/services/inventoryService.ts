@@ -1,5 +1,6 @@
 import { Inventory, InventoryTransaction } from '../types'
 import { supabase } from './supabase'
+import { getManilaTimestamp } from '../utils/dateTime'
 
 interface InventoryServiceConfig {
   supabaseUrl: string
@@ -107,7 +108,7 @@ class InventoryService {
         .from('inventory')
         .update({
           quantity_on_hand: quantityAfter,
-          updated_at: new Date().toISOString()
+          updated_at: getManilaTimestamp()
         })
         .eq('product_id', productId)
         .eq('branch_id', branchId)
@@ -129,7 +130,7 @@ class InventoryService {
         notes: notes || null,
         created_by: createdBy || null,
         created_by_name: createdByName || null,
-        created_at: new Date().toISOString()
+        created_at: getManilaTimestamp()
       }
 
       const { data: transaction, error: transactionError } = await supabase

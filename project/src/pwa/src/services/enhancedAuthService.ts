@@ -5,6 +5,8 @@
 // creation, guest user support, and proper error handling
 
 import { supabase } from './supabase'
+import { getAuthRedirectUrl } from '../utils/authUtils'
+import { getManilaTimestamp } from '../utils/dateTime'
 
 // ============================================================================
 // TYPES
@@ -96,7 +98,7 @@ class EnhancedAuthService {
         password: data.password,
         options: {
           data: userMetaData,
-          emailRedirectTo: `${window.location.origin}/auth/callback`
+          emailRedirectTo: getAuthRedirectUrl('/auth/callback')
         }
       })
 
@@ -237,7 +239,7 @@ class EnhancedAuthService {
       // Update last login
       await supabase
         .from('customers')
-        .update({ updated_at: new Date().toISOString() })
+        .update({ updated_at: getManilaTimestamp() })
         .eq('user_id', publicUser.id)
 
       // Session will be handled by Supabase Auth and pwa_sessions

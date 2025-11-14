@@ -1,45 +1,32 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Search, Filter, Plus, Edit, Trash2, Eye, X, Save, Package, Upload, Image as ImageIcon } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { Search, Filter, Plus, Edit, Trash2, Eye, X, Save, Package, Upload, Image as ImageIcon, Minus } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { InventoryManagementRow, ProductFormData, InventoryFilters } from '../../types/inventory';
-
-interface Category {
-  id: string;
-  name: string;
-}
-
-interface Supplier {
-  id: string;
-  name: string;
-}
-
-interface Branch {
-  id: string;
-  name: string;
-}
-
-interface Brand {
-  id: string;
-  name: string;
-  image_url?: string;
-}
-
-// Using the imported interface from types/inventory.ts
+import { InventoryManagementRow, ProductFormData } from '../../types/inventory';
+import { useInventoryManagementData } from '../../hooks/useInventoryManagementData';
+import { StockOutService, StockOutData } from '../../lib/stockOutService';
+import { simplifiedAuth } from '../../lib/simplifiedAuth';
 
 const InventoryManagement: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedBranch, setSelectedBranch] = useState('all');
+  const [selectedStatus, setSelectedStatus] = useState('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [branches, setBranches] = useState<Branch[]>([]);
-  const [brands, setBrands] = useState<Brand[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [localError, setLocalError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [products, setProducts] = useState<InventoryManagementRow[]>([]);
-  const [isLoadingProducts, setIsLoadingProducts] = useState<boolean>(false);
+
+  // Data fetching with RBAC filtering - uses hook
+  const {
+    products,
+    categories,
+    suppliers,
+    branches,
+    brands,
+    loading: isLoadingProducts,
+    error: dataError,
+    refreshProducts
+  } = useInventoryManagementData();
   const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const [formData, setFormData] = useState<ProductFormData>({
@@ -59,12 +46,38 @@ const InventoryManagement: React.FC = () => {
     image_url: '',
     barcode: '',
     brand: '',
-    enable_multi_unit: false
+    enable_multi_unit: false,
+    batch_no: '',
+    expiration_date: ''
   });
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Stock Out modal state
+  const [isStockOutModalOpen, setIsStockOutModalOpen] = useState(false);
+  const [selectedProductForStockOut, setSelectedProductForStockOut] = useState<InventoryManagementRow | null>(null);
+  const [stockOutFormData, setStockOutFormData] = useState({
+    reason: '',
+    quantity: '',
+    notes: '',
+    stockOutAll: false,
+    destination_branch_id: '', // For transferred reason
+    supplier_return_reference: '', // For returned_to_supplier reason
+    adjustment_type: 'missing_stock' as 'clerical_error' | 'missing_stock' // For adjustment_correction reason
+  });
+  const [isProcessingStockOut, setIsProcessingStockOut] = useState(false);
+
+  // Stock out reasons
+  const stockOutReasons = [
+    { value: 'expired', label: 'Expired', description: 'Product shelf life has ended.' },
+    { value: 'damaged', label: 'Damaged', description: 'Product is no longer sellable due to physical damage or spoilage.' },
+    { value: 'returned_to_supplier', label: 'Returned to Supplier', description: 'Sent back to supplier (defective, wrong delivery, etc.).' },
+    { value: 'transferred', label: 'Transferred', description: 'Moved to another branch or warehouse.' },
+    { value: 'adjustment_correction', label: 'Adjustment / Correction', description: 'Manual correction after audit or data error.' },
+    { value: 'lost_missing', label: 'Lost / Missing', description: 'Unaccounted for after audit or suspected theft.' }
+  ];
 
   // Product units state for multi-unit management
   interface ProductUnit {
@@ -143,13 +156,13 @@ const InventoryManagement: React.FC = () => {
     if (file) {
       // Validate file type
       if (!file.type.startsWith('image/')) {
-        setError('Please select a valid image file');
+        setLocalError('Please select a valid image file');
         return;
       }
 
       // Validate file size (5MB max)
       if (file.size > 5 * 1024 * 1024) {
-        setError('Image size must be less than 5MB');
+        setLocalError('Image size must be less than 5MB');
         return;
       }
 
@@ -173,112 +186,6 @@ const InventoryManagement: React.FC = () => {
     }
   };
 
-  const fetchProducts = async () => {
-    console.log('🚀 Starting to fetch products from inventory_management...');
-    setIsLoadingProducts(true);
-    
-    try {
-      // Build query with filters
-      let query = supabase
-        .from('inventory_management')
-        .select('*')
-        .order('product_name');
-
-      // Apply branch filter
-      if (selectedBranch !== 'all') {
-        query = query.eq('branch_id', selectedBranch);
-      }
-
-      // Apply category filter
-      if (selectedCategory !== 'all') {
-        query = query.eq('category_id', selectedCategory);
-      }
-
-      // Apply search filter
-      if (searchTerm.trim()) {
-        query = query.or(`product_name.ilike.%${searchTerm}%,sku.ilike.%${searchTerm}%,category_name.ilike.%${searchTerm}%`);
-      }
-
-      const { data, error } = await query;
-      
-      if (error) { 
-        console.error('❌ Query Error:', error);
-        throw error;
-      }
-      
-      console.log('🔍 Raw inventory data fetched:', data);
-      console.log('📊 Number of inventory records:', data?.length || 0);
-      console.log('🏢 Selected branch:', selectedBranch);
-      console.log('📂 Selected category:', selectedCategory);
-      console.log('🔍 Search term:', searchTerm);
-      
-      setProducts(data || []);
-    } catch (err: any) {
-      console.error('❌ Error fetching products:', err);
-      setError('Failed to load products: ' + (err.message || 'Unknown error'));
-    } finally {
-      setIsLoadingProducts(false);
-    }
-  };
-
-  // Fetch categories and suppliers on component mount
-  useEffect(() => {
-    const fetchData = async () => {
-      console.log('🎯 Component mounted, starting data fetch...');
-      try {
-        // Fetch categories
-        const { data: categoriesData, error: categoriesError } = await supabase
-          .from('categories')
-          .select('id, name')
-          .eq('is_active', true)
-          .order('name');
-
-        if (categoriesError) throw categoriesError;
-        console.log('📂 Categories loaded:', categoriesData?.length || 0, 'categories');
-        setCategories(categoriesData || []);
-
-        // Fetch suppliers
-        const { data: suppliersData, error: suppliersError } = await supabase
-          .from('suppliers')
-          .select('id, name')
-          .eq('is_active', true)
-          .order('name');
-
-        if (suppliersError) throw suppliersError;
-        console.log('🏭 Suppliers loaded:', suppliersData?.length || 0, 'suppliers');
-        setSuppliers(suppliersData || []);
-
-        // Fetch branches
-        const { data: branchesData, error: branchesError } = await supabase
-          .from('branches')
-          .select('id, name')
-          .eq('is_active', true)
-          .order('name');
-
-        if (branchesError) throw branchesError;
-        console.log('🏢 Branches loaded:', branchesData?.length || 0, 'branches');
-        setBranches(branchesData || []);
-
-        // Fetch brands
-        const { data: brandsData, error: brandsError } = await supabase
-          .from('brands')
-          .select('id, name, image_url')
-          .order('name');
-
-        if (brandsError) throw brandsError;
-        console.log('🏷️ Brands loaded:', brandsData?.length || 0, 'brands');
-        setBrands(brandsData || []);
-
-        await fetchProducts();
-      } catch (error) {
-        console.error('Error fetching data:', error);
-        setError('Failed to load categories and suppliers');
-      }
-    };
-
-    fetchData();
-  }, []);
-
   // Refetch products when filters change
   useEffect(() => {
     if (branches.length > 0) {
@@ -286,14 +193,18 @@ const InventoryManagement: React.FC = () => {
       console.log('🏢 Selected branch:', selectedBranch);
       console.log('📂 Selected category:', selectedCategory);
       console.log('🔍 Search term:', searchTerm);
-      fetchProducts();
+      refreshProducts({
+        searchTerm,
+        selectedBranch,
+        selectedCategory
+      });
     }
-  }, [selectedBranch, selectedCategory, searchTerm]);
+  }, [selectedBranch, selectedCategory, searchTerm, branches.length, refreshProducts]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    setError(null);
+    setLocalError(null);
     setSuccess(null);
 
     try {
@@ -337,7 +248,7 @@ const InventoryManagement: React.FC = () => {
         } catch (uploadError: any) {
           console.error('Image upload failed:', uploadError);
           // For now, continue without image rather than failing the entire form
-          setError(`Image upload failed: ${uploadError?.message || 'Unknown error'}. Product will be saved without image.`);
+          setLocalError(`Image upload failed: ${uploadError?.message || 'Unknown error'}. Product will be saved without image.`);
           imageUrl = ''; // Set to empty string so we don't save an invalid URL
         }
       }
@@ -406,7 +317,9 @@ const InventoryManagement: React.FC = () => {
             quantity_reserved: 0,
             reorder_level: parseFloat(formData.reorder_level) || Math.max(10, parseFloat(formData.stock_quantity) * 0.2),
             max_stock_level: parseFloat(formData.stock_quantity) * 2,
-            base_unit: baseUnit.unit_label
+            base_unit: baseUnit.unit_label,
+            batch_no: formData.batch_no || null,
+            expiration_date: formData.expiration_date || null
           };
 
           const { error: inventoryError } = await supabase
@@ -446,7 +359,9 @@ const InventoryManagement: React.FC = () => {
             quantity_reserved: 0,
             reorder_level: parseFloat(formData.reorder_level) || Math.max(10, parseFloat(formData.stock_quantity) * 0.2),
             max_stock_level: parseFloat(formData.stock_quantity) * 2,
-            base_unit: newUnit.unit_label
+            base_unit: newUnit.unit_label,
+            batch_no: formData.batch_no || null,
+            expiration_date: formData.expiration_date || null
           };
 
           const { error: inventoryError } = await supabase
@@ -479,27 +394,84 @@ const InventoryManagement: React.FC = () => {
 
         if (productError) throw productError;
 
-        // Update unit
-        const unitData = {
-          unit_name: formData.unit_name.trim() || formData.name.trim(),
-          unit_label: formData.unit_label.trim() || 'pcs',
-          conversion_factor: parseFloat(formData.conversion_factor),
-          price_per_unit: parseFloat(formData.price_per_unit),
-          min_sellable_quantity: parseFloat(formData.min_sellable_quantity)
-        };
+        // Handle units based on multi-unit mode
+        if (formData.enable_multi_unit) {
+          // Delete existing units for this product (except the ones we're updating)
+          const existingUnitIds = productUnits.filter(u => u.id && !u.id.startsWith('temp-')).map(u => u.id);
+          
+          if (existingUnitIds.length > 0) {
+            await supabase
+              .from('product_units')
+              .delete()
+              .eq('product_id', editingProductId)
+              .not('id', 'in', `(${existingUnitIds.join(',')})`);
+          } else {
+            // Delete all existing units if we're creating all new ones
+            await supabase
+              .from('product_units')
+              .delete()
+              .eq('product_id', editingProductId);
+          }
+          // Update existing units and create new ones
+          for (const unit of productUnits) {
+            if (unit.id && !unit.id.startsWith('temp-')) {
+              // Update existing unit
+              const { error: updateError } = await supabase
+                .from('product_units')
+                .update({
+                  unit_name: unit.unit_name.trim(),
+                  unit_label: unit.unit_label.trim(),
+                  conversion_factor: parseFloat(unit.conversion_factor),
+                  is_base_unit: unit.is_base_unit,
+                  price_per_unit: parseFloat(unit.price_per_unit),
+                  min_sellable_quantity: parseFloat(unit.min_sellable_quantity)
+                })
+                .eq('id', unit.id);
 
-        const { error: unitError } = await supabase
-          .from('product_units')
-          .update(unitData)
-          .eq('id', product.primary_unit_id);
+              if (updateError) throw updateError;
+            } else {
+              // Create new unit
+              const { error: createError } = await supabase
+                .from('product_units')
+                .insert({
+                  product_id: editingProductId,
+                  unit_name: unit.unit_name.trim(),
+                  unit_label: unit.unit_label.trim(),
+                  conversion_factor: parseFloat(unit.conversion_factor),
+                  is_base_unit: unit.is_base_unit,
+                  is_sellable: true,
+                  price_per_unit: parseFloat(unit.price_per_unit),
+                  min_sellable_quantity: parseFloat(unit.min_sellable_quantity)
+                });
 
-        if (unitError) throw unitError;
+              if (createError) throw createError;
+            }
+          }
+        } else {
+          // Single unit mode - just update the primary unit
+          const unitData = {
+            unit_name: formData.unit_name.trim() || formData.name.trim(),
+            unit_label: formData.unit_label.trim() || 'pcs',
+            conversion_factor: parseFloat(formData.conversion_factor),
+            price_per_unit: parseFloat(formData.price_per_unit),
+            min_sellable_quantity: parseFloat(formData.min_sellable_quantity)
+          };
+
+          const { error: unitError } = await supabase
+            .from('product_units')
+            .update(unitData)
+            .eq('id', product.primary_unit_id);
+
+          if (unitError) throw unitError;
+        }
 
         // Update inventory
         const inventoryData = {
           quantity_on_hand: parseInt(formData.stock_quantity),
           reorder_level: parseInt(formData.reorder_level) || Math.max(10, parseInt(formData.stock_quantity) * 0.2),
-          max_stock_level: parseInt(formData.stock_quantity) * 2
+          max_stock_level: parseInt(formData.stock_quantity) * 2,
+          batch_no: formData.batch_no || null,
+          expiration_date: formData.expiration_date || null
         };
 
         const { error: inventoryError } = await supabase
@@ -508,13 +480,26 @@ const InventoryManagement: React.FC = () => {
           .eq('id', product.inventory_id);
 
         if (inventoryError) throw inventoryError;
+
+        // Check and send low stock alert if stock is below threshold
+        try {
+          const LowStockAlertService = (await import('../../lib/alerts/lowStockAlertService')).default;
+          await LowStockAlertService.checkAndSendLowStockAlert(product.id);
+        } catch (alertError) {
+          // Don't fail the update if alert fails
+          console.warn('Failed to send low stock alert:', alertError);
+        }
       }
 
       // Error handling is done in individual operations above
 
       // Success
       setSuccess(modalMode === 'add' ? 'Product added successfully!' : 'Product updated successfully!');
-      await fetchProducts();
+      await refreshProducts({
+        searchTerm,
+        selectedBranch,
+        selectedCategory
+      });
       setIsModalOpen(false);
       setFormData({
         name: '',
@@ -532,7 +517,9 @@ const InventoryManagement: React.FC = () => {
         min_sellable_quantity: '1',
         image_url: '',
         brand: '',
-        enable_multi_unit: false
+        enable_multi_unit: false,
+        batch_no: '',
+        expiration_date: ''
       });
       setImageFile(null);
       setImagePreview(null);
@@ -544,7 +531,7 @@ const InventoryManagement: React.FC = () => {
 
     } catch (error: any) {
       console.error('Error adding product:', error);
-      setError(error.message || 'Failed to add product');
+      setLocalError(error.message || 'Failed to add product');
     } finally {
       setIsLoading(false);
     }
@@ -568,7 +555,9 @@ const InventoryManagement: React.FC = () => {
       image_url: '',
       barcode: '',
       brand: '',
-      enable_multi_unit: false
+      enable_multi_unit: false,
+      batch_no: '',
+      expiration_date: ''
     });
     setProductUnits([
       {
@@ -583,14 +572,14 @@ const InventoryManagement: React.FC = () => {
     ]);
     setImageFile(null);
     setImagePreview(null);
-    setError(null);
+    setLocalError(null);
     setSuccess(null);
   };
 
   // Multi-unit management functions
   const addProductUnit = () => {
     const newUnit: ProductUnit = {
-      id: Date.now().toString(),
+      id: `temp-${Date.now()}`,
       unit_name: '',
       unit_label: '',
       conversion_factor: '1',
@@ -603,7 +592,7 @@ const InventoryManagement: React.FC = () => {
 
   const removeProductUnit = (id: string) => {
     if (productUnits.length <= 1) {
-      setError('At least one unit is required');
+      setLocalError('At least one unit is required');
       return;
     }
     setProductUnits(productUnits.filter(unit => unit.id !== id));
@@ -630,9 +619,34 @@ const InventoryManagement: React.FC = () => {
         return 'bg-orange-100 text-orange-800';
       case 'Out of Stock':
         return 'bg-red-100 text-red-800';
+      case 'Expired':
+        return 'bg-red-100 text-red-800';
+      case 'Near Expiry':
+        return 'bg-yellow-100 text-yellow-800';
       default:
         return 'bg-gray-100 text-gray-800';
     }
+  };
+
+  const getProductStatus = (product: InventoryManagementRow) => {
+    // Get both stock and expiry statuses
+    let stockStatus = product.stock_status;
+    let expiryStatus = null;
+    
+    // Check expiry status
+    if (product.expiration_date) {
+      const today = new Date();
+      const expiryDate = new Date(product.expiration_date);
+      const daysUntilExpiry = Math.floor((expiryDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+      
+      if (daysUntilExpiry < 0) {
+        expiryStatus = 'Expired';
+      } else if (daysUntilExpiry <= 30) {
+        expiryStatus = 'Near Expiry';
+      }
+    }
+    
+    return { stockStatus, expiryStatus };
   };
 
 
@@ -664,10 +678,14 @@ const InventoryManagement: React.FC = () => {
         .eq('id', id);
       if (productError) throw productError;
 
-      await fetchProducts();
+      await refreshProducts({
+        searchTerm,
+        selectedBranch,
+        selectedCategory
+      });
     } catch (err: any) {
       console.error('Delete failed', err);
-      setError('Failed to delete product');
+      setLocalError('Failed to delete product');
     }
   };
 
@@ -688,8 +706,19 @@ const InventoryManagement: React.FC = () => {
       min_sellable_quantity: '1',
       image_url: '',
       brand: '',
-      enable_multi_unit: false
+      enable_multi_unit: false,
+      batch_no: '',
+      expiration_date: ''
     });
+    setProductUnits([{
+      id: '1',
+      unit_name: '',
+      unit_label: '',
+      conversion_factor: '1',
+      price_per_unit: '',
+      min_sellable_quantity: '1',
+      is_base_unit: true
+    }]);
     setImageFile(null);
     setImagePreview(null);
     setEditingProductId(null);
@@ -697,32 +726,250 @@ const InventoryManagement: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  const openEditModal = (product: InventoryManagementRow) => {
-  setFormData({
-    name: product.product_name || '',
-    category_id: product.category_id || '',
-    sku: product.sku || '',
-    price_per_unit: String(product.price_per_unit ?? ''),
-    stock_quantity: String(product.quantity_available ?? ''),
-    reorder_level: String(product.reorder_level ?? ''),
-    supplier_id: product.supplier_id || '', // ✅ Now populated from view
-    branch_id: product.branch_id || '',
-    description: product.description || '', // ✅ Now populated from view
-    unit_name: product.unit_name || '',
-    unit_label: product.unit_label || '',
-    conversion_factor: String(product.conversion_factor ?? '1'),
-    min_sellable_quantity: String(product.min_sellable_quantity ?? '1'), // ✅ Now populated from view
-    image_url: product.image_url || '',
-    barcode: product.barcode || '',
-    brand: product.brand || '',
-    enable_multi_unit: false // For simplicity, default to false; can be enhanced to fetch actual units
-  });
-  setImageFile(null);
-  setImagePreview(product.image_url || null);
-  setEditingProductId(product.product_id);
-  setModalMode('edit');
-  setIsModalOpen(true);
-};
+  const openStockOutModal = (product: InventoryManagementRow) => {
+    setSelectedProductForStockOut(product);
+    setStockOutFormData({
+      reason: '',
+      quantity: '',
+      notes: '',
+      stockOutAll: false,
+      destination_branch_id: '',
+      supplier_return_reference: '',
+      adjustment_type: 'missing_stock'
+    });
+    setIsStockOutModalOpen(true);
+  };
+
+  const closeStockOutModal = () => {
+    setIsStockOutModalOpen(false);
+    setSelectedProductForStockOut(null);
+    setStockOutFormData({
+      reason: '',
+      quantity: '',
+      notes: '',
+      stockOutAll: false,
+      destination_branch_id: '',
+      supplier_return_reference: '',
+      adjustment_type: 'missing_stock'
+    });
+    setLocalError(null);
+  };
+
+  const handleStockOutAllToggle = (checked: boolean) => {
+    if (checked && selectedProductForStockOut) {
+      setStockOutFormData(prev => ({
+        ...prev,
+        stockOutAll: true,
+        quantity: String(selectedProductForStockOut.quantity_available || 0)
+      }));
+    } else {
+      setStockOutFormData(prev => ({
+        ...prev,
+        stockOutAll: false,
+        quantity: ''
+      }));
+    }
+  };
+
+  const handleStockOutSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!selectedProductForStockOut) {
+      setLocalError('No product selected for stock out');
+      return;
+    }
+
+    // Validate quantity
+    const quantity = parseFloat(stockOutFormData.quantity);
+    if (isNaN(quantity) || quantity <= 0) {
+      setLocalError('Please enter a valid quantity');
+      return;
+    }
+
+    if (quantity > selectedProductForStockOut.quantity_available) {
+      setLocalError(`Insufficient stock. Available: ${selectedProductForStockOut.quantity_available} ${selectedProductForStockOut.unit_label}`);
+      return;
+    }
+
+    // Validate reason-specific requirements
+    if (!stockOutFormData.reason) {
+      setLocalError('Please select a reason for stock out');
+      return;
+    }
+
+    if (stockOutFormData.reason === 'transferred' && !stockOutFormData.destination_branch_id) {
+      setLocalError('Please select a destination branch for transfer');
+      return;
+    }
+
+    setIsProcessingStockOut(true);
+    setLocalError(null);
+    setSuccess(null);
+
+    try {
+      const stockOutData: StockOutData = {
+        inventory_id: selectedProductForStockOut.inventory_id,
+        product_id: selectedProductForStockOut.product_id,
+        branch_id: selectedProductForStockOut.branch_id,
+        stock_out_reason: stockOutFormData.reason as StockOutData['stock_out_reason'],
+        quantity: quantity,
+        notes: stockOutFormData.notes || undefined,
+        destination_branch_id: stockOutFormData.destination_branch_id || undefined,
+        supplier_return_reference: stockOutFormData.supplier_return_reference || undefined,
+        adjustment_type: stockOutFormData.adjustment_type
+      };
+
+      // Try to get current user and pass it to the service
+      // Since system uses public.users (not auth.users), query by email
+      let currentUserId: string | undefined;
+      try {
+        const currentUser = simplifiedAuth.getCurrentUser();
+        if (currentUser?.id) {
+          currentUserId = currentUser.id;
+        } else {
+          // Fallback: Get email from Supabase Auth and query public.users by email
+          const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
+          if (!authError && authUser?.email) {
+            const { data: dbUser, error: dbError } = await supabase
+              .from('users')
+              .select('id')
+              .eq('email', authUser.email)
+              .eq('is_active', true)
+              .single();
+            
+            if (!dbError && dbUser?.id) {
+              currentUserId = dbUser.id;
+            }
+          }
+        }
+      } catch (error) {
+        console.warn('Could not get current user in component:', error);
+      }
+
+      const result = await StockOutService.processStockOut(stockOutData, currentUserId);
+
+      setSuccess(`Stock out processed successfully! Reference: ${result.reference_number}`);
+      
+      // Refresh products to show updated inventory
+      await refreshProducts({
+        searchTerm,
+        selectedBranch,
+        selectedCategory
+      });
+
+      // Close modal after a short delay
+      setTimeout(() => {
+        closeStockOutModal();
+        setTimeout(() => setSuccess(null), 3000);
+      }, 1500);
+
+    } catch (error: any) {
+      console.error('Error processing stock out:', error);
+      setLocalError(error.message || 'Failed to process stock out. Please try again.');
+    } finally {
+      setIsProcessingStockOut(false);
+    }
+  };
+
+  const openEditModal = async (product: InventoryManagementRow) => {
+    try {
+      // Fetch all units for this product
+      const { data: units, error } = await supabase
+        .from('product_units')
+        .select('*')
+        .eq('product_id', product.product_id)
+        .order('is_base_unit', { ascending: false });
+
+      if (error) throw error;
+
+      // Check if product has multiple units
+      const hasMultipleUnits = units && units.length > 1;
+
+      // Set form data
+      setFormData({
+        name: product.product_name || '',
+        category_id: product.category_id || '',
+        sku: product.sku || '',
+        price_per_unit: String(product.price_per_unit ?? ''),
+        stock_quantity: String(product.quantity_available ?? ''),
+        reorder_level: String(product.reorder_level ?? ''),
+        supplier_id: product.supplier_id || '',
+        branch_id: product.branch_id || '',
+        description: product.description || '',
+        unit_name: product.unit_name || '',
+        unit_label: product.unit_label || '',
+        conversion_factor: String(product.conversion_factor ?? '1'),
+        min_sellable_quantity: String(product.min_sellable_quantity ?? '1'),
+        image_url: product.image_url || '',
+        barcode: product.barcode || '',
+        brand: product.brand || '',
+        enable_multi_unit: hasMultipleUnits,
+        batch_no: product.batch_no || '',
+        expiration_date: product.expiration_date || ''
+      });
+
+      // If product has multiple units, load them into productUnits state
+      if (hasMultipleUnits && units) {
+        setProductUnits(units.map(unit => ({
+          id: unit.id,
+          unit_name: unit.unit_name,
+          unit_label: unit.unit_label,
+          conversion_factor: String(unit.conversion_factor),
+          price_per_unit: String(unit.price_per_unit),
+          min_sellable_quantity: String(unit.min_sellable_quantity),
+          is_base_unit: unit.is_base_unit
+        })));
+      } else {
+        // Reset to single unit
+        setProductUnits([{
+          id: '1',
+          unit_name: product.unit_name || '',
+          unit_label: product.unit_label || '',
+          conversion_factor: '1',
+          price_per_unit: String(product.price_per_unit || ''),
+          min_sellable_quantity: '1',
+          is_base_unit: true
+        }]);
+      }
+
+      setImageFile(null);
+      setImagePreview(product.image_url || null);
+      setEditingProductId(product.product_id);
+      setModalMode('edit');
+      setIsModalOpen(true);
+   
+
+    } catch (error) {
+      console.error('Error fetching product units:', error);
+      setLocalError('Failed to load product details');
+    }
+  };
+
+  // Combine data error and local error for display
+  const displayError = localError || dataError;
+
+  // Filter and sort products
+  const filteredAndSortedProducts = useMemo(() => {
+    let filtered = [...products];
+
+    // Filter by status
+    if (selectedStatus !== 'all') {
+      filtered = filtered.filter(product => {
+        const { stockStatus, expiryStatus } = getProductStatus(product);
+        return stockStatus === selectedStatus || expiryStatus === selectedStatus;
+      });
+    }
+
+    // Sort by quantity_available (highest to lowest)
+    filtered.sort((a, b) => {
+      const quantityA = a.quantity_available || 0;
+      const quantityB = b.quantity_available || 0;
+      return quantityB - quantityA; // Descending order
+    });
+
+    return filtered;
+  }, [products, selectedStatus]);
+
   return (
     <div className="p-6 space-y-6">
       {/* Success/Error Messages */}
@@ -735,12 +982,12 @@ const InventoryManagement: React.FC = () => {
         </div>
       )}
 
-      {error && (
+      {displayError && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center space-x-3">
           <div className="w-5 h-5 bg-red-500 rounded-full flex items-center justify-center">
             <X className="w-3 h-3 text-white" />
           </div>
-          <p className="text-red-800 font-medium">{error}</p>
+          <p className="text-red-800 font-medium">{displayError}</p>
         </div>
       )}
 
@@ -792,10 +1039,18 @@ const InventoryManagement: React.FC = () => {
               ))}
             </select>
 
-            <button className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
-              <Filter className="w-4 h-4" />
-              <span>More Filters</span>
-            </button>
+            <select
+              value={selectedStatus}
+              onChange={(e) => setSelectedStatus(e.target.value)}
+              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+            >
+              <option value="all">All Status</option>
+              <option value="In Stock">In Stock</option>
+              <option value="Low Stock">Low Stock</option>
+              <option value="Out of Stock">Out of Stock</option>
+              <option value="Expired">Expired</option>
+              <option value="Near Expiry">Near Expiry</option>
+            </select>
           </div>
         </div>
       </div>
@@ -822,6 +1077,12 @@ const InventoryManagement: React.FC = () => {
                   Price
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Batch No.
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Expiry Date
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Status
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -833,7 +1094,7 @@ const InventoryManagement: React.FC = () => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {(isLoadingProducts ? [] : products).map((product) => {
+              {(isLoadingProducts ? [] : filteredAndSortedProducts).map((product) => {
                 return (
               <tr key={product.inventory_id} className="hover:bg-gray-50">
                 <td className="px-6 py-4 whitespace-nowrap">
@@ -870,10 +1131,47 @@ const InventoryManagement: React.FC = () => {
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   ₱{Number(product.price_per_unit || 0).toFixed(2)}
                 </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  {product.batch_no || '—'}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm">
+                  {product.expiration_date ? (
+                    <span className={(() => {
+                      const today = new Date();
+                      const expiryDate = new Date(product.expiration_date);
+                      const daysUntilExpiry = Math.floor((expiryDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                      
+                      if (daysUntilExpiry < 0) {
+                        return 'text-red-600 font-semibold';
+                      } else if (daysUntilExpiry <= 30) {
+                        return 'text-yellow-600 font-semibold';
+                      }
+                      return 'text-gray-900';
+                    })()}>
+                      {new Date(product.expiration_date).toLocaleDateString()}
+                    </span>
+                  ) : (
+                    <span className="text-gray-400">—</span>
+                  )}
+                </td>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(product.stock_status)}`}>
-                    {product.stock_status}
-                  </span>
+                  <div className="space-y-1">
+                    {(() => {
+                      const { stockStatus, expiryStatus } = getProductStatus(product);
+                      return (
+                        <>
+                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(stockStatus)}`}>
+                            {stockStatus}
+                          </span>
+                          {expiryStatus && (
+                            <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(expiryStatus)} ml-1`}>
+                              {expiryStatus}
+                            </span>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   <div>
@@ -889,10 +1187,17 @@ const InventoryManagement: React.FC = () => {
                     <button className="text-blue-600 hover:text-blue-900" title="View (coming soon)">
                       <Eye className="w-4 h-4" />
                     </button>
-                    <button onClick={() => openEditModal(product)} className="text-green-600 hover:text-green-900">
+                    <button onClick={() => openEditModal(product)} className="text-green-600 hover:text-green-900" title="Edit">
                       <Edit className="w-4 h-4" />
                     </button>
-                    <button onClick={() => handleDelete(product.product_id)} className="text-red-600 hover:text-red-900">
+                    <button 
+                      onClick={() => openStockOutModal(product)} 
+                      className="text-orange-600 hover:text-orange-900" 
+                      title="Stock Out"
+                    >
+                      <Minus className="w-4 h-4" />
+                    </button>
+                    <button onClick={() => handleDelete(product.product_id)} className="text-red-600 hover:text-red-900" title="Delete">
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
@@ -906,8 +1211,12 @@ const InventoryManagement: React.FC = () => {
         {isLoadingProducts && (
           <div className="p-6 text-sm text-gray-500">Loading products...</div>
         )}
-        {!isLoadingProducts && products.length === 0 && (
-          <div className="p-6 text-sm text-gray-500">No products found</div>
+        {!isLoadingProducts && filteredAndSortedProducts.length === 0 && (
+          <div className="p-6 text-sm text-gray-500">
+            {products.length === 0 
+              ? 'No products found' 
+              : 'No products match the selected filters'}
+          </div>
         )}
       </div>
 
@@ -1115,6 +1424,40 @@ const InventoryManagement: React.FC = () => {
                     />
                   </div>
 
+                  <div>
+                    <label
+                      htmlFor="batchNo"
+                      className="block text-sm font-medium text-gray-700 mb-2"
+                    >
+                      Batch Number
+                    </label>
+                    <input
+                      type="text"
+                      id="batchNo"
+                      value={formData.batch_no}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, batch_no: e.target.value }))}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      placeholder="e.g., BN-2025-001"
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="expirationDate"
+                      className="block text-sm font-medium text-gray-700 mb-2"
+                    >
+                      Expiration Date
+                    </label>
+                    <input
+                      type="date"
+                      id="expirationDate"
+                      value={formData.expiration_date}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, expiration_date: e.target.value }))}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      min={new Date().toISOString().split('T')[0]}
+                    />
+                  </div>
+
                   <div className="col-span-full">
                     <div className="flex items-center space-x-3 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                       <input
@@ -1135,9 +1478,9 @@ const InventoryManagement: React.FC = () => {
 
 
                   {/* Form Error Display */}
-                  {error && (
+                  {localError && (
                     <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-                      <p className="text-red-800 text-sm">{error}</p>
+                      <p className="text-red-800 text-sm">{localError}</p>
                     </div>
                   )}
                 </div>
@@ -1432,6 +1775,240 @@ const InventoryManagement: React.FC = () => {
                   <>
                     <Save className="w-4 h-4" />
                     <span>{modalMode === 'add' ? 'Add Product' : 'Save Changes'}</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Stock Out Modal */}
+      {isStockOutModalOpen && selectedProductForStockOut && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full mx-4">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <div className="flex items-center space-x-3">
+                <div className="p-2 bg-orange-100 rounded-lg">
+                  <Minus className="w-6 h-6 text-orange-600" />
+                </div>
+                <h3 className="text-xl font-semibold text-gray-900">Stock Out</h3>
+              </div>
+              <button
+                onClick={closeStockOutModal}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            <div className="p-6">
+              {/* Product Information */}
+              <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <div className="flex items-start space-x-3">
+                  {selectedProductForStockOut.image_url && (
+                    <img
+                      src={selectedProductForStockOut.image_url}
+                      alt={selectedProductForStockOut.product_name}
+                      className="w-16 h-16 object-cover rounded-lg"
+                    />
+                  )}
+                  <div className="flex-1">
+                    <h4 className="text-lg font-semibold text-gray-900">
+                      {selectedProductForStockOut.product_name}
+                    </h4>
+                    <div className="mt-1 space-y-1 text-sm text-gray-600">
+                      <div>SKU: {selectedProductForStockOut.sku}</div>
+                      <div>Available Stock: <span className="font-semibold text-gray-900">{selectedProductForStockOut.quantity_available}</span> {selectedProductForStockOut.unit_label}</div>
+                      {selectedProductForStockOut.batch_no && (
+                        <div>Batch No: {selectedProductForStockOut.batch_no}</div>
+                      )}
+                      {selectedProductForStockOut.branch_name && (
+                        <div>Branch: {selectedProductForStockOut.branch_name}</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <form id="stockOutForm" onSubmit={handleStockOutSubmit} className="space-y-6">
+                <div>
+                  <label htmlFor="stockOutReason" className="block text-sm font-medium text-gray-700 mb-2">
+                    Reason for Stock Out *
+                  </label>
+                  <select
+                    id="stockOutReason"
+                    value={stockOutFormData.reason}
+                    onChange={(e) => setStockOutFormData(prev => ({ ...prev, reason: e.target.value }))}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                    required
+                  >
+                    <option value="">Select a reason</option>
+                    {stockOutReasons.map((reason) => (
+                      <option key={reason.value} value={reason.value}>
+                        {reason.label}
+                      </option>
+                    ))}
+                  </select>
+                  {stockOutFormData.reason && (
+                    <p className="mt-2 text-sm text-gray-600">
+                      {stockOutReasons.find(r => r.value === stockOutFormData.reason)?.description}
+                    </p>
+                  )}
+                </div>
+
+                {/* Additional fields based on reason */}
+                {stockOutFormData.reason === 'transferred' && (
+                  <div>
+                    <label htmlFor="destinationBranch" className="block text-sm font-medium text-gray-700 mb-2">
+                      Destination Branch *
+                    </label>
+                    <select
+                      id="destinationBranch"
+                      value={stockOutFormData.destination_branch_id}
+                      onChange={(e) => setStockOutFormData(prev => ({ ...prev, destination_branch_id: e.target.value }))}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                      required
+                    >
+                      <option value="">Select destination branch</option>
+                      {branches
+                        .filter(b => b.id !== selectedProductForStockOut.branch_id)
+                        .map((branch) => (
+                          <option key={branch.id} value={branch.id}>
+                            {branch.name}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                )}
+
+                {stockOutFormData.reason === 'returned_to_supplier' && (
+                  <div>
+                    <label htmlFor="supplierReturnRef" className="block text-sm font-medium text-gray-700 mb-2">
+                      Supplier Return Reference (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      id="supplierReturnRef"
+                      value={stockOutFormData.supplier_return_reference}
+                      onChange={(e) => setStockOutFormData(prev => ({ ...prev, supplier_return_reference: e.target.value }))}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                      placeholder="e.g., CR-2025-001"
+                    />
+                  </div>
+                )}
+
+                {stockOutFormData.reason === 'adjustment_correction' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Adjustment Type *
+                    </label>
+                    <div className="space-y-2">
+                      <label className="flex items-center space-x-2">
+                        <input
+                          type="radio"
+                          name="adjustment_type"
+                          value="clerical_error"
+                          checked={stockOutFormData.adjustment_type === 'clerical_error'}
+                          onChange={(e) => setStockOutFormData(prev => ({ ...prev, adjustment_type: e.target.value as 'clerical_error' | 'missing_stock' }))}
+                          className="w-4 h-4 text-orange-600 focus:ring-orange-500"
+                        />
+                        <span className="text-sm text-gray-700">Clerical Error (Neutral - No loss)</span>
+                      </label>
+                      <label className="flex items-center space-x-2">
+                        <input
+                          type="radio"
+                          name="adjustment_type"
+                          value="missing_stock"
+                          checked={stockOutFormData.adjustment_type === 'missing_stock'}
+                          onChange={(e) => setStockOutFormData(prev => ({ ...prev, adjustment_type: e.target.value as 'clerical_error' | 'missing_stock' }))}
+                          className="w-4 h-4 text-orange-600 focus:ring-orange-500"
+                        />
+                        <span className="text-sm text-gray-700">Missing Stock (Loss)</span>
+                      </label>
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label htmlFor="stockOutQuantity" className="block text-sm font-medium text-gray-700">
+                      Quantity to Stock Out *
+                    </label>
+                    <label className="flex items-center space-x-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={stockOutFormData.stockOutAll}
+                        onChange={(e) => handleStockOutAllToggle(e.target.checked)}
+                        className="w-4 h-4 text-orange-600 border-gray-300 rounded focus:ring-orange-500"
+                      />
+                      <span className="text-sm text-gray-700 font-medium">Stock Out All</span>
+                    </label>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      id="stockOutQuantity"
+                      value={stockOutFormData.quantity}
+                      onChange={(e) => setStockOutFormData(prev => ({ ...prev, quantity: e.target.value, stockOutAll: false }))}
+                      className={`w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent ${
+                        stockOutFormData.stockOutAll ? 'bg-gray-50 cursor-not-allowed' : ''
+                      }`}
+                      placeholder="0"
+                      min="0"
+                      max={selectedProductForStockOut.quantity_available}
+                      step="0.01"
+                      disabled={stockOutFormData.stockOutAll}
+                      required
+                    />
+                    <span className="absolute right-3 top-1/2 transform -translate-y-1/2 text-sm text-gray-500">
+                      {selectedProductForStockOut.unit_label}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs text-gray-500">
+                    Maximum available: {selectedProductForStockOut.quantity_available} {selectedProductForStockOut.unit_label}
+                  </p>
+                </div>
+
+                <div>
+                  <label htmlFor="stockOutNotes" className="block text-sm font-medium text-gray-700 mb-2">
+                    Notes (Optional)
+                  </label>
+                  <textarea
+                    id="stockOutNotes"
+                    value={stockOutFormData.notes}
+                    onChange={(e) => setStockOutFormData(prev => ({ ...prev, notes: e.target.value }))}
+                    rows={3}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                    placeholder="Add any additional details or comments..."
+                  />
+                </div>
+              </form>
+            </div>
+
+            <div className="flex items-center justify-end space-x-3 p-6 border-t border-gray-200 bg-gray-50">
+              <button
+                onClick={closeStockOutModal}
+                disabled={isProcessingStockOut}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                form="stockOutForm"
+                disabled={isProcessingStockOut}
+                className="flex items-center space-x-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+              >
+                {isProcessingStockOut ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    <span>Processing...</span>
+                  </>
+                ) : (
+                  <>
+                    <Minus className="w-4 h-4" />
+                    <span>Process Stock Out</span>
                   </>
                 )}
               </button>

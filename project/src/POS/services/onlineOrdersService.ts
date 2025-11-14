@@ -420,6 +420,15 @@ export class OnlineOrdersService {
       if (!createdOrder) {
         throw new Error('Failed to retrieve created order');
       }
+
+      // Send new order alert
+      try {
+        await NewOrderAlertService.sendNewOrderAlert(data.id);
+      } catch (alertError) {
+        // Don't fail order creation if alert fails
+        console.warn('Failed to send new order alert:', alertError);
+      }
+
       return createdOrder;
     } catch (error) {
       console.error('Error adding order:', error);

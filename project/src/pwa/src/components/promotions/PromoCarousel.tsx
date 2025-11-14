@@ -118,7 +118,7 @@ const PromoCarousel: React.FC<PromoCarouselProps> = ({
     if (daysLeft <= 0) return 'Expired'
     if (daysLeft === 1) return 'Expires today'
     if (daysLeft <= 7) return `Expires in ${daysLeft} days`
-    return `Valid until ${validUntil.toLocaleDateString()}`
+    return `Valid until ${validUntil.toLocaleDateString('en-PH', { timeZone: 'Asia/Manila' })}`
   }
 
   if (promotions.length === 0) return null

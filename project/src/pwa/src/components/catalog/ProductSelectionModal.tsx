@@ -101,13 +101,13 @@ const ProductSelectionModal: React.FC<ProductSelectionModalProps> = ({
     <>
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-black bg-opacity-50 z-40 transition-opacity"
+        className="fixed inset-0 bg-black bg-opacity-50 z-[60] transition-opacity"
         onClick={onClose}
       />
 
       {/* Bottom Sheet */}
-      <div className="fixed inset-x-0 bottom-0 z-50 animate-slide-up">
-        <div className="bg-white rounded-t-3xl shadow-2xl max-h-[90vh] flex flex-col">
+      <div className="fixed inset-x-0 bottom-0 z-[70] animate-slide-up md:bottom-auto md:inset-0 md:flex md:items-center md:justify-center">
+        <div className="bg-white rounded-t-3xl md:rounded-3xl shadow-2xl max-h-[90vh] md:max-h-[85vh] flex flex-col md:max-w-2xl md:w-full md:mx-4">
           {/* Handle Bar */}
           <div className="flex justify-center pt-3 pb-2 flex-shrink-0">
             <div className="w-12 h-1.5 bg-gray-300 rounded-full" />
@@ -264,14 +264,14 @@ const ProductSelectionModal: React.FC<ProductSelectionModalProps> = ({
             )}
           </div>
 
-          {/* Fixed Add to Cart Button */}
-          <div className="p-4 sm:p-6 border-t border-gray-200 flex-shrink-0">
+          {/* Fixed Add to Cart Button - Positioned above bottom nav on mobile */}
+          <div className="p-4 sm:p-6 border-t border-gray-200 flex-shrink-0 bg-white pb-20 md:pb-4 safe-area-bottom">
             <button
               onClick={handleAddToCart}
               disabled={!selectedUnit || quantity <= 0 || quantity > availableStock}
-              className="w-full py-3 sm:py-4 bg-agrivet-green text-white rounded-xl font-bold text-base sm:text-lg flex items-center justify-center space-x-2 hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors shadow-lg"
+              className="w-full py-4 sm:py-4 bg-agrivet-green text-white rounded-xl font-bold text-base sm:text-lg flex items-center justify-center space-x-2 hover:bg-green-700 active:bg-green-800 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors shadow-xl touch-manipulation"
             >
-              <ShoppingCart className="w-5 h-5" />
+              <ShoppingCart className="w-5 h-5 sm:w-6 sm:h-6" />
               <span>Add to Cart</span>
             </button>
           </div>

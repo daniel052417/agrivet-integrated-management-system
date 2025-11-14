@@ -21,6 +21,7 @@ const Orders = lazy(() => import('./pages/Orders'))
 const UserSettings = lazy(() => import('./pages/UserSettings'))
 const NotFound = lazy(() => import('./pages/NotFound'))
 const ProfileCompletion = lazy(() => import('./pages/ProfileCompletion'))
+const PasswordReset = lazy(() => import('./pages/PasswordReset'))
 
 // Demo Components
 const PromoDemo = lazy(() => import('./components/promotions/PromoDemo'))
@@ -127,6 +128,7 @@ function AppRoutes() {
         {/* Public routes */}
         <Route path="/" element={<Navigate to="/branch-selection" replace />} />
         <Route path="/auth/callback" element={<AuthCallback />} />
+        <Route path="/auth/password-reset" element={<PasswordReset />} />
         
         <Route
           path="/complete-profile"

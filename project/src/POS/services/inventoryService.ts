@@ -1,5 +1,6 @@
 import POSDatabaseService from './databaseService';
 import { Product, ProductVariant, StockMovement, StockAdjustment } from '../../types/pos';
+import LowStockAlertService from '../../lib/alerts/lowStockAlertService';
 
 export class InventoryService {
   
@@ -107,6 +108,14 @@ export class InventoryService {
         old_value: oldQuantity.toString(),
         new_value: newQuantity.toString()
       });
+
+      // Check and send low stock alert if stock is below threshold
+      try {
+        await LowStockAlertService.checkAndSendLowStockAlert(productId);
+      } catch (alertError) {
+        // Don't fail the stock update if alert fails
+        console.warn('Failed to send low stock alert:', alertError);
+      }
 
       return { success: true, oldQuantity, newQuantity };
     } catch (error) {

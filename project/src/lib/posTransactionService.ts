@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import LowStockAlertService from './alerts/lowStockAlertService';
 
 export interface POSTransaction {
   id: string;
@@ -316,6 +317,14 @@ export class POSTransactionService {
           console.error(`Failed to update inventory for product ${item.product_id}:`, updateError);
         } else {
           console.log(`Updated inventory for product ${item.product_id}: ${inventory.quantity_on_hand} -> ${newQuantityOnHand} (quantity_available auto-calculated)`);
+          
+          // Check and send low stock alert if stock is below threshold
+          try {
+            await LowStockAlertService.checkAndSendLowStockAlert(item.product_id);
+          } catch (alertError) {
+            // Don't fail the inventory update if alert fails
+            console.warn(`Failed to send low stock alert for product ${item.product_id}:`, alertError);
+          }
         }
       }
     } catch (error) {

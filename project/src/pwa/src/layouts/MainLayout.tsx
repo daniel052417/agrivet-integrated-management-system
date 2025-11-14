@@ -3,6 +3,7 @@ import { useBranch } from '../contexts/BranchContext'
 import { usePWA } from '../contexts/PWAContext'
 import Header from '../components/layout/Header'
 import Footer from '../components/layout/Footer'
+import BottomNavigation from '../components/layout/BottomNavigation'
 import OfflineIndicator from '../components/common/OfflineIndicator'
 import InstallPrompt from '../components/common/InstallPrompt'
 
@@ -25,13 +26,16 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
       {/* Header */}
       <Header branch={selectedBranch} />
       
-      {/* Main Content */}
-      <main className="flex-1">
+      {/* Main Content - Add bottom padding on mobile for bottom navigation */}
+      <main className="flex-1 pb-16 md:pb-0">
         {children}
       </main>
       
-      {/* Footer */}
-      <Footer />
+      {/* Footer - Hidden on mobile, shown on desktop */}
+      <Footer className="hidden md:block" />
+      
+      {/* Bottom Navigation - Mobile only */}
+      <BottomNavigation />
     </div>
   )
 }

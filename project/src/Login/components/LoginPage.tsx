@@ -1,5 +1,7 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Eye, EyeOff, AlertCircle, Loader2 } from 'lucide-react';
+import logo from '../../assets/logo.png';
+import { settingsService } from '../../lib/settingsService';
 
 interface LoginPageProps {
   username: string;
@@ -13,7 +15,6 @@ interface LoginPageProps {
   onLoginSubmit: (e: React.FormEvent) => void;
 }
 
-import logo from '../../assets/logo.png';
 export default function LoginPage({
   username,
   password,
@@ -25,6 +26,28 @@ export default function LoginPage({
   onToggleShowPassword,
   onLoginSubmit
 }: LoginPageProps) {
+  const [companyLogo, setCompanyLogo] = useState<string | null>(null);
+  const [companyName, setCompanyName] = useState('Tiongson');
+  const [tagline, setTagline] = useState('AGRIVET');
+
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const settings = await settingsService.getAllSettings();
+        const general = settings.general || {};
+        setCompanyLogo(general.companyLogo || settings.company_logo || null);
+        
+        // Extract company name - use first word if full name is too long
+        const fullCompanyName = general.companyName || settings.company_name || 'Tiongson';
+        setCompanyName(fullCompanyName.split(' ')[0]);
+        setTagline(fullCompanyName.includes(' ') ? fullCompanyName.split(' ').slice(1).join(' ') : 'AGRIVET');
+      } catch (error) {
+        console.error('Error loading login settings:', error);
+      }
+    };
+
+    loadSettings();
+  }, []);
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md w-full">
@@ -39,11 +62,18 @@ export default function LoginPage({
             <div className="flex items-center gap-4 sm:gap-5">
               {/* Enhanced Logo */}
               <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden shadow-lg flex-shrink-0">
-                <img src={logo} alt="AGRIVET" className="w-full h-full object-cover" />
+                <img 
+                  src={companyLogo || logo} 
+                  alt="Company Logo" 
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    e.currentTarget.src = logo;
+                  }}
+                />
               </div>
               <div className="text-left">
-                <div className="text-red-500 text-lg sm:text-xl font-serif italic tracking-wide">Tiongson</div>
-                <div className="text-green-700 text-2xl sm:text-3xl font-bold tracking-wider">AGRIVET</div>
+                <div className="text-red-500 text-lg sm:text-xl font-serif italic tracking-wide">{companyName}</div>
+                <div className="text-green-700 text-2xl sm:text-3xl font-bold tracking-wider">{tagline}</div>
                 <div className="text-gray-500 text-xs sm:text-sm font-medium tracking-widest uppercase">Agricultural Supplies</div>
               </div>
             </div>

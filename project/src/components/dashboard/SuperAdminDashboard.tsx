@@ -6,9 +6,14 @@ import { CustomUser } from '../../lib/customAuth';
 // Import all admin components for super admin access
 import Overview from '../dashboard/Overview';
 import AllSalesRecords from '../sales/AllSalesRecords';
-import SalesDashboard from '../sales/SalesMonitoring';
+// import SalesDashboard from '../sales/SalesMonitoring'; // Hidden
 import DailySalesSummary from '../sales/DailySalesSummary';
 import ProductSalesReport from '../sales/ProductSalesReport';
+// import SalesIncomeSummary from '../finance/Salesincomesummary';
+import CashflowOverview from '../finance/Cashflowoverview';
+// import Reportsexports from '../finance/Reportsexports';
+import Expenses from '../finance/Expenses';
+// import Financedashboard from '../finance/Financedashboard';
 import InventoryManagement from '../inventory/InventoryManagement';
 // import AttendanceTimesheet from '../staff/AttendanceTimesheet';
 // import RolesPermissions from '../staff/RolesPermissions';
@@ -19,9 +24,9 @@ import PromotionsManagement from '../marketing/PromotionsManagement';
 // import CampaignManagement from '../marketing/CampaignManagement';
 import InsightsAnalytics from '../marketing/InsightsAnalytics';
 // import TemplateManagement from '../marketing/TemplateManagement';
-import ClientNotifications from '../marketing/ClientNotifications';
+// import ClientNotifications from '../marketing/ClientNotifications';
 import FacebookIntegration from '../marketing/FacebookIntegration';
-import EventCenter from '../reports/EventCenter';
+// import EventCenter from '../reports/EventCenter';
 import ReportsAnalytics from '../reports/ReportsAnalytics';
 import SettingsPage from '../settings/SettingsPage';
 import LowStockAlerts from '../inventory/LowStockAlerts';
@@ -41,7 +46,7 @@ import AttendanceDashboard from '../hr/AttendanceDashboard';
 import LeaveManagement from '../hr/LeaveManagement';
 // import HRAnalytics from '../hr/HRAnalytics';
 import PayrollCompensation from '../hr/PayrollCompensation';
-import HRDashboard from '../hr/HRDashboard';
+// import HRDashboard from '../hr/HRDashboard';
 interface SuperAdminDashboardProps {
   user: CustomUser;
   onLogout: () => void;
@@ -56,12 +61,24 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, onLogou
         return <Overview />;
       case 'sales-records':
         return <AllSalesRecords />;
-      case 'sales-monitoring':
-        return <SalesDashboard />;
+      // case 'sales-monitoring': // Hidden
+      //   return <SalesDashboard />;
       case 'daily-sales':
         return <DailySalesSummary />;
       case 'product-sales':
         return <ProductSalesReport />;
+
+      // case 'sales-income':
+      //   return <SalesIncomeSummary />;
+      case 'cash-flow':
+        return <CashflowOverview />;
+      // case 'financial-reports':
+      //   return <Reportsexports />;
+      case 'expenses':
+        return <Expenses />;
+      // case 'finance-dashboard':
+      //   return <Financedashboard />;
+
       case 'inventory-management':
       case 'all-products':
         return <InventoryManagement />;
@@ -116,23 +133,21 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, onLogou
           return <InsightsAnalytics />;
           // case 'template-management':
           //   return <TemplateManagement />;
-        case 'client-notifications':
-          return <ClientNotifications />;
+        // case 'client-notifications':
+        //   return <ClientNotifications />;
         case 'facebook-integration':
           return <FacebookIntegration />;
 
       case 'reports':
         return <ReportsAnalytics />;
-      case 'event-center':
-        return <EventCenter />;
       case 'settings':
         return <SettingsPage />;
       
       // HR Section (Simplified)
       // case 'hr':
       //   return <HRDashboard />;
-      case 'hr-dashboard':
-        return <HRDashboard />;
+      // case 'hr-dashboard':
+      //   return <HRDashboard />;
       case 'attendance-dashboard':
         return <AttendanceDashboard />;
       case 'leave-management':
@@ -179,30 +194,7 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, onLogou
       // New menu items from the updated sidebar
       case 'sales-pos':
         return <SalesDashboard />; // Use SalesDashboard for Sales & POS
-      case 'exports':
-        return (
-          <div className="p-6">
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
-              <h2 className="text-2xl font-bold text-gray-800 mb-4">Exports & Reports</h2>
-              <p className="text-gray-600">Export data and generate reports</p>
-              <div className="mt-4 inline-flex items-center px-4 py-2 bg-blue-100 text-blue-800 rounded-lg">
-                <span className="text-sm">📊 Export Tools</span>
-              </div>
-            </div>
-          </div>
-        );
-      case 'claims':
-        return (
-          <div className="p-6">
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
-              <h2 className="text-2xl font-bold text-gray-800 mb-4">Claims Management</h2>
-              <p className="text-gray-600">Manage insurance claims and reimbursements</p>
-              <div className="mt-4 inline-flex items-center px-4 py-2 bg-green-100 text-green-800 rounded-lg">
-                <span className="text-sm">📋 Claims System</span>
-              </div>
-            </div>
-          </div>
-        );
+      
       
       default:
         return (

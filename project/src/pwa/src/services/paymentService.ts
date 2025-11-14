@@ -1,5 +1,6 @@
 import { PaymentMethod, PaymentTransaction, Payment } from '../types'
 import { supabase } from './supabase'
+import { getManilaTimestamp } from '../utils/dateTime'
 
 interface PaymentServiceConfig {
   supabaseUrl: string
@@ -123,7 +124,7 @@ class PaymentService {
         processing_fee: processingFee,
         notes: notes || null,
         processed_by: processedBy,
-        created_at: new Date().toISOString()
+        created_at: getManilaTimestamp()
       }
 
       const { data: payment, error: paymentError } = await supabase
@@ -195,7 +196,7 @@ class PaymentService {
         status: 'pending',
         reference_number: referenceNumber,
         gateway_response: gatewayResponse || null,
-        created_at: new Date().toISOString()
+        created_at: getManilaTimestamp()
       }
 
       const { data: transaction, error: transactionError } = await supabase
@@ -248,7 +249,7 @@ class PaymentService {
 
       const updateData: any = {
         status,
-        updated_at: new Date().toISOString()
+        updated_at: getManilaTimestamp()
       }
 
       if (gatewayStatus) {
@@ -256,7 +257,7 @@ class PaymentService {
       }
 
       if (status === 'completed') {
-        updateData.completed_at = new Date().toISOString()
+        updateData.completed_at = getManilaTimestamp()
       }
 
       const { error } = await supabase
@@ -395,7 +396,7 @@ class PaymentService {
         processing_fee: 0, // No processing fee for cash
         notes: 'Cash payment at pickup',
         processed_by: processedBy, // null for customer-initiated payments
-        created_at: new Date().toISOString()
+        created_at: getManilaTimestamp()
       }
 
       const { data: payment, error: paymentError } = await supabase
@@ -479,8 +480,8 @@ class PaymentService {
         processing_fee: processingFee,
         notes: `GCash payment verified by staff. Reference: ${referenceNumber}`,
         processed_by: processedBy,
-        completed_at: new Date().toISOString(),
-        created_at: new Date().toISOString()
+        completed_at: getManilaTimestamp(),
+        created_at: getManilaTimestamp()
       }
 
       console.log('📝 Creating payment record...')
@@ -514,10 +515,10 @@ class PaymentService {
         reference_number: referenceNumber,
         gateway_response: {
           verified_by: processedBy,
-          verified_at: new Date().toISOString(),
+          verified_at: getManilaTimestamp(),
           verification_method: 'manual'
         },
-        created_at: new Date().toISOString()
+        created_at: getManilaTimestamp()
       }
 
       console.log('📝 Creating transaction record...')

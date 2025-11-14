@@ -1,6 +1,8 @@
 import { supabase } from './supabase';
 import bcrypt from 'bcryptjs';
 import { posSessionService } from './posSessionService';
+import { mfaService } from './mfaService';
+import { activityLogger } from './activityLogger';
 
 // Custom user interface based on your actual users table schema
 export interface CustomUser {
@@ -71,6 +73,7 @@ export const SYSTEM_ROLES = {
   MARKETING_STAFF: 'marketing-staff',
   CASHIER: 'cashier',
   INVENTORY_CLERK: 'inventory-clerk',
+  FINANCE_STAFF: 'finance-staff',
   USER: 'user', // Default role for general users
 } as const;
 
@@ -121,6 +124,11 @@ export const ROLE_SIDEBAR_CONFIG = {
       'inventory-management', 'all-products', 'categories', 'low-stock',
     ],
   },
+  [SYSTEM_ROLES.FINANCE_STAFF]: {
+    sections: [
+      'finance', 'finance-dashboard', 'sales-income', 'expenses', 'cash-flow', 'financial-reports',
+    ],
+  },
   [SYSTEM_ROLES.USER]: { // Default for basic users
     sections: [
       'overview',
@@ -147,7 +155,9 @@ class CustomAuthService {
   }
 
   // Authenticate user with email and password against the 'users' table
-  public async signInWithPassword(email: string, password: string): Promise<CustomUser> {
+  // Returns CustomUser if login successful and MFA not required
+  // Throws MFARequiredError if MFA is required (check error.requiresMFA)
+  public async signInWithPassword(email: string, password: string): Promise<CustomUser | { requiresMFA: true; userId: string; userEmail: string; userName: string; userRole: string }> {
     try {
       // 1. Fetch user from the 'users' table
       console.log('🔍 Searching for user with email:', email);
@@ -163,6 +173,8 @@ class CustomAuthService {
 
       if (basicUserError || !basicUserData) {
         console.log('❌ User not found in basic query:', basicUserError);
+        // Log failed login attempt (user not found)
+        await activityLogger.logLoginFailure(email, 'User not found');
         throw new Error('Invalid credentials or user not found.');
       }
 
@@ -199,12 +211,16 @@ class CustomAuthService {
 
       // 2. Check if account is locked
       if (finalUserData.locked_until && new Date(finalUserData.locked_until) > new Date()) {
+        // Log failed login attempt (account locked)
+        await activityLogger.logLoginFailure(email, 'Account is temporarily locked');
         throw new Error('Account is temporarily locked due to too many failed login attempts.');
       }
 
       // 3. Compare provided password with hashed password
       if (!finalUserData.password_hash) {
         console.log('❌ No password hash found for user');
+        // Log failed login attempt (account not set up)
+        await activityLogger.logLoginFailure(email, 'Account not properly set up');
         throw new Error('Account not properly set up. Please contact support.');
       }
 
@@ -222,23 +238,55 @@ class CustomAuthService {
         console.log('❌ Password does not match');
         // Increment failed login attempts
         await this.incrementFailedLoginAttempts(finalUserData.id);
+        
+        // Log failed login attempt
+        await activityLogger.logLoginFailure(email, 'Invalid password');
+        
         throw new Error('Invalid credentials.');
       }
 
       // 4. Check account status and verification
       if (finalUserData.account_status !== 'active' || !finalUserData.is_active) {
+        // Log failed login attempt (account not active)
+        await activityLogger.logLoginFailure(email, 'Account is not active');
         throw new Error('Account is not active. Please contact support.');
       }
 
       if (!finalUserData.email_verified) {
+        // Log failed login attempt (email not verified)
+        await activityLogger.logLoginFailure(email, 'Email not verified');
         throw new Error('Please verify your email before logging in.');
       }
 
       // 5. Reset failed login attempts on successful login
       await this.resetFailedLoginAttempts(finalUserData.id);
 
-      // 6. Construct CustomUser object
+      // 6. Check MFA requirement BEFORE creating session
       const userRole = finalUserData.user_roles?.[0]?.roles; // Handle case where user_roles might be null/undefined
+      const roleName = userRole?.name || finalUserData.role || 'user';
+      
+      // Check if MFA is required for this user's role
+      const mfaRequired = await mfaService.isMFARequired(roleName);
+      
+      if (mfaRequired) {
+        // Check if device is verified
+        const deviceFingerprint = mfaService.generateDeviceFingerprint();
+        const isDeviceVerified = await mfaService.isDeviceVerified(finalUserData.id, deviceFingerprint);
+        
+        if (!isDeviceVerified) {
+          // MFA required - return special response
+          console.log('🔐 MFA required for user:', finalUserData.email);
+          return {
+            requiresMFA: true,
+            userId: finalUserData.id,
+            userEmail: finalUserData.email,
+            userName: `${finalUserData.first_name} ${finalUserData.last_name}`,
+            userRole: roleName
+          };
+        }
+      }
+
+      // 7. Construct CustomUser object (MFA not required or device verified)
       
       // If no role found, create a default role structure
       if (!userRole) {
@@ -293,12 +341,18 @@ class CustomAuthService {
 
         this.setCurrentUser(customUser);
 
-        // 7. Create session and JWT token
-        const session = await this.createSession(customUser.id);
-        this.currentSession = session;
+      // 7. Create session and JWT token
+      // Determine login method and MFA usage
+      const loginMethod: 'password' | 'mfa' | 'sso' = 'password'; // TODO: Detect actual login method
+      const mfaUsed = customUser.mfa_enabled || false; // TODO: Check if MFA was actually used
+      const session = await this.createSession(customUser.id, loginMethod, mfaUsed);
+      this.currentSession = session;
 
         // 8. Update last login and activity
         await this.updateLastLogin(customUser.id);
+
+        // 8.5. Log successful login
+        await activityLogger.logLoginSuccess(loginMethod, mfaUsed);
 
         // 9. Create POS session if user is a cashier
         if (defaultRole.name === 'cashier' && customUser.branch_id) {
@@ -387,16 +441,49 @@ class CustomAuthService {
         sidebar_config: sidebarConfig,
       };
 
+      // 7. Check device access for cashier role BEFORE creating session
+      // This ensures unauthorized devices cannot create a session
+      if (userRole.name === 'cashier' && customUser.branch_id) {
+        try {
+          const { posDeviceAccessService } = await import('../POS/services/posDeviceAccessService');
+          const deviceAccessResult = await posDeviceAccessService.checkDeviceAccessForLogin(
+            customUser.id,
+            customUser.branch_id,
+            userRole.name
+          );
+
+          if (!deviceAccessResult.allowed) {
+            // Log failed login attempt (unauthorized device)
+            await activityLogger.logLoginFailure(customUser.email, deviceAccessResult.reason || 'Unauthorized device');
+            throw new Error(deviceAccessResult.reason || 'Unauthorized device. This device is not registered for POS access.');
+          }
+        } catch (error: any) {
+          // If it's our custom error, throw it as-is (don't create session)
+          if (error.message && error.message.includes('Unauthorized device')) {
+            // Error already logged above, just re-throw
+            throw error;
+          }
+          // For other errors, log but don't block login (fallback behavior)
+          console.error('⚠️ Error checking device access during login:', error);
+        }
+      }
+
       this.setCurrentUser(customUser);
 
-      // 7. Create session and JWT token
-      const session = await this.createSession(customUser.id);
+      // 8. Create session and JWT token (only after device verification passes)
+      // Determine login method and MFA usage
+      const loginMethod: 'password' | 'mfa' | 'sso' = 'password'; // TODO: Detect actual login method
+      const mfaUsed = customUser.mfa_enabled || false; // TODO: Check if MFA was actually used
+      const session = await this.createSession(customUser.id, loginMethod, mfaUsed);
       this.currentSession = session;
 
-      // 8. Update last login and activity
+      // 10. Update last login and activity
       await this.updateLastLogin(customUser.id);
 
-      // 9. Create POS session if user is a cashier
+      // 10.5. Log successful login
+      await activityLogger.logLoginSuccess(loginMethod, mfaUsed);
+
+      // 11. Create POS session if user is a cashier
       if (userRole.name === 'cashier' && customUser.branch_id) {
         try {
           console.log('🔄 [POS Session] Validating POS session creation for cashier:', customUser.id);
@@ -451,24 +538,231 @@ class CustomAuthService {
     }
   }
 
-  // Create a new session for the user
-  private async createSession(userId: string): Promise<UserSession> {
+  // Helper function to detect device information
+  private getDeviceInfo(): any {
+    const userAgent = navigator.userAgent;
+    const ua = userAgent.toLowerCase();
+
+    // Detect device type
+    let deviceType: 'desktop' | 'mobile' | 'tablet' = 'desktop';
+    if (ua.includes('mobile') || ua.includes('android') || ua.includes('iphone')) {
+      deviceType = 'mobile';
+    } else if (ua.includes('tablet') || ua.includes('ipad')) {
+      deviceType = 'tablet';
+    }
+
+    // Detect browser
+    let browser = 'Unknown Browser';
+    let browserVersion = '';
+    if (ua.includes('chrome') && !ua.includes('edg')) {
+      const match = userAgent.match(/Chrome\/(\d+)/);
+      browserVersion = match ? match[1] : '';
+      browser = `Chrome ${browserVersion}`;
+    } else if (ua.includes('firefox')) {
+      const match = userAgent.match(/Firefox\/(\d+)/);
+      browserVersion = match ? match[1] : '';
+      browser = `Firefox ${browserVersion}`;
+    } else if (ua.includes('safari') && !ua.includes('chrome')) {
+      const match = userAgent.match(/Version\/(\d+)/);
+      browserVersion = match ? match[1] : '';
+      browser = `Safari ${browserVersion}`;
+    } else if (ua.includes('edg')) {
+      const match = userAgent.match(/Edg\/(\d+)/);
+      browserVersion = match ? match[1] : '';
+      browser = `Edge ${browserVersion}`;
+    }
+
+    // Detect operating system
+    let operatingSystem = 'Unknown OS';
+    if (ua.includes('mac os x')) {
+      const match = userAgent.match(/Mac OS X (\d+[._]\d+[._]\d+)/);
+      operatingSystem = match ? `macOS ${match[1].replace(/_/g, '.')}` : 'macOS';
+    } else if (ua.includes('windows nt')) {
+      const winVersion: Record<string, string> = {
+        '10.0': 'Windows 10',
+        '11.0': 'Windows 11',
+      };
+      const match = userAgent.match(/Windows NT ([\d.]+)/);
+      operatingSystem = match ? (winVersion[match[1]] || `Windows ${match[1]}`) : 'Windows';
+    } else if (ua.includes('linux')) {
+      operatingSystem = 'Linux';
+    } else if (ua.includes('android')) {
+      const match = userAgent.match(/Android ([\d.]+)/);
+      operatingSystem = match ? `Android ${match[1]}` : 'Android';
+    } else if (ua.includes('iphone')) {
+      const match = userAgent.match(/OS ([\d_]+)/);
+      operatingSystem = match ? `iOS ${match[1].replace(/_/g, '.')}` : 'iOS';
+    } else if (ua.includes('ipad')) {
+      const match = userAgent.match(/OS ([\d_]+)/);
+      operatingSystem = match ? `iPadOS ${match[1].replace(/_/g, '.')}` : 'iPadOS';
+    }
+
+    // Detect device name (best guess)
+    let deviceName = 'Unknown Device';
+    if (ua.includes('macintosh')) deviceName = 'MacBook';
+    else if (ua.includes('iphone')) deviceName = 'iPhone';
+    else if (ua.includes('ipad')) deviceName = 'iPad';
+    else if (ua.includes('android')) deviceName = 'Android Device';
+    else if (ua.includes('windows')) deviceName = 'Windows PC';
+    else if (ua.includes('linux')) deviceName = 'Linux PC';
+
+    return {
+      deviceType,
+      deviceName,
+      browser,
+      operatingSystem,
+      screenResolution: typeof window !== 'undefined' 
+        ? `${window.screen.width}x${window.screen.height}` 
+        : 'Unknown',
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
+    };
+  }
+
+  // Helper function to get location info (client-side can only get IP, location requires backend API)
+  private async getLocationInfo(ipAddress?: string): Promise<any> {
+    try {
+      // Try to get IP from a public API if not provided
+      if (!ipAddress) {
+        const ipResponse = await fetch('https://api.ipify.org?format=json');
+        const ipData = await ipResponse.json();
+        ipAddress = ipData.ip;
+      }
+
+      // Try to get location from IP (using free API)
+      try {
+        const locationResponse = await fetch(`https://ipapi.co/${ipAddress}/json/`);
+        const locationData = await locationResponse.json();
+        
+        return {
+          ip: ipAddress,
+          city: locationData.city || null,
+          region: locationData.region || null,
+          country: locationData.country_name || 'Unknown',
+          countryCode: locationData.country_code || null,
+          latitude: locationData.latitude || null,
+          longitude: locationData.longitude || null,
+          isp: locationData.org || null,
+          timezone: locationData.timezone || null
+        };
+      } catch (locationError) {
+        // Fallback if location API fails
+        return {
+          ip: ipAddress,
+          country: 'Unknown'
+        };
+      }
+    } catch (error) {
+      console.error('Error getting location info:', error);
+      return {
+        ip: ipAddress || 'Unknown',
+        country: 'Unknown'
+      };
+    }
+  }
+
+  // Calculate risk score based on login method, device, location, etc.
+  private calculateRiskScore(
+    loginMethod: 'password' | 'mfa' | 'sso',
+    mfaUsed: boolean,
+    deviceInfo: any,
+    locationInfo: any,
+    isNewDevice: boolean = false
+  ): 'low' | 'medium' | 'high' {
+    let riskPoints = 0;
+
+    // MFA reduces risk
+    if (mfaUsed || loginMethod === 'mfa') {
+      riskPoints -= 2;
+    } else if (loginMethod === 'sso') {
+      riskPoints -= 1;
+    }
+
+    // Password-only increases risk
+    if (loginMethod === 'password' && !mfaUsed) {
+      riskPoints += 1;
+    }
+
+    // New/unrecognized device increases risk
+    if (isNewDevice) {
+      riskPoints += 2;
+    }
+
+    // Unusual location (you could check against user's typical locations)
+    // For now, we'll keep it simple
+
+    // Determine final score
+    if (riskPoints <= 0) return 'low';
+    if (riskPoints <= 2) return 'medium';
+    return 'high';
+  }
+
+  // Create a new session for the user and record it in user_sessions table
+  public async createSession(
+    userId: string, 
+    loginMethod: 'password' | 'mfa' | 'sso' = 'password',
+    mfaUsed: boolean = false
+  ): Promise<UserSession> {
     try {
       const sessionId = crypto.randomUUID();
+      const sessionToken = crypto.randomUUID();
       const token = this.generateJWT(userId, sessionId);
       const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+      const now = new Date().toISOString();
 
-      // Store session in database (you might want to create a sessions table)
-      const { error } = await supabase
+      // Get device and location information
+      const deviceInfo = this.getDeviceInfo();
+      const locationInfo = await this.getLocationInfo();
+      
+      // Calculate risk score
+      const riskScore = this.calculateRiskScore(
+        loginMethod,
+        mfaUsed,
+        deviceInfo,
+        locationInfo,
+        false // TODO: Check if device is new
+      );
+
+      // Create session record in user_sessions table
+      const { data: sessionData, error: sessionError } = await supabase
+        .from('user_sessions')
+        .insert({
+          id: sessionId,
+          user_id: userId,
+          session_token: sessionToken,
+          ip_address: locationInfo.ip || null,
+          user_agent: navigator.userAgent,
+          device_info: deviceInfo,
+          location_info: locationInfo,
+          current_page: typeof window !== 'undefined' ? window.location.pathname : null,
+          status: 'active',
+          last_activity: now,
+          created_at: now,
+          expires_at: expiresAt.toISOString(),
+          is_active: true,
+          login_method: loginMethod,
+          mfa_used: mfaUsed,
+          risk_score: riskScore
+        })
+        .select()
+        .single();
+
+      if (sessionError) {
+        console.error('Error creating session record:', sessionError);
+        // Don't throw error, but log it - session might still work
+      }
+
+      // Update user's current session ID
+      const { error: userUpdateError } = await supabase
         .from('users')
         .update({
           current_session_id: sessionId,
-          last_activity: new Date().toISOString(),
+          last_activity: now,
           status: 'online'
         })
         .eq('id', userId);
 
-      if (error) {
+      if (userUpdateError) {
+        console.error('Error updating user session:', userUpdateError);
         throw new Error('Failed to create session');
       }
 
@@ -477,8 +771,8 @@ class CustomAuthService {
         userId: userId,
         token: token,
         expiresAt: expiresAt.toISOString(),
-        createdAt: new Date().toISOString(),
-        lastActivity: new Date().toISOString(),
+        createdAt: now,
+        lastActivity: now,
         isActive: true
       };
 
@@ -562,6 +856,35 @@ class CustomAuthService {
       if (!user) {
         this.clearSession();
         return null;
+      }
+
+      // Check device access for cashier role (if attendance device access is enabled)
+      const userRoleName = user.role_name || user.role || 'user';
+      if (userRoleName === 'cashier' && user.branch_id) {
+        try {
+          const { posDeviceAccessService } = await import('../POS/services/posDeviceAccessService');
+          const deviceAccessResult = await posDeviceAccessService.checkDeviceAccessForLogin(
+            user.id,
+            user.branch_id,
+            userRoleName
+          );
+
+          if (!deviceAccessResult.allowed) {
+            // Device not authorized - clear session and return null
+            console.warn('⚠️ Device access denied during session restoration:', deviceAccessResult.reason);
+            this.clearSession();
+            return null;
+          }
+        } catch (error: any) {
+          // If it's our custom error, clear session
+          if (error.message && error.message.includes('Unauthorized device')) {
+            console.warn('⚠️ Unauthorized device detected during session restoration');
+            this.clearSession();
+            return null;
+          }
+          // For other errors, log but allow session restoration (fallback behavior)
+          console.error('⚠️ Error checking device access during session restoration:', error);
+        }
       }
 
       this.setCurrentUser(user);
@@ -698,19 +1021,85 @@ class CustomAuthService {
     }
   }
 
+  // Update session activity (call this periodically or on user actions)
+  public async updateSessionActivity(): Promise<void> {
+    try {
+      if (!this.currentUser || !this.currentSession) {
+        return;
+      }
+
+      const now = new Date().toISOString();
+
+      // Update session last_activity
+      const { error: sessionError } = await supabase
+        .from('user_sessions')
+        .update({
+          last_activity: now,
+          current_page: typeof window !== 'undefined' ? window.location.pathname : null,
+          updated_at: now
+        })
+        .eq('id', this.currentSession.id)
+        .eq('is_active', true);
+
+      if (sessionError) {
+        console.error('Error updating session activity:', sessionError);
+      }
+
+      // Update user last_activity
+      await supabase
+        .from('users')
+        .update({
+          last_activity: now
+        })
+        .eq('id', this.currentUser.id);
+    } catch (error) {
+      console.error('Error updating session activity:', error);
+    }
+  }
+
   // Logout user
   public async signOut(): Promise<void> {
     try {
+      const now = new Date().toISOString();
+
+      // Update user_sessions table - set logout_time and mark as inactive
+      if (this.currentSession) {
+        const { error: sessionError } = await supabase
+          .from('user_sessions')
+          .update({
+            is_active: false,
+            status: 'inactive',
+            logout_time: now,
+            updated_at: now
+          })
+          .eq('id', this.currentSession.id);
+
+        if (sessionError) {
+          console.error('Error updating session on logout:', sessionError);
+        }
+      }
+
       // Update user status to offline before signing out
       if (this.currentUser) {
         await supabase
           .from('users')
           .update({ 
             status: 'offline',
-            last_activity: new Date().toISOString(),
+            last_activity: now,
             current_session_id: null
           })
           .eq('id', this.currentUser.id);
+
+        // Log logout activity
+        await activityLogger.logActivity({
+          activityType: 'view', // Using 'view' as there's no 'logout' action type in the schema
+          description: 'User logged out',
+          module: 'Dashboard',
+          metadata: {
+            action: 'logout',
+            session_id: this.currentSession?.id
+          }
+        });
       }
 
       this.clearSession();
@@ -726,6 +1115,8 @@ class CustomAuthService {
   private clearSession(): void {
     localStorage.removeItem(this.SESSION_STORAGE_KEY);
     localStorage.removeItem(this.TOKEN_STORAGE_KEY);
+    this.currentUser = null;
+    this.currentSession = null;
   }
 
   // Update last login timestamp in the users table

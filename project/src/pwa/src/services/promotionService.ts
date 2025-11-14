@@ -237,6 +237,7 @@ class PromotionService {
       let query = supabase
         .from('promotions')
         .select('*')
+        .eq('show_on_pwa', true)
         .eq('is_active', true)
         .gte('valid_until', new Date().toISOString())
         .lte('valid_from', new Date().toISOString())

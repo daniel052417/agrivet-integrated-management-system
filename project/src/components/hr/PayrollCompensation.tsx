@@ -5,7 +5,7 @@ import {
   AlertCircle, RefreshCw, Building, Mail, Phone
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { settingsService } from '../../lib/settingsService';
+import { usePayrollCompensationData } from '../../hooks/usePayrollCompensationData';
 interface PayrollPeriod {
   id: string;
   name: string;
@@ -76,10 +76,6 @@ interface Employee {
 }
 
 const PayrollCompensation: React.FC = () => {
-  const [payrollPeriods, setPayrollPeriods] = useState<PayrollPeriod[]>([]);
-  const [payrollRecords, setPayrollRecords] = useState<PayrollRecord[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'periods' | 'records'>('periods');
   const [selectedPeriod, setSelectedPeriod] = useState<string>('');
@@ -90,10 +86,33 @@ const PayrollCompensation: React.FC = () => {
   const [showNewPeriodModal, setShowNewPeriodModal] = useState(false);
   const [showGeneratePayrollModal, setShowGeneratePayrollModal] = useState(false);
   const [showPayslipModal, setShowPayslipModal] = useState(false);
+  const [showBulkModal, setShowBulkModal] = useState(false);
+  const [bulkScope, setBulkScope] = useState<'all' | 'branch' | 'individual'>('all');
+  const [bulkBranchId, setBulkBranchId] = useState<string>('all');
+  const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
   const [showAdjustmentModal, setShowAdjustmentModal] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState<PayrollRecord | null>(null);
-  const [branches, setBranches] = useState<Array<{ id: string; name: string }>>([]);
-  const [hrSettings, setHrSettings] = useState<any>(null);
+
+  // Data fetching with RBAC filtering - uses hook
+  const {
+    payrollPeriods,
+    payrollRecords: hookPayrollRecords,
+    branches,
+    hrSettings,
+    loading,
+    error,
+    refreshPeriods,
+    refreshRecords,
+    loadBranches,
+    loadHRSettings
+  } = usePayrollCompensationData();
+
+  const [payrollRecords, setPayrollRecords] = useState<PayrollRecord[]>([]);
+
+  // Sync hook data to local state for compatibility
+  useEffect(() => {
+    setPayrollRecords(hookPayrollRecords);
+  }, [hookPayrollRecords]);
   // Period form
   const [periodForm, setPeriodForm] = useState({
     name: '',
@@ -101,6 +120,7 @@ const PayrollCompensation: React.FC = () => {
     end_date: '',
     period_type: 'monthly' as 'monthly' | 'semi-monthly'
   });
+
 
   // Adjustment form
   const [adjustmentForm, setAdjustmentForm] = useState({
@@ -110,83 +130,10 @@ const PayrollCompensation: React.FC = () => {
   });
 
   useEffect(() => {
-    loadPayrollData();
-    loadBranches();
-    
-  }, []);
-  useEffect(() => {
-    loadPayrollData();
-    loadBranches();
-    loadHRSettings(); // Add this line
-  }, []);
-  useEffect(() => {
     if (selectedPeriod) {
-      loadPayrollRecords(selectedPeriod);
+      refreshRecords(selectedPeriod);
     }
-  }, [selectedPeriod]);
-
-    const loadHRSettings = async () => {
-  try {
-    const settings = await settingsService.getHRSettings();
-    setHrSettings(settings);
-    console.log('💰 Payroll HR Settings loaded:', settings);
-  } catch (err: any) {
-    console.error('Error loading HR settings:', err);
-  }
-};
-
-  const loadBranches = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('branches')
-        .select('id, name')
-        .eq('is_active', true)
-        .order('name');
-      
-      if (error) throw error;
-      setBranches(data || []);
-    } catch (err: any) {
-      console.error('Error loading branches:', err);
-    }
-  };
-
-  const loadPayrollData = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const { data, error: fetchError } = await supabase
-        .from('payroll_periods')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (fetchError) throw fetchError;
-      setPayrollPeriods(data || []);
-    } catch (err: any) {
-      console.error('Error loading payroll data:', err);
-      setError(err.message || 'Failed to load payroll data');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadPayrollRecords = async (periodId: string) => {
-    try {
-      setLoading(true);
-      const { data, error } = await supabase
-        .rpc('get_payroll_records_with_attendance', {
-          p_period_id: periodId
-        });
-
-      if (error) throw error;
-      setPayrollRecords(data || []);
-    } catch (err: any) {
-      console.error('Error loading payroll records:', err);
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [selectedPeriod, refreshRecords]);
 
   const computePayrollWithSettings = (record: any, attendance: any) => {
   let grossPay = record.base_salary || 0;
@@ -281,7 +228,7 @@ const computePagIBIG = (income: number) => {
         end_date: '',
         period_type: 'monthly'
       });
-      await loadPayrollData();
+      await refreshPeriods();
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
       console.error('Error creating period:', err);
@@ -305,7 +252,7 @@ const computePagIBIG = (income: number) => {
       if (generateError) throw generateError;
 
       setSuccess(`Payroll generated for ${data.total_records} employees!`);
-      await loadPayrollRecords(periodId);
+      await refreshRecords(periodId);
       setShowGeneratePayrollModal(false);
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
@@ -345,7 +292,7 @@ const computePagIBIG = (income: number) => {
         description: '',
         amount: 0
       });
-      await loadPayrollRecords(selectedRecord.period_id);
+      await refreshRecords(selectedRecord.period_id);
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
       console.error('Error adding adjustment:', err);
@@ -376,7 +323,7 @@ const computePagIBIG = (income: number) => {
       if (error) throw error;
 
       setSuccess('Payroll approved successfully!');
-      await loadPayrollRecords(selectedPeriod);
+      await refreshRecords(selectedPeriod);
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
       console.error('Error approving payroll:', err);
@@ -397,7 +344,7 @@ const computePagIBIG = (income: number) => {
       if (error) throw error;
 
       setSuccess('Payroll marked as paid!');
-      await loadPayrollRecords(selectedPeriod);
+      await refreshRecords(selectedPeriod);
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
       console.error('Error marking as paid:', err);
@@ -584,6 +531,129 @@ const computePagIBIG = (income: number) => {
     return Object.values(summary);
   };
 
+  // Bulk request helpers (placed after filteredRecords to avoid use-before-declaration)
+  const selectedBulkRecords = (() => {
+    if (!selectedPeriod) return [] as PayrollRecord[];
+    const base = filteredRecords.filter(r => r.status === 'approved');
+    if (bulkScope === 'all') return base;
+    if (bulkScope === 'branch') {
+      const branchFilter = bulkBranchId !== 'all' ? bulkBranchId : selectedBranch !== 'all' ? selectedBranch : 'all';
+      return branchFilter === 'all' ? base : base.filter(r => r.branch_id === branchFilter);
+    }
+    // individual selection
+    return base.filter(r => selectedEmployeeIds.includes(r.id));
+  })();
+
+  const bulkTotals = selectedBulkRecords.reduce(
+    (acc, r) => {
+      acc.employees += 1;
+      acc.gross += r.gross_pay;
+      acc.deductions += r.total_deductions;
+      acc.net += r.net_pay;
+      return acc;
+    },
+    { employees: 0, gross: 0, deductions: 0, net: 0 }
+  );
+
+  const handleToggleEmployee = (id: string) => {
+    setSelectedEmployeeIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
+  const handleCreateBulkRequest = async () => {
+    if (!selectedPeriod) return;
+    if (bulkTotals.employees === 0 || bulkTotals.net <= 0) {
+      setError('Please select at least one approved record with valid amounts.');
+      return;
+    }
+    try {
+      setLoading(true);
+      setError(null);
+      const scopeBranch = bulkScope === 'branch' ? (bulkBranchId !== 'all' ? bulkBranchId : (selectedBranch !== 'all' ? selectedBranch : null)) : null;
+      const { data: requestRows, error: reqErr } = await supabase
+        .from('payroll_requests')
+        .insert([
+          {
+            period_id: selectedPeriod,
+            scope: bulkScope,
+            branch_id: scopeBranch,
+            total_employees: bulkTotals.employees,
+            total_gross: bulkTotals.gross,
+            total_deductions: bulkTotals.deductions,
+            total_net: bulkTotals.net,
+            status: 'pending'
+          }
+        ])
+        .select();
+      if (reqErr) throw reqErr;
+      const request = requestRows?.[0];
+      if (!request) throw new Error('Failed to create payroll request.');
+
+      const items = selectedBulkRecords.map(r => ({
+        request_id: request.id,
+        payroll_record_id: r.id,
+        // Use the employee UUID (staff_id) instead of the human-readable employee code
+        employee_id: r.staff_id,
+        gross_pay: r.gross_pay,
+        total_deductions: r.total_deductions,
+        net_pay: r.net_pay,
+        status: 'pending'
+      }));
+      if (items.length > 0) {
+        const { error: itemsErr } = await supabase
+          .from('payroll_request_items')
+          .insert(items);
+        if (itemsErr) throw itemsErr;
+      }
+
+      setShowBulkModal(false);
+      setSelectedEmployeeIds([]);
+      setBulkScope('all');
+      setSuccess('Bulk payroll request created.');
+      setTimeout(() => setSuccess(null), 2500);
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || 'Failed to create bulk payroll request');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const downloadPayslip = (record: PayrollRecord) => {
+    const html = generatePayslipHTML(record);
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `payslip_${record.employee_id}.html`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportBranchSummaryCSV = () => {
+    const summary = selectedBranch === 'all' ? calculateBranchSummary() : calculateBranchSummary().filter(b => b.name === branches.find(br => br.id === selectedBranch)?.name);
+    if (summary.length === 0) return;
+    const headers = ['Branch','Employees','Total Net'];
+    const rows = summary.map(s => [s.name, String(s.employees), s.total.toFixed(2)]);
+    const csv = [headers.join(','), ...rows.map(r => r.map(c => `"${c}"`).join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = selectedBranch === 'all' ? 'branch_summary_all.csv' : `branch_summary_${branches.find(br => br.id === selectedBranch)?.name || 'branch'}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const printBranchSummary = () => {
+    const summary = selectedBranch === 'all' ? calculateBranchSummary() : calculateBranchSummary().filter(b => b.name === branches.find(br => br.id === selectedBranch)?.name);
+    const win = window.open('', '_blank');
+    if (!win) return;
+    const rows = summary.map(s => `<tr><td>${s.name}</td><td>${s.employees}</td><td>₱${s.total.toLocaleString('en-PH',{minimumFractionDigits:2})}</td></tr>`).join('');
+    win.document.write(`<!DOCTYPE html><html><head><title>Branch Summary</title><style>table{width:100%;border-collapse:collapse}th,td{border:1px solid #ddd;padding:8px;text-align:left}</style></head><body><h2>Branch Summary</h2><table><thead><tr><th>Branch</th><th>Employees</th><th>Total Net</th></tr></thead><tbody>${rows}</tbody></table></body></html>`);
+    win.document.close();
+    win.print();
+  };
+
   if (loading && payrollPeriods.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -593,7 +663,7 @@ const computePagIBIG = (income: number) => {
   }
 
   return (
-    <div className="payroll-compensation space-y-6">
+    <div className="payroll-compensation space-y-6 p-6">
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
@@ -608,6 +678,82 @@ const computePagIBIG = (income: number) => {
           <div className="flex">
             <AlertCircle className="w-5 h-5 text-red-400 mr-2" />
             <p className="text-red-700">{error}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Payroll Request Modal */}
+      {showBulkModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <h2 className="text-xl font-semibold text-gray-900">Bulk Payroll Request</h2>
+              <button onClick={() => setShowBulkModal(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Scope</label>
+                  <select value={bulkScope} onChange={e => setBulkScope(e.target.value as any)} className="w-full border border-gray-300 rounded-md px-3 py-2">
+                    <option value="all">All Approved (filtered)</option>
+                    <option value="branch">By Branch</option>
+                    <option value="individual">Individual Selection</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Branch</label>
+                  <select value={bulkBranchId} onChange={e => setBulkBranchId(e.target.value)} className="w-full border border-gray-300 rounded-md px-3 py-2" disabled={bulkScope !== 'branch'}>
+                    <option value="all">All Branches</option>
+                    {branches.map(b => (
+                      <option key={b.id} value={b.id}>{b.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="bg-gray-50 rounded-md p-3">
+                  <div className="text-sm text-gray-700">Summary</div>
+                  <div className="text-xs text-gray-500">Employees: {bulkTotals.employees}</div>
+                  <div className="text-xs text-gray-500">Gross: {formatCurrency(bulkTotals.gross)}</div>
+                  <div className="text-xs text-gray-500">Deductions: {formatCurrency(bulkTotals.deductions)}</div>
+                  <div className="text-sm font-semibold text-blue-700">Net: {formatCurrency(bulkTotals.net)}</div>
+                </div>
+              </div>
+
+              {bulkScope === 'individual' && (
+                <div className="border border-gray-200 rounded-md">
+                  <div className="px-4 py-2 border-b text-sm font-medium text-gray-700">Select Employees</div>
+                  <div className="max-h-64 overflow-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-2"></th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Employee</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Net Pay</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {filteredRecords.map(r => (
+                          <tr key={r.id}>
+                            <td className="px-4 py-2">
+                              <input type="checkbox" checked={selectedEmployeeIds.includes(r.id)} onChange={() => handleToggleEmployee(r.id)} />
+                            </td>
+                            <td className="px-4 py-2 text-sm text-gray-700">{r.staff_name} <span className="text-gray-400">({r.employee_id})</span></td>
+                            <td className="px-4 py-2 text-sm font-medium text-gray-900">{formatCurrency(r.net_pay)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex gap-3 justify-end pt-2">
+                <button onClick={() => setShowBulkModal(false)} className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50">Cancel</button>
+                <button onClick={handleCreateBulkRequest} disabled={bulkTotals.employees === 0 || bulkTotals.net <= 0} className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed">Create Request</button>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -787,6 +933,33 @@ const computePagIBIG = (income: number) => {
                 <Download className="w-4 h-4" />
                 <span>Export</span>
               </button>
+              <button
+                onClick={() => setShowBulkModal(true)}
+                disabled={!selectedPeriod || filteredRecords.length === 0}
+                className="flex items-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Bulk Payroll Request"
+              >
+                <Calculator className="w-4 h-4" />
+                <span>Bulk Request</span>
+              </button>
+              <button
+                onClick={exportBranchSummaryCSV}
+                disabled={!selectedPeriod}
+                className="flex items-center space-x-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
+                title="Export Branch Summary"
+              >
+                <Download className="w-4 h-4" />
+                <span>Branch CSV</span>
+              </button>
+              <button
+                onClick={printBranchSummary}
+                disabled={!selectedPeriod}
+                className="flex items-center space-x-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
+                title="Print Branch Summary"
+              >
+                <Printer className="w-4 h-4" />
+                <span>Print Branch</span>
+              </button>
             </div>
           </div>
 
@@ -890,6 +1063,13 @@ const computePagIBIG = (income: number) => {
                               title="View Payslip"
                             >
                               <Eye className="w-4 h-4" />
+                            </button>
+                            <button 
+                              onClick={() => downloadPayslip(record)}
+                              className="text-gray-600 hover:text-gray-900"
+                              title="Download Payslip"
+                            >
+                              <Download className="w-4 h-4" />
                             </button>
                             <button 
                               onClick={() => {

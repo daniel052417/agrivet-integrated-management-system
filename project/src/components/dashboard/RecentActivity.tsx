@@ -195,7 +195,7 @@ const RecentActivity: React.FC = () => {
           </div>
         </div>
 
-        <div className="space-y-4">
+        <div className="space-y-4 max-h-96 overflow-y-auto">
           {activities.map((activity) => (
             <div key={activity.id} className="flex items-start space-x-3">
               <div className="flex-shrink-0">

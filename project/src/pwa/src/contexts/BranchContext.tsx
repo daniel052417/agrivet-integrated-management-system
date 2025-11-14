@@ -239,11 +239,14 @@ export const BranchProvider: React.FC<BranchProviderProps> = ({ children }) => {
     if (!availability) return false
 
     const now = new Date()
-    const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase()
-    const currentTime = now.toLocaleTimeString('en-US', { 
-      hour12: false, 
-      hour: '2-digit', 
-      minute: '2-digit' 
+    const currentDay = now
+      .toLocaleDateString('en-PH', { weekday: 'long', timeZone: 'Asia/Manila' })
+      .toLowerCase()
+    const currentTime = now.toLocaleTimeString('en-PH', {
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: 'Asia/Manila'
     })
 
     const isTodayOpen = availability.operatingHours.days.includes(currentDay)

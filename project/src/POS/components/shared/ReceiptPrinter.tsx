@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Printer, Download } from 'lucide-react';
 import TouchButton from './TouchButton';
+import { settingsService } from '../../../lib/settingsService';
 
 interface ReceiptItem {
   name: string;
@@ -40,6 +41,31 @@ const ReceiptPrinter: React.FC<ReceiptPrinterProps> = ({
   onDownload,
   onClose,
 }) => {
+  const [companyLogo, setCompanyLogo] = useState<string | null>(null);
+  const [showLogoOnReceipt, setShowLogoOnReceipt] = useState(true);
+  const [receiptHeader, setReceiptHeader] = useState('Thank you for your purchase!');
+  const [receiptFooter, setReceiptFooter] = useState('Please keep this receipt for your records');
+  const [companyName, setCompanyName] = useState('TIONGSON AGRIVET');
+
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const settings = await settingsService.getAllSettings();
+        const general = settings.general || {};
+        
+        setCompanyLogo(general.companyLogo || settings.company_logo || null);
+        setShowLogoOnReceipt(general.showLogoOnReceipt ?? settings.show_logo_on_receipt ?? true);
+        setReceiptHeader(general.receiptHeader || settings.receipt_header || 'Thank you for your purchase!');
+        setReceiptFooter(general.receiptFooter || settings.receipt_footer || 'Please keep this receipt for your records');
+        setCompanyName(general.companyName || settings.company_name || 'TIONGSON AGRIVET');
+      } catch (error) {
+        console.error('Error loading receipt settings:', error);
+      }
+    };
+
+    loadSettings();
+  }, []);
+
   const formatCurrency = (amount: number) => {
     return `₱${amount.toFixed(2)}`;
   };
@@ -48,8 +74,23 @@ const ReceiptPrinter: React.FC<ReceiptPrinterProps> = ({
     <div className="bg-white rounded-xl shadow-lg p-6 max-w-md mx-auto">
       {/* Receipt Header */}
       <div className="text-center mb-6">
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">TIONGSON AGRIVET</h2>
-        <p className="text-sm text-gray-600">Point of Sale System</p>
+        {/* Company Logo */}
+        {showLogoOnReceipt && companyLogo && (
+          <div className="mb-3">
+            <img 
+              src={companyLogo} 
+              alt="Company Logo" 
+              className="h-16 mx-auto object-contain"
+              onError={(e) => {
+                // Hide logo if it fails to load
+                e.currentTarget.style.display = 'none';
+              }}
+            />
+          </div>
+        )}
+        
+        <h2 className="text-2xl font-bold text-gray-900 mb-2">{companyName}</h2>
+        <p className="text-sm text-gray-600">{receiptHeader}</p>
         <div className="mt-4 space-y-1 text-sm">
           <p>Receipt #: {receiptData.receiptNumber}</p>
           <p>Date: {receiptData.date}</p>
@@ -117,8 +158,7 @@ const ReceiptPrinter: React.FC<ReceiptPrinterProps> = ({
 
       {/* Footer */}
       <div className="text-center mt-6 pt-4 border-t border-gray-200">
-        <p className="text-xs text-gray-500 mb-2">Thank you for your business!</p>
-        <p className="text-xs text-gray-500">Please keep this receipt for your records</p>
+        <p className="text-xs text-gray-500 mb-2">{receiptFooter}</p>
       </div>
 
       {/* Action Buttons */}

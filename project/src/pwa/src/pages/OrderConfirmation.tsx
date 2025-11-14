@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { CheckCircle, Download, Home, ShoppingBag, Clock, MapPin, Phone } from 'lucide-react'
 import { useBranch } from '../contexts/BranchContext'
+import { formatManilaDateTime, formatManilaTime } from '../utils/dateTime'
 
 interface OrderDetails {
   orderId: string
@@ -102,11 +103,8 @@ const OrderConfirmation: React.FC = () => {
         orderNumber: order.order_number,
         status: order.status as 'pending' | 'confirmed' | 'ready' | 'completed',
         orderType: order.order_type as 'pickup' | 'delivery',
-        estimatedReadyTime: order.estimated_ready_time 
-          ? new Date(order.estimated_ready_time).toLocaleTimeString('en-US', {
-              hour: '2-digit',
-              minute: '2-digit'
-            })
+        estimatedReadyTime: order.estimated_ready_time
+          ? formatManilaTime(order.estimated_ready_time)
           : undefined,
         totalAmount: order.total_amount,
         paymentMethod: order.payment_method,
@@ -137,7 +135,7 @@ const OrderConfirmation: React.FC = () => {
           landmark: order.delivery_landmark,
           status: order.delivery_status as 'pending' | 'booked' | 'in_transit' | 'delivered' | 'failed'
         } : undefined,
-        createdAt: new Date(order.created_at).toLocaleString()
+        createdAt: formatManilaDateTime(order.created_at)
       }
       
       console.log('✅ OrderConfirmation: Transformed order details:', orderDetails)

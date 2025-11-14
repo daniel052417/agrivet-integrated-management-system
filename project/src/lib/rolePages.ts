@@ -11,6 +11,7 @@ import POSDashboard from '../components/dashboard/POSDashboard';
 import MarketingDashboard from '../components/dashboard/MarketingDashboard';
 import InventoryDashboard from '../components/dashboard/InventoryDashboard';
 import KioskDashboard from '../components/dashboard/KioskDashboard';
+import FinanceStaffDashboard from '../components/dashboard/FinanceStaffDashboard';
 import POSWrapper from '../POS/POSWrapper';
 
 export const ROLE_PAGES = {
@@ -21,6 +22,7 @@ export const ROLE_PAGES = {
   'marketing-staff': MarketingDashboard,
   'cashier': POSWrapper, // New comprehensive POS system with error handling
   'inventory-clerk': InventoryDashboard,
+  'finance-staff': FinanceStaffDashboard,
   'user': KioskDashboard, // Default fallback for basic users
 } as const;
 

@@ -358,7 +358,9 @@ export const CustomerProfile: React.FC = () => {
           <div className="bg-gray-50 p-4 rounded-lg">
             <p className="text-sm text-gray-600">Member Since</p>
             <p className="text-2xl font-bold text-gray-800">
-              {new Date(customer.registration_date).toLocaleDateString()}
+              {new Date(customer.registration_date).toLocaleDateString('en-PH', {
+                timeZone: 'Asia/Manila'
+              })}
             </p>
           </div>
         </div>

@@ -9,19 +9,21 @@ import {
   Plus, 
   Minus,
   Trash2,
-  Barcode,
   User,
   Receipt,
   Zap,
   Eye,
   Image as ImageIcon,
   Grid3X3,
-  List
+  List,
+  DollarSign,
+  Camera,
+  Upload,
+  ChevronRight
 } from 'lucide-react';
 import TouchButton from '../components/shared/TouchButton';
 import Modal from '../components/shared/Modal';
 import MobileBottomSheet from '../components/shared/MobileBottomSheet';
-import FloatingActionButton from '../components/shared/FloatingActionButton';
 import { ProductVariant, CartItem, Customer } from '../../types/pos';
 import { supabase } from '../../lib/supabase';
 import { customAuth } from '../../lib/customAuth';
@@ -33,17 +35,37 @@ const CashierScreen: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'gcash' | 'paymaya' | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'gcash' | null>(null);
   const [cashAmount, setCashAmount] = useState('');
+  const [gcashReferenceNumber, setGcashReferenceNumber] = useState('');
   const [isMobile, setIsMobile] = useState(false);
+  const [isTablet, setIsTablet] = useState(false);
+  const [isTabletLandscape, setIsTabletLandscape] = useState(false);
   const [showMobileCart, setShowMobileCart] = useState(false);
   const [products, setProducts] = useState<ProductVariant[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedUnits, setSelectedUnits] = useState<Record<string, string>>({}); // productId -> unitId
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [productQuantities, setProductQuantities] = useState<Record<string, number>>({}); // productId -> quantity in cart
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [paymentSuccess, setPaymentSuccess] = useState(false);
   const barcodeInputRef = useRef<HTMLInputElement>(null);
+  const viewModeManuallySet = useRef(false); // Track if user manually changed view mode
+  
+  // Expense states
+  const [showExpenseModal, setShowExpenseModal] = useState(false);
+  const [expenseType, setExpenseType] = useState('');
+  const [expenseOther, setExpenseOther] = useState('');
+  const [expenseAmount, setExpenseAmount] = useState('');
+  const [expenseDescription, setExpenseDescription] = useState('');
+  const [expenseImage, setExpenseImage] = useState<File | null>(null);
+  const [expenseImagePreview, setExpenseImagePreview] = useState<string | null>(null);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>('');
+  const [employees, setEmployees] = useState<any[]>([]);
+  const [isLoadingEmployees, setIsLoadingEmployees] = useState(false);
+  const [isSubmittingExpense, setIsSubmittingExpense] = useState(false);
+  const [branchName, setBranchName] = useState<string>('');
+  const expenseImageInputRef = useRef<HTMLInputElement>(null);
 
   const getCurrentBranchId = () => {
     const currentUser = customAuth.getCurrentUser();
@@ -59,18 +81,118 @@ const CashierScreen: React.FC = () => {
   
 
   useEffect(() => {
-    const checkMobile = () => {
-      setIsMobile(window.innerWidth < 768);
+    const checkDevice = () => {
+      const width = window.innerWidth;
+      const height = window.innerHeight;
+      // Tablet range: min 768×1024 or 1024×768, max 800×1280 or 1280×800
+      const minDimension = Math.min(width, height);
+      const maxDimension = Math.max(width, height);
+      const mobile = width < 768;
+      const tablet = 
+        minDimension >= 768 && minDimension <= 800 && 
+        maxDimension >= 1024 && maxDimension <= 1280;
+      setIsMobile(mobile);
+      setIsTablet(tablet);
+      setIsTabletLandscape(tablet && width > height);
+      
+      // Only auto-set view mode on initial load, not on resize (unless mobile)
+      // Mobile always uses list mode
+      if (mobile) {
+        setViewMode('list');
+      } else if (!viewModeManuallySet.current) {
+        // Only set default view mode if user hasn't manually changed it
+        if (tablet) {
+          // Tablet: prefer grid mode for better space utilization
+          setViewMode('grid');
+        } else {
+          // Desktop: default to grid
+          setViewMode('grid');
+        }
+      }
     };
     
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
+    checkDevice();
+    window.addEventListener('resize', checkDevice);
+    window.addEventListener('orientationchange', checkDevice);
+    return () => {
+      window.removeEventListener('resize', checkDevice);
+      window.removeEventListener('orientationchange', checkDevice);
+    };
   }, []);
 
   useEffect(() => {
     loadProducts();
   }, []);
+
+  // Load employees when Cash Advance is selected
+  useEffect(() => {
+    if (expenseType === 'Cash Advance' && showExpenseModal) {
+      loadEmployees();
+    } else {
+      setEmployees([]);
+      setSelectedEmployeeId('');
+    }
+  }, [expenseType, showExpenseModal]);
+
+  // Load branch name when expense modal opens
+  useEffect(() => {
+    if (showExpenseModal) {
+      loadBranchName();
+    }
+  }, [showExpenseModal]);
+
+  const loadBranchName = async () => {
+    try {
+      const branchId = getCurrentBranchId();
+      if (branchId && branchId !== 'default-branch') {
+        const { data, error } = await supabase
+          .from('branches')
+          .select('name')
+          .eq('id', branchId)
+          .eq('is_active', true)
+          .single();
+        
+        if (error) throw error;
+        setBranchName(data?.name || branchId);
+      } else {
+        setBranchName(branchId || 'N/A');
+      }
+    } catch (error) {
+      console.error('Error loading branch name:', error);
+      const branchId = getCurrentBranchId();
+      setBranchName(branchId || 'N/A');
+    }
+  };
+
+  const loadEmployees = async () => {
+    try {
+      setIsLoadingEmployees(true);
+      const branchId = getCurrentBranchId();
+      
+      const { data, error } = await supabase
+        .from('staff')
+        .select(`
+          id,
+          first_name,
+          last_name,
+          employee_id,
+          position,
+          email
+        `)
+        .eq('branch_id', branchId)
+        .eq('is_active', true)
+        .in('position', ['cashier', 'branch staff'])
+        .order('first_name');
+
+      if (error) throw error;
+      setEmployees(data || []);
+    } catch (error) {
+      console.error('Error loading employees:', error);
+      alert('Failed to load employees. Please try again.');
+    } finally {
+      setIsLoadingEmployees(false);
+    }
+  };
 
   const loadProducts = async () => {
     try {
@@ -100,6 +222,8 @@ const CashierScreen: React.FC = () => {
       }
 
       // Load products grouped with ALL their units (not flattened)
+      // Using explicit foreign key constraint names to avoid relationship ambiguity
+      // Note: expiry_date, batch_number, batch_no, expiration_date are now in inventory table, not products
       const { data, error } = await supabase
         .from('inventory')
         .select(`
@@ -111,17 +235,20 @@ const CashierScreen: React.FC = () => {
           reorder_level,
           max_stock_level,
           base_unit,
-          products!inner(
+          batch_number,
+          expiry_date,
+          batch_no,
+          expiration_date,
+          products!inventory_product_id_fkey(
             id,
             name,
             sku,
             barcode,
             cost,
             unit_of_measure,
-            expiry_date,
             is_active,
             image_url,
-            categories!inner(
+            categories!products_category_id_fkey(
               id,
               name
             ),
@@ -225,8 +352,8 @@ const CashierScreen: React.FC = () => {
             max_stock_level: item.max_stock_level,
             base_unit: item.base_unit
           },
-          // Metadata
-          requires_expiry_date: product.expiry_date ? true : false,
+          // Metadata - expiry_date, batch_number are now in inventory table, not products
+          requires_expiry_date: item.expiry_date || item.expiration_date ? true : false,
           is_active: product.is_active,
           // Backward compatibility fields
           price: defaultUnit?.price_per_unit || 0,
@@ -235,13 +362,13 @@ const CashierScreen: React.FC = () => {
           variant_value: '',
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
-          category_id: product.category_id,
+          category_id: product.category_id || category.id,
           pos_pricing_type: 'fixed' as const,
           unit_of_measure: product.unit_of_measure,
           weight: product.weight || 0,
-          requires_batch_tracking: false,
-          batch_number: undefined,
-          expiry_date: product.expiry_date,
+          requires_batch_tracking: item.batch_number || item.batch_no ? true : false,
+          batch_number: item.batch_number || item.batch_no || undefined,
+          expiry_date: item.expiry_date || item.expiration_date || undefined,
           is_quick_sale: false,
           products: {
             id: product.id,
@@ -267,6 +394,8 @@ const CashierScreen: React.FC = () => {
       console.log('Loading products directly from products table...');
       const branchId = getCurrentBranchId();
       
+      // Using explicit foreign key constraint name to avoid relationship ambiguity
+      // Note: expiry_date, batch_number are now in inventory table, not products
       const { data, error } = await supabase
         .from('products')
         .select(`
@@ -274,13 +403,11 @@ const CashierScreen: React.FC = () => {
           name,
           sku,
           barcode,
-          unit_price,
-          cost_price,
+          cost,
           unit_of_measure,
-          expiry_date,
           is_active,
           image_url,
-          categories!inner(
+          categories!products_category_id_fkey(
             id,
             name
           ),
@@ -305,7 +432,7 @@ const CashierScreen: React.FC = () => {
 
       // Transform the data without inventory
       const transformedProducts: ProductVariant[] = data?.map((item: any) => {
-        const category = item.categories;
+        const category = item.categories || { id: null, name: 'Uncategorized' };
         
         // Filter and sort sellable units from product_units table
         const sellableUnits = (item.product_units || [])
@@ -321,13 +448,15 @@ const CashierScreen: React.FC = () => {
           id: item.id,
           name: item.name,
           sku: item.sku,
-          price: item.unit_price || 0,
+          price: 0, // Price will come from product_units.price_per_unit
           barcode: item.barcode,
           image_url: item.image_url || '',
-          requires_expiry_date: item.expiry_date ? true : false,
+          // Note: expiry_date, batch_number are in inventory table, not products
+          // When loading directly from products (no inventory), these will be undefined
+          requires_expiry_date: false,
           requires_batch_tracking: false,
           batch_number: undefined,
-          expiry_date: item.expiry_date,
+          expiry_date: undefined,
           is_quick_sale: false,
           is_active: item.is_active,
           product_id: item.id,
@@ -335,14 +464,14 @@ const CashierScreen: React.FC = () => {
           variant_value: '',
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
-          category_id: item.category_id,
+          category_id: category.id || item.category_id || null,
           pos_pricing_type: 'fixed' as const,
           unit_of_measure: item.unit_of_measure,
           weight: item.weight || 0,
-          cost: item.cost_price || 0,
+          cost: item.cost || 0,
           category: {
-            id: category.id,
-            name: category.name,
+            id: category.id || null,
+            name: category.name || 'Uncategorized',
             sort_order: 0,
             is_active: true,
             created_at: new Date().toISOString()
@@ -454,12 +583,13 @@ const CashierScreen: React.FC = () => {
   };
 
 
-  const addToCart = (product: ProductVariant) => {
+  const addToCart = (product: ProductVariant, quantity?: number) => {
     const selectedUnit = getSelectedUnit(product);
     const currentPrice = getCurrentPrice(product); // This is the exact price_per_unit from database
     
-    // Use the minimum sellable quantity from the selected unit or default to 1
+    // Use provided quantity or minimum sellable quantity from the selected unit or default to 1
     const minQuantity = parseFloat((selectedUnit as any)?.min_sellable_quantity || '1');
+    const addQuantity = quantity || minQuantity;
     
     // Find existing item with the same product AND same unit
     const existingItem = cart.find(item => 
@@ -468,8 +598,8 @@ const CashierScreen: React.FC = () => {
     );
     
     if (existingItem) {
-      // Add minimum quantity to existing item
-      const newQuantity = existingItem.quantity + minQuantity;
+      // Add quantity to existing item
+      const newQuantity = existingItem.quantity + addQuantity;
       
       setCart(cart.map(item =>
         item.id === existingItem.id
@@ -480,6 +610,14 @@ const CashierScreen: React.FC = () => {
             }
           : item
       ));
+      
+      // Update product quantity state for mobile
+      if (isMobile) {
+        setProductQuantities(prev => ({
+          ...prev,
+          [product.id]: newQuantity
+        }));
+      }
     } else {
       // Create new cart item with the selected unit and its price
       const newItem: CartItem = {
@@ -489,18 +627,33 @@ const CashierScreen: React.FC = () => {
           price: currentPrice || 0,
           unit_of_measure: selectedUnit?.unit_label || product.unit_of_measure
         },
-        quantity: minQuantity,
+        quantity: addQuantity,
         unitPrice: currentPrice || 0, // Use the exact price_per_unit from database
         discount: 0,
-        lineTotal: (currentPrice || 0) * minQuantity,
+        lineTotal: (currentPrice || 0) * addQuantity,
+        minimum_stock: (selectedUnit as any)?.minimum_stock ?? product.minimum_stock ?? 0,
         selectedUnit: {
-          ...selectedUnit!,
-          conversion_factor: (selectedUnit as any)?.conversion_factor || 1
+          id: selectedUnit?.id || '',
+          unit_name: selectedUnit?.unit_name || '',
+          unit_label: selectedUnit?.unit_label || '',
+          price: currentPrice || 0,
+          is_base_unit: selectedUnit?.is_base_unit || false,
+          conversion_factor: (selectedUnit as any)?.conversion_factor || 1,
+          min_sellable_quantity: (selectedUnit as any)?.min_sellable_quantity || 1,
+          minimum_stock: (selectedUnit as any)?.minimum_stock ?? 0
         },
         isBaseUnit: selectedUnit?.is_base_unit || false
       };
       
       setCart([...cart, newItem]);
+      
+      // Update product quantity state for mobile
+      if (isMobile) {
+        setProductQuantities(prev => ({
+          ...prev,
+          [product.id]: addQuantity
+        }));
+      }
     }
   };
 
@@ -525,11 +678,21 @@ const CashierScreen: React.FC = () => {
 
             const lineTotal = validQuantity * item.unitPrice;
 
-            return {
+            const updatedItem = {
               ...item,
               quantity: validQuantity,
               lineTotal: lineTotal - (item.discount || 0),
             };
+            
+            // Update product quantity state for mobile
+            if (isMobile) {
+              setProductQuantities(prev => ({
+                ...prev,
+                [item.product.id]: validQuantity
+              }));
+            }
+            
+            return updatedItem;
           }
           return item;
         }).filter(Boolean) as CartItem[]
@@ -538,7 +701,58 @@ const CashierScreen: React.FC = () => {
 
 
   const removeFromCart = (itemId: string) => {
+    const item = cart.find(i => i.id === itemId);
     setCart(cart.filter(item => item.id !== itemId));
+    
+    // Update product quantity state for mobile
+    if (isMobile && item) {
+      setProductQuantities(prev => {
+        const newState = { ...prev };
+        delete newState[item.product.id];
+        return newState;
+      });
+    }
+  };
+  
+  // Get quantity in cart for a product (mobile)
+  const getProductQuantityInCart = (productId: string, unitId?: string): number => {
+    if (unitId) {
+      const cartItem = cart.find(item => 
+        item.product.id === productId && 
+        item.selectedUnit?.id === unitId
+      );
+      return cartItem ? cartItem.quantity : 0;
+    }
+    // If no unit specified, sum all quantities for this product
+    const cartItems = cart.filter(item => item.product.id === productId);
+    if (cartItems.length > 0) {
+      return cartItems.reduce((sum, item) => sum + item.quantity, 0);
+    }
+    return productQuantities[productId] || 0;
+  };
+  
+  // Handle quantity change for mobile (direct from product list)
+  const handleMobileQuantityChange = (product: ProductVariant, change: number) => {
+    const selectedUnit = getSelectedUnit(product);
+    const minQty = parseFloat((selectedUnit as any)?.min_sellable_quantity || '1');
+    const currentQty = getProductQuantityInCart(product.id);
+    const newQty = Math.max(0, currentQty + (change * minQty));
+    
+    if (newQty <= 0) {
+      // Remove from cart
+      const cartItem = cart.find(item => item.product.id === product.id && item.selectedUnit?.id === selectedUnit?.id);
+      if (cartItem) {
+        removeFromCart(cartItem.id);
+      }
+      setProductQuantities(prev => {
+        const newState = { ...prev };
+        delete newState[product.id];
+        return newState;
+      });
+    } else {
+      // Add or update in cart
+      addToCart(product, change * minQty);
+    }
   };
 
   const calculateSubtotal = () => {
@@ -565,6 +779,11 @@ const CashierScreen: React.FC = () => {
 
     if (paymentMethod === 'cash' && (!cashAmount || parseFloat(cashAmount) < calculateTotal())) {
       alert('Cash amount must be greater than or equal to the total amount');
+      return;
+    }
+
+    if (paymentMethod === 'gcash' && gcashReferenceNumber.length !== 13) {
+      alert('Please enter a valid 13-digit GCash reference number');
       return;
     }
 
@@ -617,7 +836,7 @@ const CashierScreen: React.FC = () => {
         notes: `Payment via ${paymentMethod}`,
         payment_method: paymentMethod,
         cash_amount: paymentMethod === 'cash' ? parseFloat(cashAmount) : undefined,
-        reference_number: paymentMethod !== 'cash' ? `REF-${Date.now()}` : undefined
+        reference_number: paymentMethod === 'gcash' ? gcashReferenceNumber : undefined
       };
 
       console.log('Creating transaction:', transactionData);
@@ -659,6 +878,7 @@ const CashierScreen: React.FC = () => {
         setSelectedCustomer(null);
         setPaymentMethod(null);
         setCashAmount('');
+        setGcashReferenceNumber('');
         setShowPaymentModal(false);
         setPaymentSuccess(false);
         setIsProcessingPayment(false);
@@ -668,6 +888,236 @@ const CashierScreen: React.FC = () => {
       console.error('Payment processing failed:', error);
       alert(`Payment failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
       setIsProcessingPayment(false);
+    }
+  };
+
+  const handleExpenseImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        alert('Please select an image file');
+        return;
+      }
+      
+      // Validate file size (5MB limit)
+      if (file.size > 5 * 1024 * 1024) {
+        alert('Image size should be less than 5MB');
+        return;
+      }
+      
+      setExpenseImage(file);
+      
+      // Create preview
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setExpenseImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleSubmitExpense = async () => {
+    try {
+      // Validate form
+      if (!expenseType) {
+        alert('Please select an expense type');
+        return;
+      }
+      
+      if (expenseType === 'Other' && !expenseOther.trim()) {
+        alert('Please specify the expense type');
+        return;
+      }
+      
+      if (!expenseAmount || parseFloat(expenseAmount) <= 0) {
+        alert('Please enter a valid amount');
+        return;
+      }
+      
+      if (!expenseDescription.trim()) {
+        alert('Please enter a description');
+        return;
+      }
+      
+      if (expenseType === 'Cash Advance' && !selectedEmployeeId) {
+        alert('Please select an employee for cash advance');
+        return;
+      }
+
+      setIsSubmittingExpense(true);
+      
+      const currentUser = customAuth.getCurrentUser();
+      if (!currentUser) {
+        throw new Error('User not authenticated');
+      }
+      
+      const branchId = getCurrentBranchId();
+      
+      // Upload image if provided
+      let receiptUrl = null;
+      let receiptFileName = null;
+      
+      if (expenseImage) {
+        const fileExt = expenseImage.name.split('.').pop();
+        const fileName = `expenses/${branchId}/${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
+        
+        const { error: uploadError } = await supabase.storage
+          .from('receipts')
+          .upload(fileName, expenseImage, {
+            cacheControl: '3600',
+            upsert: false
+          });
+        
+        if (uploadError) {
+          // Try fallback bucket if receipts bucket doesn't exist
+          console.warn('Receipts bucket not found, trying expenses bucket');
+          const { error: fallbackError } = await supabase.storage
+            .from('expenses')
+            .upload(fileName, expenseImage, {
+              cacheControl: '3600',
+              upsert: false
+            });
+          
+          if (fallbackError) {
+            console.error('Error uploading expense image:', fallbackError);
+            // Continue without image
+          } else {
+            const { data: { publicUrl } } = supabase.storage
+              .from('expenses')
+              .getPublicUrl(fileName);
+            receiptUrl = publicUrl;
+            receiptFileName = fileName;
+          }
+        } else {
+          const { data: { publicUrl } } = supabase.storage
+            .from('receipts')
+            .getPublicUrl(fileName);
+          receiptUrl = publicUrl;
+          receiptFileName = fileName;
+        }
+      }
+      
+      // Determine category name
+      const categoryName = expenseType === 'Other' ? expenseOther : expenseType;
+      
+      // Get or create expense category
+      let categoryId: string | null = null;
+      
+      // First, try to find existing category
+      const { data: existingCategory } = await supabase
+        .from('expense_categories')
+        .select('id')
+        .eq('name', categoryName)
+        .eq('is_active', true)
+        .single();
+      
+      if (existingCategory) {
+        categoryId = existingCategory.id;
+      } else {
+        // Create new category if it doesn't exist
+        const { data: newCategory, error: createCategoryError } = await supabase
+          .from('expense_categories')
+          .insert([{
+            name: categoryName,
+            is_active: true
+          }])
+          .select('id')
+          .single();
+        
+        if (createCategoryError) {
+          console.error('Error creating expense category:', createCategoryError);
+          // Continue without category_id if creation fails
+        } else if (newCategory) {
+          categoryId = newCategory.id;
+        }
+      }
+      
+      // Prepare description with employee info if cash advance
+      const finalDescription = expenseType === 'Cash Advance' && selectedEmployeeId
+        ? `${expenseDescription} (Employee: ${employees.find(e => e.id === selectedEmployeeId)?.first_name} ${employees.find(e => e.id === selectedEmployeeId)?.last_name})`
+        : expenseDescription;
+      
+      // Get current date
+      const expenseDate = new Date().toISOString().split('T')[0];
+      
+      // Determine status and approval requirements based on category
+      // Cash Advance requires approval, others are auto-approved
+      const isCashAdvance = categoryName === 'Cash Advance';
+      const requiresApproval = isCashAdvance;
+      const expenseStatus = isCashAdvance ? 'pending_approval' : 'approved';
+      
+      // If approved, set reviewed_by and reviewed_at immediately
+      const reviewedBy = !isCashAdvance ? currentUser.id : null;
+      const reviewedAt = !isCashAdvance ? new Date().toISOString() : null;
+      
+      // Create expense record with new schema compatible with Expenses.tsx
+      const expenseData: any = {
+        date: expenseDate,
+        description: finalDescription,
+        amount: parseFloat(expenseAmount),
+        category_id: categoryId,
+        branch_id: branchId !== 'default-branch' ? branchId : null,
+        receipt_url: receiptUrl,
+        payment_method: null, // Can be set if needed
+        reference: `POS-${Date.now()}`, // Reference number for tracking
+        status: expenseStatus,
+        created_by: currentUser.id,
+        requires_approval: requiresApproval,
+        reviewed_by: reviewedBy,
+        reviewed_at: reviewedAt,
+        source: 'POS' // Mark expense as coming from POS/CashierScreen
+      };
+      
+      // Add receipt_file_name if available (if schema supports it)
+      if (receiptFileName) {
+        expenseData.receipt_file_name = receiptFileName;
+      }
+      
+      const { error } = await supabase
+        .from('expenses')
+        .insert([expenseData])
+        .select()
+        .single();
+      
+      if (error) {
+        console.error('Error creating expense:', error);
+        throw error;
+      }
+      
+      alert('Expense submitted successfully!');
+      
+      // Reset form
+      setExpenseType('');
+      setExpenseOther('');
+      setExpenseAmount('');
+      setExpenseDescription('');
+      setExpenseImage(null);
+      setExpenseImagePreview(null);
+      setSelectedEmployeeId('');
+      setBranchName('');
+      setShowExpenseModal(false);
+      
+    } catch (error) {
+      console.error('Error submitting expense:', error);
+      alert(`Failed to submit expense: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setIsSubmittingExpense(false);
+    }
+  };
+
+  const handleCloseExpenseModal = () => {
+    if (!isSubmittingExpense) {
+      setShowExpenseModal(false);
+      // Reset form
+      setExpenseType('');
+      setExpenseOther('');
+      setExpenseAmount('');
+      setExpenseDescription('');
+      setExpenseImage(null);
+      setExpenseImagePreview(null);
+      setSelectedEmployeeId('');
+      setBranchName('');
     }
   };
 
@@ -682,12 +1132,20 @@ const CashierScreen: React.FC = () => {
     const availableUnits = generateDynamicUnits(product);
     const selectedUnit = getSelectedUnit(product);
     const currentPrice = getCurrentPrice(product);
+    // Access isTablet from parent scope
 
     if (viewMode === 'list') {
+      const displayQuantity = isMobile 
+        ? getProductQuantityInCart(product.id, selectedUnit?.id)
+        : (cart.find(item => 
+            item.product.id === product.id && 
+            item.selectedUnit?.id === selectedUnit?.id
+          )?.quantity || 0);
+      
       return (
-        <div className="product-card flex items-center space-x-4 p-4 bg-white rounded-lg border border-gray-200 hover:shadow-md transition-shadow">
+        <div className="product-card flex items-center space-x-3 md:space-x-4 p-3 md:p-4 bg-white rounded-lg border border-gray-200 hover:shadow-md transition-shadow">
           {/* Product Image */}
-          <div className="w-20 h-20 bg-gray-100 rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0">
+          <div className="w-16 h-16 md:w-20 md:h-20 bg-gray-100 rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0">
             {product.image_url ? (
               <img
                 src={product.image_url}
@@ -700,88 +1158,132 @@ const CashierScreen: React.FC = () => {
               />
             ) : null}
             <div className={`w-full h-full flex items-center justify-center ${product.image_url ? 'hidden' : ''}`}>
-              <ImageIcon className="w-6 h-6 text-gray-400" />
+              <ImageIcon className="w-5 h-5 md:w-6 md:h-6 text-gray-400" />
             </div>
           </div>
 
           {/* Product Info */}
           <div className="flex-1 min-w-0">
-            <div className="flex items-start justify-between mb-2">
+            <div className="flex items-start justify-between mb-1 md:mb-2 gap-2">
               <div className="flex-1 min-w-0">
-                <h3 className="font-semibold text-gray-900 text-sm leading-tight truncate">
+                <h3 className="font-semibold text-gray-900 text-sm md:text-base leading-tight line-clamp-2">
                   {product.name}
                 </h3>
-                <div className="text-xs text-gray-500 mt-1">
+                <div className="text-xs text-gray-500 mt-0.5">
                   SKU: {product.sku}
                 </div>
               </div>
               {isLowStock && (
-                <span className="low-stock-badge ml-2 flex-shrink-0">
-                  {isOutOfStock ? 'Out of Stock' : 'Low Stock'}
+                <span className="low-stock-badge ml-2 flex-shrink-0 text-xs px-1.5 py-0.5">
+                  {isOutOfStock ? 'Out' : 'Low'}
                 </span>
               )}
             </div>
 
-            {/* Stock Info */}
-            <div className="flex items-center space-x-4 mb-2">
-              <div className="text-xs text-gray-600">
-                Stock: {stockQuantity} left
-              </div>
-              <div className="flex-1 max-w-24">
-                <div className="stock-progress">
-                  <div 
-                    className={`stock-progress-fill ${isLowStock ? 'stock-progress-low' : ''}`}
-                    style={{ width: `${Math.min(stockPercentage, 100)}%` }}
-                  />
+            {/* Stock Info - Hidden on mobile to save space */}
+            {!isMobile && (
+              <div className="flex items-center space-x-4 mb-2">
+                <div className="text-xs text-gray-600">
+                  Stock: {stockQuantity} left
                 </div>
-              </div>
-            </div>
-
-            {/* Enhanced Unit Selector */}
-            {availableUnits.length > 1 && (
-              <div className="mb-2">
-                <div className="flex items-center space-x-2">
-                  <span className="text-xs text-gray-600">Unit:</span>
-                  <div className="flex flex-wrap gap-1">
-                    {availableUnits.map((unit: any) => (
-                      <button
-                        key={unit.id}
-                        onClick={() => selectUnit(product.id, unit.id)}
-                        className={`px-2 py-1 text-xs rounded-md transition-colors ${
-                          selectedUnit?.id === unit.id
-                            ? 'bg-emerald-600 text-white'
-                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                        }`}
-                        title={`${unit.unit_name} - ₱${unit.price.toFixed(2)}`}
-                      >
-                        {unit.unit_label || unit.label}
-                      </button>
-                    ))}
+                <div className="flex-1 max-w-24">
+                  <div className="stock-progress">
+                    <div 
+                      className={`stock-progress-fill ${isLowStock ? 'stock-progress-low' : ''}`}
+                      style={{ width: `${Math.min(stockPercentage, 100)}%` }}
+                    />
                   </div>
                 </div>
               </div>
             )}
-          </div>
 
-          {/* Price and Add Button */}
-          <div className="flex flex-col items-end space-y-2 flex-shrink-0">
-            <div className="text-right">
-              <div className="text-lg font-bold text-emerald-600">
-                ₱{(currentPrice || 0).toFixed(2)}
-              </div>
-              {selectedUnit && (
-                <div className="text-xs text-gray-500">
-                  per {selectedUnit.unit_label}
+            {/* Unit Selector with Prices - Mobile optimized */}
+            <div className="mb-2">
+              {availableUnits.length > 1 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {availableUnits.map((unit: any) => (
+                    <button
+                      key={unit.id}
+                      onClick={() => selectUnit(product.id, unit.id)}
+                      className={`px-2 py-1 text-xs rounded-md transition-colors touch-button ${
+                        selectedUnit?.id === unit.id
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300 active:bg-gray-400'
+                      }`}
+                      title={`${unit.unit_name} - ₱${unit.price.toFixed(2)}`}
+                    >
+                      <span className="font-medium">{unit.unit_label || unit.label}</span>
+                      <span className="ml-1 text-xs opacity-90">₱{unit.price.toFixed(2)}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-xs text-gray-600">
+                  <span className="font-medium">{selectedUnit?.unit_label || product.unit_of_measure}</span>
+                  <span className="ml-1 text-emerald-600 font-semibold">₱{(currentPrice || 0).toFixed(2)}</span>
                 </div>
               )}
             </div>
-            {!isOutOfStock && (
-              <button
-                onClick={() => addToCart(product)}
-                className="touch-button bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-              >
-                Add to Cart
-              </button>
+          </div>
+
+          {/* Price and Quantity Controls */}
+          <div className="flex flex-col items-end space-y-2 flex-shrink-0">
+            {!isMobile && (
+              <div className="text-right">
+                <div className="text-base md:text-lg font-bold text-emerald-600">
+                  ₱{(currentPrice || 0).toFixed(2)}
+                </div>
+                {selectedUnit && (
+                  <div className="text-xs text-gray-500">
+                    per {selectedUnit.unit_label}
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {!isOutOfStock ? (
+              isMobile ? (
+                // Mobile: Quantity controls (- 1 +)
+                <div className="flex items-center space-x-2 bg-gray-50 rounded-lg p-1 border border-gray-200">
+                  <button
+                    onClick={() => handleMobileQuantityChange(product, -1)}
+                    disabled={displayQuantity <= 0}
+                    className="w-8 h-8 md:w-9 md:h-9 flex items-center justify-center rounded-md bg-white hover:bg-gray-100 active:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed touch-button transition-colors border border-gray-300"
+                    aria-label="Decrease quantity"
+                  >
+                    <Minus className="w-4 h-4 text-gray-700" />
+                  </button>
+                  
+                  <div className="min-w-[2.5rem] text-center">
+                    <div className="text-sm md:text-base font-bold text-gray-900">
+                      {displayQuantity > 0 ? displayQuantity : '0'}
+                    </div>
+                    {selectedUnit && displayQuantity > 0 && (
+                      <div className="text-xs text-gray-500">
+                        {selectedUnit.unit_label}
+                      </div>
+                    )}
+                  </div>
+                  
+                  <button
+                    onClick={() => handleMobileQuantityChange(product, 1)}
+                    className="w-8 h-8 md:w-9 md:h-9 flex items-center justify-center rounded-md bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white touch-button transition-colors"
+                    aria-label="Increase quantity"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                // Desktop: Add to Cart button
+                <button
+                  onClick={() => addToCart(product)}
+                  className="touch-button bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                >
+                  Add to Cart
+                </button>
+              )
+            ) : (
+              <span className="text-xs text-red-600 font-medium">Out of Stock</span>
             )}
           </div>
         </div>
@@ -790,8 +1292,12 @@ const CashierScreen: React.FC = () => {
 
     // Grid View (existing layout)
     return (
-      <div className="product-card">
-        <div className="w-full h-32 bg-gray-100 rounded-t-lg flex items-center justify-center mb-3 overflow-hidden">
+      <div className="product-card cursor-pointer h-full flex flex-col">
+        <div className={`w-full ${
+          isTablet 
+            ? (isTabletLandscape ? 'h-36' : 'h-40') 
+            : 'h-24 md:h-32'
+        } bg-gray-100 rounded-t-lg flex items-center justify-center mb-2 md:mb-3 overflow-hidden flex-shrink-0`}>
           {product.image_url ? (
             <img
               src={product.image_url}
@@ -804,30 +1310,50 @@ const CashierScreen: React.FC = () => {
             />
           ) : null}
           <div className={`w-full h-full flex items-center justify-center ${product.image_url ? 'hidden' : ''}`}>
-            <ImageIcon className="w-8 h-8 text-gray-400" />
+            <ImageIcon className={`${
+              isTablet 
+                ? (isTabletLandscape ? 'w-10 h-10' : 'w-12 h-12') 
+                : 'w-6 h-6 md:w-8 md:h-8'
+            } text-gray-400`} />
           </div>
         </div>
         
-        <div className="p-3">
-          <div className="flex items-start justify-between mb-2">
-            <h3 className="font-semibold text-gray-900 text-sm leading-tight">
+        <div className={`${
+          isTablet 
+            ? (isTabletLandscape ? 'p-2.5' : 'p-3') 
+            : 'p-2 md:p-3'
+        } flex-1 flex flex-col`}>
+          <div className="flex items-start justify-between mb-1 md:mb-2 gap-1">
+            <h3 className={`font-semibold text-gray-900 ${
+              isTablet 
+                ? (isTabletLandscape ? 'text-xs' : 'text-sm') 
+                : 'text-xs md:text-sm'
+            } leading-tight flex-1 min-w-0 line-clamp-2`}>
               {product.name}
             </h3>
             {isLowStock && (
-              <span className="low-stock-badge">
-                {isOutOfStock ? 'Out of Stock' : 'Low Stock'}
+              <span className={`low-stock-badge ${
+                isTablet 
+                  ? (isTabletLandscape ? 'text-xs px-1.5 py-0.5' : 'text-xs px-2 py-1') 
+                  : 'text-xs px-1.5 py-0.5'
+              } flex-shrink-0`}>
+                {isOutOfStock ? 'Out' : 'Low'}
               </span>
             )}
           </div>
           
-          <div className="text-xs text-gray-500 mb-2">
+          <div className={`text-gray-500 mb-1 md:mb-2 truncate ${
+            isTablet && isTabletLandscape ? 'text-xs' : 'text-xs'
+          }`}>
             SKU: {product.sku}
           </div>
           
-          <div className="mb-3">
-            <div className="flex justify-between text-xs text-gray-600 mb-1">
+          <div className={`${isTablet && isTabletLandscape ? 'mb-1.5' : 'mb-2 md:mb-3'}`}>
+            <div className={`flex justify-between text-gray-600 mb-1 ${
+              isTablet && isTabletLandscape ? 'text-xs' : 'text-xs'
+            }`}>
               <span>Stock</span>
-              <span>{stockQuantity} left</span>
+              <span className="font-medium">{stockQuantity}</span>
             </div>
             <div className="stock-progress">
               <div 
@@ -839,30 +1365,50 @@ const CashierScreen: React.FC = () => {
 
           {/* Enhanced Unit Selector */}
           {availableUnits.length > 1 && (
-            <div className="mb-3">
-              <div className="text-xs text-gray-600 mb-2">Select Unit:</div>
+            <div className={`${isTablet && isTabletLandscape ? 'mb-1.5' : 'mb-2 md:mb-3'}`}>
+              <div className={`text-gray-600 mb-1 ${
+                isTablet && isTabletLandscape ? 'text-xs' : 'text-xs md:text-xs'
+              }`}>Unit:</div>
               <div className="flex flex-wrap gap-1">
-                {availableUnits.map((unit: any) => (
+                {availableUnits.slice(0, isTablet ? (isTabletLandscape ? 3 : 4) : 3).map((unit: any) => (
                   <button
                     key={unit.id}
-                    onClick={() => selectUnit(product.id, unit.id)}
-                    className={`px-2 py-1 text-xs rounded-md transition-colors ${
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      selectUnit(product.id, unit.id);
+                    }}
+                    className={`${
+                      isTablet 
+                        ? (isTabletLandscape ? 'px-1.5 py-0.5 text-xs' : 'px-2 py-1 text-xs') 
+                        : 'px-1.5 md:px-2 py-0.5 md:py-1 text-xs'
+                    } rounded-md transition-colors touch-button ${
                       selectedUnit?.id === unit.id
                         ? 'bg-emerald-600 text-white'
-                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300 active:bg-gray-400'
                     }`}
                     title={`${unit.unit_name} - ₱${unit.price.toFixed(2)}`}
                   >
                     {unit.unit_label || unit.label}
                   </button>
                 ))}
+                {availableUnits.length > (isTablet ? (isTabletLandscape ? 3 : 4) : 3) && (
+                  <span className="text-xs text-gray-500 px-1">+{availableUnits.length - (isTablet ? (isTabletLandscape ? 3 : 4) : 3)}</span>
+                )}
               </div>
             </div>
           )}
           
-          <div className="flex items-center justify-between mb-3">
+          <div className={`flex flex-col ${
+            isTablet 
+              ? (isTabletLandscape ? 'gap-1.5' : 'gap-2') 
+              : 'md:flex-row md:items-center md:justify-between gap-2 md:gap-0'
+          } mb-2 md:mb-3 mt-auto`}>
             <div>
-              <span className="text-lg font-bold text-emerald-600">
+              <span className={`font-bold text-emerald-600 ${
+                isTablet 
+                  ? (isTabletLandscape ? 'text-base' : 'text-lg') 
+                  : 'text-base md:text-lg'
+              }`}>
                 ₱{(currentPrice || 0).toFixed(2)}
               </span>
               {selectedUnit && (
@@ -873,8 +1419,15 @@ const CashierScreen: React.FC = () => {
             </div>
             {!isOutOfStock && (
               <button
-                onClick={() => addToCart(product)}
-                className="touch-button bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  addToCart(product);
+                }}
+                className={`touch-button bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white ${
+                  isTablet 
+                    ? (isTabletLandscape ? 'px-3 py-2 text-xs' : 'px-4 py-2.5 text-sm') 
+                    : 'px-3 md:px-4 py-2 text-xs md:text-sm'
+                } rounded-lg font-medium transition-colors w-full md:w-auto`}
               >
                 Add to Cart
               </button>
@@ -901,17 +1454,17 @@ const CashierScreen: React.FC = () => {
   };
 
   return (
-    <div className="pos-system h-screen flex flex-col">
-      <div className="bg-white shadow-lg p-4 flex-shrink-0">
-        <div className="flex space-x-4">
+    <div className="pos-system h-screen flex flex-col overflow-hidden">
+      <div className="bg-white shadow-lg p-3 md:p-4 flex-shrink-0">
+        <div className="flex flex-col md:flex-row gap-3 md:space-x-4 md:gap-0">
           <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-6 h-6" />
+            <Search className="absolute left-3 md:left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5 md:w-6 md:h-6" />
             <input
               type="text"
-              placeholder="Search products by name, SKU, or scan barcode..."
+              placeholder="Search products, SKU, or scan barcode..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-12 pr-4 py-4 text-lg border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+              className="w-full pl-10 md:pl-12 pr-4 py-3 md:py-4 text-base md:text-lg border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent search-input-mobile"
               onKeyPress={(e) => {
                 if (e.key === 'Enter' && searchQuery.length > 3) {
                   handleBarcodeScan(searchQuery);
@@ -920,72 +1473,92 @@ const CashierScreen: React.FC = () => {
             />
           </div>
           
-          <div className="flex space-x-2">
+          <div className="flex space-x-2 md:space-x-2">
             {/* View Toggle Buttons - Hidden on mobile */}
             {!isMobile && (
               <div className="flex bg-gray-100 rounded-lg p-1">
                 <button
-                  onClick={() => setViewMode('grid')}
-                  className={`p-2 rounded-md transition-colors ${
+                  onClick={() => {
+                    viewModeManuallySet.current = true;
+                    setViewMode('grid');
+                  }}
+                  className={`p-2 rounded-md transition-colors touch-button ${
                     viewMode === 'grid'
                       ? 'bg-white text-emerald-600 shadow-sm'
                       : 'text-gray-500 hover:text-gray-700'
                   }`}
                   title="Grid View"
+                  aria-label="Grid View"
                 >
                   <Grid3X3 className="w-5 h-5" />
                 </button>
                 <button
-                  onClick={() => setViewMode('list')}
-                  className={`p-2 rounded-md transition-colors ${
+                  onClick={() => {
+                    viewModeManuallySet.current = true;
+                    setViewMode('list');
+                  }}
+                  className={`p-2 rounded-md transition-colors touch-button ${
                     viewMode === 'list'
                       ? 'bg-white text-emerald-600 shadow-sm'
                       : 'text-gray-500 hover:text-gray-700'
                   }`}
                   title="List View"
+                  aria-label="List View"
                 >
                   <List className="w-5 h-5" />
                 </button>
               </div>
             )}
             
-            {/* <TouchButton
-              onClick={() => barcodeInputRef.current?.focus()}
+            {/* Add Expense Button */}
+            <TouchButton
+              onClick={() => setShowExpenseModal(true)}
               variant="outline"
-              icon={Barcode}
-              className="px-6"
+              icon={DollarSign}
+              className="px-4 md:px-6 text-sm md:text-base"
+              size={isMobile ? "md" : "lg"}
             >
-              Scan
-            </TouchButton> */}
+              <span className="hidden sm:inline">Add Expense</span>
+              <span className="sm:hidden">Expense</span>
+            </TouchButton>
           </div>
         </div>
       </div>
 
       <div className="flex-1 flex overflow-hidden min-h-0">
-        <div className="flex-1 p-4 overflow-y-auto min-h-0">
+        <div className={`flex-1 p-3 md:p-4 overflow-y-auto min-h-0 custom-scrollbar ${isMobile && cart.length > 0 ? 'pb-24' : ''}`}>
           {isLoading ? (
             <div className="flex items-center justify-center h-64">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-600"></div>
             </div>
           ) : filteredProducts.length === 0 ? (
-            <div className="text-center py-12">
-              <ShoppingCart className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-              <p className="text-gray-500 text-lg font-semibold">No products found</p>
-              <p className="text-gray-400">Try adjusting your search or check your database connection</p>
-              <div className="mt-4 text-xs text-gray-400">
-                <p>Debug: Products loaded: {products.length}</p>
-                <p>Search query: "{searchQuery}"</p>
-              </div>
+            <div className="text-center py-8 md:py-12">
+              <ShoppingCart className="w-12 h-12 md:w-16 md:h-16 text-gray-400 mx-auto mb-4" />
+              <p className="text-gray-500 text-base md:text-lg font-semibold">No products found</p>
+              <p className="text-gray-400 text-sm md:text-base mt-2">Try adjusting your search or check your database connection</p>
             </div>
-          ) : (
-            viewMode === 'grid' ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            ) : (
+            isMobile ? (
+              // Mobile: Always list mode
+              <div className="space-y-2">
+                {filteredProducts.map(product => (
+                  <ProductCard key={product.id} product={product} viewMode="list" />
+                ))}
+              </div>
+            ) : viewMode === 'grid' ? (
+              // Grid mode (Tablet or Desktop)
+              <div className={`grid ${
+                isTablet 
+                  ? (isTabletLandscape ? 'gap-3 grid-cols-4' : 'gap-4 grid-cols-3')
+                  : 'grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 md:gap-4 product-grid-mobile product-grid-tablet'
+              }`}>
                 {filteredProducts.map(product => (
                   <ProductCard key={product.id} product={product} viewMode="grid" />
                 ))}
               </div>
             ) : (
-              <div className="space-y-3">
+              // List mode (Tablet or Desktop)
+              <div className="space-y-2 md:space-y-3">
                 {filteredProducts.map(product => (
                   <ProductCard key={product.id} product={product} viewMode="list" />
                 ))}
@@ -995,17 +1568,18 @@ const CashierScreen: React.FC = () => {
         </div>
 
         {!isMobile && (
-        <div className="w-96 bg-white shadow-lg border-l border-gray-200 flex flex-col" style={{ height: 'calc(100vh - 120px)' }}>
+        <div className="w-full md:w-80 lg:w-96 bg-white shadow-lg border-l border-gray-200 flex flex-col" style={{ height: 'calc(100vh - 120px)' }}>
           {/* Cart Header - Fixed */}
-          <div className="p-4 border-b border-gray-200 flex-shrink-0">
+          <div className="p-3 md:p-4 border-b border-gray-200 flex-shrink-0">
             <div className="flex items-center justify-between">
-              <h2 className="text-xl font-bold text-gray-900 flex items-center">
-                <ShoppingCart className="w-6 h-6 mr-2" />
-                Cart ({cart.length})
+              <h2 className="text-lg md:text-xl font-bold text-gray-900 flex items-center">
+                <ShoppingCart className="w-5 h-5 md:w-6 md:h-6 mr-2" />
+                <span>Cart ({cart.length})</span>
               </h2>
               <button
                 onClick={() => setCart([])}
-                className="text-red-500 hover:text-red-700 p-2 rounded-lg hover:bg-red-50"
+                className="text-red-500 hover:text-red-700 p-2 rounded-lg hover:bg-red-50 active:bg-red-100 touch-button"
+                aria-label="Clear cart"
               >
                 <Trash2 className="w-5 h-5" />
               </button>
@@ -1013,9 +1587,9 @@ const CashierScreen: React.FC = () => {
           </div>
 
           {/* Customer Section - Fixed */}
-          <div className="p-4 border-b border-gray-200 flex-shrink-0">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-gray-700">Customer:</span>
+          <div className="p-3 md:p-4 border-b border-gray-200 flex-shrink-0">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs md:text-sm font-medium text-gray-700 flex-shrink-0">Customer:</span>
               <button
                 onClick={() => {
                   const mockCustomer: Customer = {
@@ -1043,10 +1617,10 @@ const CashierScreen: React.FC = () => {
                   };
                   setSelectedCustomer(selectedCustomer ? null : mockCustomer);
                 }}
-                className="flex items-center space-x-2 text-emerald-600 hover:text-emerald-700 bg-emerald-50 px-3 py-2 rounded-lg hover:bg-emerald-100 transition-colors"
+                className="flex items-center space-x-2 text-emerald-600 hover:text-emerald-700 bg-emerald-50 px-2 md:px-3 py-2 rounded-lg hover:bg-emerald-100 active:bg-emerald-200 transition-colors touch-button text-xs md:text-sm flex-1 min-w-0"
               >
-                <User className="w-4 h-4" />
-                <span>{selectedCustomer ? `${selectedCustomer.first_name} ${selectedCustomer.last_name}` : 'Add Customer'}</span>
+                <User className="w-4 h-4 flex-shrink-0" />
+                <span className="truncate">{selectedCustomer ? `${selectedCustomer.first_name} ${selectedCustomer.last_name}` : 'Add Customer'}</span>
               </button>
             </div>
             {selectedCustomer && (
@@ -1057,34 +1631,33 @@ const CashierScreen: React.FC = () => {
           </div>
 
           {/* Cart Items - Scrollable Area */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
+          <div className="flex-1 overflow-y-auto p-3 md:p-4 space-y-2 md:space-y-3 min-h-0 custom-scrollbar">
             {cart.length === 0 ? (
               <div className="text-center text-gray-500 py-8">
-                <ShoppingCart className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-                <p className="font-medium">Cart is empty</p>
-                <p className="text-sm">Add products to get started</p>
+                <ShoppingCart className="w-10 h-10 md:w-12 md:h-12 mx-auto mb-2 text-gray-300" />
+                <p className="font-medium text-sm md:text-base">Cart is empty</p>
+                <p className="text-xs md:text-sm">Add products to get started</p>
               </div>
             ) : (
               cart.map(item => (
-                <div key={item.id} className="product-card">
+                <div key={item.id} className="product-card p-3 md:p-4">
                   <div className="flex justify-between items-start mb-2">
-                    <h4 className="font-medium text-gray-900 text-sm">{item.product.name}</h4>
+                    <h4 className="font-medium text-gray-900 text-xs md:text-sm flex-1 min-w-0 pr-2">{item.product.name}</h4>
                     <button
                       onClick={() => removeFromCart(item.id)}
-                      className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-50"
+                      className="text-red-500 hover:text-red-700 p-1.5 md:p-2 rounded hover:bg-red-50 active:bg-red-100 touch-button flex-shrink-0"
+                      aria-label="Remove item"
                     >
-                      <X className="w-4 h-4" />
+                      <X className="w-4 h-4 md:w-5 md:h-5" />
                     </button>
                   </div>
                   
-                  <div className="flex justify-between items-center mb-2">
-                    <div className="text-sm text-gray-600">
+                  <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-2 mb-2">
+                    <div className="text-xs md:text-sm text-gray-600">
                       {(() => {
                         if (item.isBaseUnit) {
-                          // Base unit pricing
                           return `₱${item.unitPrice.toFixed(2)} per ${item.selectedUnit?.unit_label || 'unit'}`;
                         } else {
-                          // Sub-unit pricing (per kg)
                           return `₱${item.unitPrice.toFixed(2)} per 1kg`;
                         }
                       })()}
@@ -1100,7 +1673,7 @@ const CashierScreen: React.FC = () => {
                           let newQuantity = parseFloat(e.target.value) || 0;
                           updateQuantity(item.id, newQuantity);
                         }}
-                        className="w-16 px-2 py-1 text-sm border border-gray-300 rounded text-center focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        className="w-20 md:w-16 px-2 py-1.5 md:py-1 text-xs md:text-sm border border-gray-300 rounded text-center focus:ring-2 focus:ring-green-500 focus:border-transparent"
                       />
 
                       <span className="text-xs text-gray-500">
@@ -1110,7 +1683,7 @@ const CashierScreen: React.FC = () => {
                   </div>
                   
                   <div className="text-right">
-                    <span className="font-semibold text-emerald-600">
+                    <span className="font-semibold text-emerald-600 text-sm md:text-base">
                       ₱{item.lineTotal.toFixed(2)}
                     </span>
                   </div>
@@ -1121,9 +1694,9 @@ const CashierScreen: React.FC = () => {
 
           {/* Payment Section - Completely Static at Bottom */}
           {cart.length > 0 && (
-            <div className="p-4 border-t border-gray-200 space-y-3 bg-white shadow-lg">
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between text-xl font-bold text-emerald-600">
+            <div className="p-3 md:p-4 border-t border-gray-200 space-y-3 bg-white shadow-lg flex-shrink-0">
+              <div className="space-y-2">
+                <div className="flex justify-between text-lg md:text-xl font-bold text-emerald-600">
                   <span>Total:</span>
                   <span>₱{calculateTotal().toFixed(2)}</span>
                 </div>
@@ -1132,7 +1705,7 @@ const CashierScreen: React.FC = () => {
               <TouchButton
                 onClick={() => setShowPaymentModal(true)}
                 variant="success"
-                size="xl"
+                size={isMobile ? "lg" : "xl"}
                 fullWidth
                 icon={CreditCard}
               >
@@ -1147,79 +1720,10 @@ const CashierScreen: React.FC = () => {
           <MobileBottomSheet
             isOpen={showMobileCart}
             onClose={() => setShowMobileCart(false)}
-            title={`Cart (${cart.length})`}
+            title="Order Summary"
           >
-            {/* Mobile View Toggle */}
-            <div className="mb-4 flex justify-center">
-              <div className="flex bg-gray-100 rounded-lg p-1">
-                <button
-                  onClick={() => setViewMode('grid')}
-                  className={`p-2 rounded-md transition-colors ${
-                    viewMode === 'grid'
-                      ? 'bg-white text-emerald-600 shadow-sm'
-                      : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                  title="Grid View"
-                >
-                  <Grid3X3 className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => setViewMode('list')}
-                  className={`p-2 rounded-md transition-colors ${
-                    viewMode === 'list'
-                      ? 'bg-white text-emerald-600 shadow-sm'
-                      : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                  title="List View"
-                >
-                  <List className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-            <div className="mb-4">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-gray-700">Customer:</span>
-                <button
-                  onClick={() => {
-                    const mockCustomer: Customer = {
-                      id: '1',
-                      customer_number: 'C000001',
-                      first_name: 'John',
-                      last_name: 'Doe',
-                      email: 'john.doe@example.com',
-                      phone: '+1234567890',
-                      address: '123 Main St',
-                      city: 'Manila',
-                      province: 'Metro Manila',
-                      customer_type: 'regular',
-                      is_active: true,
-                      created_at: new Date().toISOString(),
-                      user_id: 'user-1',
-                      customer_code: 'C000001',
-                      date_of_birth: '1990-01-01',
-                      registration_date: new Date().toISOString(),
-                      total_spent: 5000,
-                      last_purchase_date: new Date().toISOString(),
-                      loyalty_points: 150,
-                      loyalty_tier: 'silver',
-                      total_lifetime_spent: 5000
-                    };
-                    setSelectedCustomer(selectedCustomer ? null : mockCustomer);
-                  }}
-                  className="flex items-center space-x-2 text-emerald-600 hover:text-emerald-700 bg-emerald-50 px-3 py-2 rounded-lg hover:bg-emerald-100 transition-colors"
-                >
-                  <User className="w-4 h-4" />
-                  <span>{selectedCustomer ? `${selectedCustomer.first_name} ${selectedCustomer.last_name}` : 'Add Customer'}</span>
-                </button>
-              </div>
-              {selectedCustomer && (
-                <div className="mt-2 text-xs text-gray-500">
-                  Points: {selectedCustomer.loyalty_points}
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-3 mb-4">
+            {/* Cart Items List */}
+            <div className="space-y-4 mb-4">
               {cart.length === 0 ? (
                 <div className="text-center text-gray-500 py-8">
                   <ShoppingCart className="w-12 h-12 mx-auto mb-2 text-gray-300" />
@@ -1228,93 +1732,121 @@ const CashierScreen: React.FC = () => {
                 </div>
               ) : (
                 cart.map(item => (
-                  <div key={item.id} className="product-card">
-                    <div className="flex justify-between items-start mb-2">
-                      <h4 className="font-medium text-gray-900 text-sm">{item.product.name}</h4>
+                  <div key={item.id} className="bg-white border border-gray-200 rounded-lg p-4">
+                    {/* Product Name and Remove Button */}
+                    <div className="flex justify-between items-start mb-3">
+                      <h4 className="font-semibold text-gray-900 text-base flex-1 pr-2">{item.product.name}</h4>
                       <button
                         onClick={() => removeFromCart(item.id)}
-                        className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-50"
+                        className="text-red-500 hover:text-red-700 active:bg-red-50 p-1.5 rounded-lg transition-colors touch-button flex-shrink-0"
+                        aria-label="Remove item"
                       >
-                        <X className="w-4 h-4" />
+                        <X className="w-5 h-5" />
                       </button>
                     </div>
                     
-                    <div className="flex justify-between items-center mb-2">
-                      <div className="text-sm text-gray-600">
-                        ₱{item.unitPrice.toFixed(2)} per {item.selectedUnit?.unit_label || 'unit'}
-                      </div>
-                      <div className="quantity-control">
-                        <button
-                          onClick={() => {
-                            const minQty = parseFloat((item.selectedUnit as any)?.min_sellable_quantity || '0.01');
-                            updateQuantity(item.id, Math.max(minQty, item.quantity - minQty));
+                    {/* Price per Unit */}
+                    <div className="text-sm text-gray-600 mb-3">
+                      ₱{item.unitPrice.toFixed(2)} per {item.selectedUnit?.unit_label || item.product.unit_of_measure || 'unit'}
+                    </div>
+                    
+                    {/* Quantity Control */}
+                    <div className="flex items-center justify-between mb-3">
+                      <label className="text-sm font-medium text-gray-700">Quantity:</label>
+                      <div className="flex items-center space-x-2">
+                        <input
+                          type="number"
+                          min={item.selectedUnit?.is_base_unit ? 1 : item.selectedUnit?.min_sellable_quantity ?? 0.01}
+                          step={item.selectedUnit?.is_base_unit ? 1 : item.selectedUnit?.min_sellable_quantity ?? 0.01}
+                          value={item.quantity}
+                          onChange={(e) => {
+                            let newQuantity = parseFloat(e.target.value) || 0;
+                            updateQuantity(item.id, newQuantity);
                           }}
-                          className="quantity-btn"
-                        >
-                          <Minus className="w-4 h-4" />
-                        </button>
-                        <span className="quantity-display">
-                          {item.quantity} {item.selectedUnit?.unit_label || 'unit'}
+                          className="w-20 px-3 py-2 border border-gray-300 rounded-lg text-center font-semibold text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                        />
+                        <span className="text-sm text-gray-600 min-w-[3rem]">
+                          {item.selectedUnit?.unit_label || item.product.unit_of_measure || 'unit'}
                         </span>
-                        <button
-                          onClick={() => {
-                            const minQty = parseFloat((item.selectedUnit as any)?.min_sellable_quantity || '0.01');
-                            updateQuantity(item.id, item.quantity + minQty);
-                          }}
-                          className="quantity-btn"
-                        >
-                          <Plus className="w-4 h-4" />
-                        </button>
                       </div>
                     </div>
                     
-                    <div className="text-right">
-                      <span className="font-semibold text-emerald-600">
-                        ₱{item.lineTotal.toFixed(2)}
-                      </span>
+                    {/* Subtotal */}
+                    <div className="flex justify-end pt-2 border-t border-gray-100">
+                      <div className="text-right">
+                        <span className="text-xs text-gray-500 mr-2">Subtotal:</span>
+                        <span className="text-base font-bold text-emerald-600">
+                          ₱{item.lineTotal.toFixed(2)}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 ))
               )}
             </div>
 
+            {/* Total and Checkout Button */}
             {cart.length > 0 && (
-              <div className="border-t border-gray-200 pt-4 space-y-3">
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between text-xl font-bold text-emerald-600">
-                    <span>Total:</span>
-                    <span>₱{calculateTotal().toFixed(2)}</span>
-                  </div>
+              <div className="border-t-2 border-gray-200 pt-4 space-y-4 bg-white sticky bottom-0 -mx-4 -mb-4 px-4 pb-4">
+                <div className="flex justify-between items-center">
+                  <span className="text-lg font-bold text-gray-900">Total:</span>
+                  <span className="text-2xl font-bold text-emerald-600">₱{calculateTotal().toFixed(2)}</span>
                 </div>
                 
                 <TouchButton
-                  onClick={() => setShowPaymentModal(true)}
+                  onClick={() => {
+                    setShowMobileCart(false);
+                    setShowPaymentModal(true);
+                  }}
                   variant="success"
                   size="xl"
                   fullWidth
                   icon={CreditCard}
                 >
-                  Proceed to Payment
+                  Checkout
                 </TouchButton>
               </div>
             )}
           </MobileBottomSheet>
         )}
 
-        {isMobile && cart.length > 0 && (
-          <FloatingActionButton
-            onClick={() => setShowMobileCart(true)}
-            icon={ShoppingCart}
-            label="View Cart"
-            variant="primary"
-            className="fixed bottom-6 right-6 z-50"
-          />
-        )}
+        {/* Mobile Floating Cart Button */}
+        {isMobile && cart.length > 0 && (() => {
+          const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
+          return (
+            <button
+              onClick={() => setShowMobileCart(true)}
+              className="mobile-floating-cart text-white touch-button"
+              aria-label="View cart and place order"
+            >
+              <div className="flex items-center justify-between px-4 py-3.5">
+                <div className="flex-1 min-w-0 text-left">
+                  <div className="text-base font-bold">Place Order</div>
+                  <div className="text-xs opacity-95 flex items-center space-x-2 mt-1">
+                    <span className="font-medium">{totalItems} {totalItems === 1 ? 'item' : 'items'}</span>
+                    <span className="opacity-60">•</span>
+                    <span className="font-bold text-sm">₱{calculateTotal().toFixed(2)}</span>
+                  </div>
+                </div>
+                <div className="flex-shrink-0 ml-3">
+                  <ChevronRight className="w-5 h-5" />
+                </div>
+              </div>
+            </button>
+          );
+        })()}
       </div>
 
       <Modal
         isOpen={showPaymentModal}
-        onClose={() => !isProcessingPayment && setShowPaymentModal(false)}
+        onClose={() => {
+          if (!isProcessingPayment) {
+            setShowPaymentModal(false);
+            setPaymentMethod(null);
+            setCashAmount('');
+            setGcashReferenceNumber('');
+          }
+        }}
         title={paymentSuccess ? "Payment Successful!" : "Payment"}
         size="lg"
       >
@@ -1342,9 +1874,12 @@ const CashierScreen: React.FC = () => {
             <>
               <div>
                 <h4 className="text-lg font-semibold mb-4">Select Payment Method</h4>
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-2 gap-4">
                   <TouchButton
-                    onClick={() => setPaymentMethod('cash')}
+                    onClick={() => {
+                      setPaymentMethod('cash');
+                      setGcashReferenceNumber('');
+                    }}
                     variant={paymentMethod === 'cash' ? 'primary' : 'outline'}
                     icon={Banknote}
                     className="py-6"
@@ -1353,22 +1888,16 @@ const CashierScreen: React.FC = () => {
                     Cash
                   </TouchButton>
                   <TouchButton
-                    onClick={() => setPaymentMethod('gcash')}
+                    onClick={() => {
+                      setPaymentMethod('gcash');
+                      setCashAmount('');
+                    }}
                     variant={paymentMethod === 'gcash' ? 'primary' : 'outline'}
                     icon={Smartphone}
                     className="py-6"
                     disabled={isProcessingPayment}
                   >
                     GCash
-                  </TouchButton>
-                  <TouchButton
-                    onClick={() => setPaymentMethod('paymaya')}
-                    variant={paymentMethod === 'paymaya' ? 'primary' : 'outline'}
-                    icon={Smartphone}
-                    className="py-6"
-                    disabled={isProcessingPayment}
-                  >
-                    PayMaya
                   </TouchButton>
                 </div>
               </div>
@@ -1389,6 +1918,43 @@ const CashierScreen: React.FC = () => {
                   {cashAmount && (
                     <div className="mt-2 text-sm text-gray-600">
                       Change: ₱{(parseFloat(cashAmount) - calculateTotal()).toFixed(2)}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {paymentMethod === 'gcash' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Reference Number <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={gcashReferenceNumber}
+                    onChange={(e) => {
+                      // Only allow digits and limit to 13 digits
+                      const value = e.target.value.replace(/\D/g, '').slice(0, 13);
+                      setGcashReferenceNumber(value);
+                    }}
+                    placeholder="Enter 13-digit reference number"
+                    maxLength={13}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-lg"
+                    disabled={isProcessingPayment}
+                  />
+                  {gcashReferenceNumber && (
+                    <div className={`mt-2 text-sm ${
+                      gcashReferenceNumber.length === 13 
+                        ? 'text-green-600' 
+                        : 'text-red-600'
+                    }`}>
+                      {gcashReferenceNumber.length === 13 
+                        ? '✓ Valid reference number' 
+                        : `${gcashReferenceNumber.length}/13 digits`}
+                    </div>
+                  )}
+                  {!gcashReferenceNumber && (
+                    <div className="mt-2 text-xs text-gray-500">
+                      Please enter the 13-digit GCash reference number
                     </div>
                   )}
                 </div>
@@ -1417,7 +1983,11 @@ const CashierScreen: React.FC = () => {
                   variant="success"
                   className="flex-1"
                   icon={Receipt}
-                  disabled={isProcessingPayment || (paymentMethod === 'cash' && (!cashAmount || parseFloat(cashAmount) < calculateTotal()))}
+                  disabled={
+                    isProcessingPayment || 
+                    (paymentMethod === 'cash' && (!cashAmount || parseFloat(cashAmount) < calculateTotal())) ||
+                    (paymentMethod === 'gcash' && gcashReferenceNumber.length !== 13)
+                  }
                 >
                   {isProcessingPayment ? 'Processing...' : 'Complete Payment'}
                 </TouchButton>
@@ -1437,6 +2007,243 @@ const CashierScreen: React.FC = () => {
           }
         }}
       />
+
+      {/* Add Expense Modal */}
+      <Modal
+        isOpen={showExpenseModal}
+        onClose={handleCloseExpenseModal}
+        title="Add Expense"
+        size="lg"
+      >
+        <div className="space-y-6">
+          {/* Expense Type */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Expense Type <span className="text-red-500">*</span>
+            </label>
+            <select
+              value={expenseType}
+              onChange={(e) => setExpenseType(e.target.value)}
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-lg"
+              disabled={isSubmittingExpense}
+            >
+              <option value="">Select expense type</option>
+              <option value="Cash Advance">Cash Advance</option>
+              <option value="Delivery Payment">Delivery Payment</option>
+              <option value="Utilities">Utilities</option>
+              <option value="Supplies">Supplies</option>
+              <option value="Maintenance">Maintenance</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+
+          {/* Other Expense Type Field */}
+          {expenseType === 'Other' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Specify Expense Type <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={expenseOther}
+                onChange={(e) => setExpenseOther(e.target.value)}
+                placeholder="Enter expense type"
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-lg"
+                disabled={isSubmittingExpense}
+              />
+            </div>
+          )}
+
+          {/* Employee Selection for Cash Advance */}
+          {expenseType === 'Cash Advance' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Employee <span className="text-red-500">*</span>
+              </label>
+              {isLoadingEmployees ? (
+                <div className="flex items-center justify-center py-4">
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-emerald-600"></div>
+                </div>
+              ) : (
+                <select
+                  value={selectedEmployeeId}
+                  onChange={(e) => setSelectedEmployeeId(e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-lg"
+                  disabled={isSubmittingExpense}
+                >
+                  <option value="">Select employee</option>
+                  {employees.map(employee => (
+                    <option key={employee.id} value={employee.id}>
+                      {employee.first_name} {employee.last_name} - {employee.position} ({employee.employee_id})
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+          )}
+
+          {/* Amount */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Amount <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="number"
+              value={expenseAmount}
+              onChange={(e) => setExpenseAmount(e.target.value)}
+              placeholder="0.00"
+              min="0"
+              step="0.01"
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-lg"
+              disabled={isSubmittingExpense}
+            />
+          </div>
+
+          {/* Description */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Description <span className="text-red-500">*</span>
+            </label>
+            <textarea
+              value={expenseDescription}
+              onChange={(e) => setExpenseDescription(e.target.value)}
+              placeholder="Enter expense description"
+              rows={3}
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-lg resize-none"
+              disabled={isSubmittingExpense}
+            />
+          </div>
+
+          {/* Image Capture */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Receipt/Image
+            </label>
+            <div className="space-y-3">
+              <input
+                ref={expenseImageInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={handleExpenseImageChange}
+                className="hidden"
+                disabled={isSubmittingExpense}
+              />
+              <div className="flex space-x-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    // Create a new input for camera capture
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = 'image/*';
+                    // Set capture attribute for camera access (mobile)
+                    (input as any).capture = 'environment'; // Use rear camera
+                    input.onchange = (e) => {
+                      const file = (e.target as HTMLInputElement).files?.[0];
+                      if (file) {
+                        handleExpenseImageChange({ target: { files: [file] } } as any);
+                      }
+                    };
+                    input.click();
+                  }}
+                  className="flex items-center space-x-2 px-4 py-3 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={isSubmittingExpense}
+                >
+                  <Camera className="w-5 h-5" />
+                  <span>Capture Photo</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = 'image/*';
+                    input.onchange = (e) => {
+                      const file = (e.target as HTMLInputElement).files?.[0];
+                      if (file) {
+                        handleExpenseImageChange({ target: { files: [file] } } as any);
+                      }
+                    };
+                    input.click();
+                  }}
+                  className="flex items-center space-x-2 px-4 py-3 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={isSubmittingExpense}
+                >
+                  <Upload className="w-5 h-5" />
+                  <span>Upload Image</span>
+                </button>
+              </div>
+              
+              {expenseImagePreview && (
+                <div className="mt-3 relative">
+                  <img
+                    src={expenseImagePreview}
+                    alt="Expense receipt preview"
+                    className="w-full max-h-64 object-contain rounded-lg border border-gray-300"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setExpenseImage(null);
+                      setExpenseImagePreview(null);
+                      if (expenseImageInputRef.current) {
+                        expenseImageInputRef.current.value = '';
+                      }
+                    }}
+                    className="absolute top-2 right-2 p-2 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors"
+                    disabled={isSubmittingExpense}
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Auto-filled Branch and User Info */}
+          <div className="bg-gray-50 rounded-xl p-4">
+            <h4 className="text-sm font-medium text-gray-700 mb-2">Transaction Information</h4>
+            <div className="space-y-2 text-sm text-gray-600">
+              <div className="flex justify-between">
+                <span>Branch:</span>
+                <span className="font-medium">{branchName || 'Loading...'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Recorded By:</span>
+                <span className="font-medium">{(() => {
+                  const currentUser = customAuth.getCurrentUser();
+                  return currentUser ? `${currentUser.first_name || ''} ${currentUser.last_name || ''}`.trim() || currentUser.email : 'N/A';
+                })()}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Date:</span>
+                <span className="font-medium">{new Date().toLocaleDateString()}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex space-x-4">
+            <TouchButton
+              onClick={handleCloseExpenseModal}
+              variant="outline"
+              className="flex-1"
+              disabled={isSubmittingExpense}
+            >
+              Cancel
+            </TouchButton>
+            <TouchButton
+              onClick={handleSubmitExpense}
+              variant="success"
+              className="flex-1"
+              disabled={isSubmittingExpense}
+            >
+              {isSubmittingExpense ? 'Submitting...' : 'Submit Expense'}
+            </TouchButton>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };

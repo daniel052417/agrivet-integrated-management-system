@@ -99,9 +99,10 @@ const ProductCard: React.FC<ProductCardProps> = ({
             e.stopPropagation();
             onAddToCart?.(product);
           }}
-          className="flex-shrink-0 w-9 h-9 sm:w-10 sm:h-10 bg-agrivet-green text-white rounded-full flex items-center justify-center hover:bg-green-700 transition-colors shadow-md"
+          className="flex-shrink-0 w-12 h-12 sm:w-10 sm:h-10 bg-agrivet-green text-white rounded-full flex items-center justify-center hover:bg-green-700 active:bg-green-800 transition-colors shadow-lg touch-manipulation"
+          aria-label="Add to cart"
         >
-          <Plus className="w-4 h-4 sm:w-5 sm:h-5" />
+          <Plus className="w-5 h-5 sm:w-5 sm:h-5" />
         </button>
       </div>
     );
@@ -125,15 +126,16 @@ const ProductCard: React.FC<ProductCardProps> = ({
         />
         {getStockBadge()}
         
-        {/* Add to Cart Button */}
+        {/* Add to Cart Button - Larger and more visible on mobile */}
         <button
           onClick={(e) => {
             e.stopPropagation();
             onAddToCart?.(product);
           }}
-          className="absolute bottom-2 right-2 sm:bottom-3 sm:right-3 w-9 h-9 sm:w-10 sm:h-10 bg-white text-agrivet-green rounded-full flex items-center justify-center hover:bg-agrivet-green hover:text-white transition-colors shadow-lg"
+          className="absolute bottom-2 right-2 sm:bottom-3 sm:right-3 w-12 h-12 sm:w-10 sm:h-10 bg-agrivet-green text-white rounded-full flex items-center justify-center hover:bg-green-700 active:bg-green-800 transition-colors shadow-xl border-2 border-white touch-manipulation z-10"
+          aria-label="Add to cart"
         >
-          <Plus className="w-4 h-4 sm:w-5 sm:h-5" />
+          <Plus className="w-6 h-6 sm:w-5 sm:h-5" />
         </button>
       </div>
 
@@ -151,11 +153,19 @@ const ProductCard: React.FC<ProductCardProps> = ({
 
         <div className="mt-3">
           <p className="text-base sm:text-lg font-bold text-gray-900">
-            from {formatPrice(product.price_per_unit)}
+            {product.available_units && product.available_units.length > 1 
+              ? `from ${formatPrice(product.price_per_unit)}`
+              : formatPrice(product.price_per_unit)
+            }
           </p>
           {product.available_units && product.available_units.length > 1 && (
             <p className="text-xs text-gray-500 mt-1">
               {product.available_units.length} units available
+            </p>
+          )}
+          {product.unit_label && (!product.available_units || product.available_units.length === 1) && (
+            <p className="text-xs text-gray-500 mt-1">
+              per {product.unit_label}
             </p>
           )}
         </div>

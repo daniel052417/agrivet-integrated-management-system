@@ -109,3 +109,5 @@ GRANT USAGE ON SCHEMA public TO postgres, anon, authenticated, service_role;
 GRANT ALL ON public.customers TO postgres, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.webhook_create_customer() TO postgres, anon, authenticated, service_role;
 
+
+

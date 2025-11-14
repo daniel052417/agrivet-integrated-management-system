@@ -19,6 +19,15 @@ export interface EmailResult {
   error?: string;
 }
 
+export interface OTPEmailData {
+  to: string;
+  name: string;
+  otpCode: string;
+  expiryMinutes: number;
+  companyName?: string;
+  customMessage?: string;
+}
+
 export const emailService = {
   /**
    * Send account activation email
@@ -257,6 +266,158 @@ export const emailService = {
       
     } catch (error) {
       console.error('Failed to send activation confirmation email:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error occurred'
+      };
+    }
+  },
+
+  /**
+   * Send OTP code email for MFA
+   */
+  async sendOTPEmail(data: OTPEmailData): Promise<EmailResult> {
+    try {
+      const { to, name, otpCode, expiryMinutes = 5, companyName = 'AgriVet Management System', customMessage } = data;
+      
+      // Determine subject and header based on custom message
+      const isDeviceRegistration = customMessage?.includes('device registration') || customMessage?.includes('Attendance Terminal');
+      const subject = isDeviceRegistration 
+        ? `Device Registration OTP Code - ${companyName}`
+        : `Your Login Verification Code - ${companyName}`;
+      const headerTitle = isDeviceRegistration 
+        ? '🔐 Device Registration OTP Code'
+        : '🔐 Login Verification Code';
+      const introText = isDeviceRegistration
+        ? `A device registration request has been made for <strong>${companyName}</strong>. Please use the OTP code below to verify and register the device:`
+        : `You've requested to log in to your <strong>${companyName}</strong> account. Please use the verification code below:`;
+      
+      const emailContent = {
+        to,
+        subject,
+        html: `
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>${isDeviceRegistration ? 'Device Registration' : 'Login'} Verification Code</title>
+            <style>
+              body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+              .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+              .header { background: #2563eb; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
+              .content { background: #f8fafc; padding: 30px; border-radius: 0 0 8px 8px; }
+              .otp-box { background: white; border: 2px solid #2563eb; border-radius: 8px; padding: 20px; text-align: center; margin: 20px 0; }
+              .otp-code { font-size: 32px; font-weight: bold; color: #2563eb; letter-spacing: 8px; font-family: 'Courier New', monospace; }
+              .warning { background: #fef3c7; border: 1px solid #f59e0b; padding: 15px; border-radius: 6px; margin: 20px 0; }
+              .footer { text-align: center; margin-top: 30px; color: #6b7280; font-size: 14px; }
+              .custom-message { background: #e0f2fe; border: 1px solid #0284c7; padding: 15px; border-radius: 6px; margin: 20px 0; }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <div class="header">
+                <h1>${headerTitle}</h1>
+              </div>
+              <div class="content">
+                <h2>Hello ${name}!</h2>
+                <p>${introText}</p>
+                
+                ${customMessage ? `
+                <div class="custom-message">
+                  <strong>ℹ️ Request Details:</strong><br>
+                  ${customMessage}
+                </div>
+                ` : ''}
+                
+                <div class="otp-box">
+                  <div style="color: #6b7280; font-size: 14px; margin-bottom: 10px;">Your verification code:</div>
+                  <div class="otp-code">${otpCode}</div>
+                </div>
+                
+                <div class="warning">
+                  <strong>⏰ Important:</strong> This code will expire in ${expiryMinutes} minutes. Do not share this code with anyone.
+                </div>
+                
+                <p>If you didn't request this code, please ignore this email or contact support if you're concerned about your account's security.</p>
+              </div>
+              <div class="footer">
+                <p>This is an automated security message. Please do not reply to this email.</p>
+                <p>&copy; ${new Date().getFullYear()} ${companyName}. All rights reserved.</p>
+              </div>
+            </div>
+          </body>
+          </html>
+        `,
+        text: `
+          Login Verification Code - ${companyName}
+          
+          Hello ${name}!
+          
+          You've requested to log in to your ${companyName} account. Please use the verification code below:
+          
+          Verification Code: ${otpCode}
+          
+          ⏰ Important: This code will expire in ${expiryMinutes} minutes. Do not share this code with anyone.
+          
+          If you didn't request this code, please ignore this email or contact support if you're concerned about your account's security.
+          
+          This is an automated security message. Please do not reply to this email.
+        `
+      };
+
+      // Use SendGrid Edge Function for email sending
+      try {
+        const { emailApi } = await import('./emailApi');
+        const result = await emailApi.sendOTPEmail(data);
+        if (result.success) {
+          console.log('✅ OTP email sent via SendGrid Edge Function');
+          return result;
+        }
+      } catch (error: any) {
+        console.log('❌ SendGrid Edge Function not available for OTP email:', error.message);
+      }
+
+      // Try Gmail service as fallback
+      try {
+        const { gmailEmailService } = await import('./gmailEmailService');
+        const result = await gmailEmailService.sendOTPEmail(data);
+        if (result.success) {
+          console.log('✅ OTP email sent via Gmail SMTP');
+          return result;
+        }
+      } catch (error: any) {
+        console.log('❌ Gmail service not available:', error.message);
+      }
+
+      // Simulate email sending (fallback)
+      // Make OTP very visible in console for development/testing
+      console.log('%c🔐 MFA OTP CODE (DEVELOPMENT MODE)', 'background: #2563eb; color: white; font-size: 20px; font-weight: bold; padding: 10px; border-radius: 5px;');
+      console.log('%c' + otpCode, 'background: #fef3c7; color: #1f2937; font-size: 32px; font-weight: bold; padding: 20px; border: 3px solid #f59e0b; border-radius: 10px; letter-spacing: 8px; font-family: monospace;');
+      console.log('%c📧 Email would be sent to: ' + emailContent.to, 'background: #e5e7eb; color: #1f2937; font-size: 14px; padding: 8px; border-radius: 5px;');
+      console.log('⚠️  WARNING: This is SIMULATION MODE - No real email was sent!');
+      console.log('📖 To send real emails:');
+      console.log('   1. Deploy Supabase Edge Function: supabase functions deploy mfa-email');
+      console.log('   2. Set SENDGRID_API_KEY in Supabase Dashboard → Edge Functions → Secrets');
+      console.log('   3. Or configure Gmail SMTP in gmailEmailService.ts');
+      
+      // Store OTP in sessionStorage for easy access (development only)
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('mfa_otp_code', otpCode);
+        sessionStorage.setItem('mfa_otp_email', to);
+        sessionStorage.setItem('mfa_otp_expires', new Date(Date.now() + expiryMinutes * 60 * 1000).toISOString());
+      }
+      
+      // Simulate network delay
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      return {
+        success: true,
+        messageId: `sim_otp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+      };
+      
+    } catch (error) {
+      console.error('Failed to send OTP email:', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error occurred'

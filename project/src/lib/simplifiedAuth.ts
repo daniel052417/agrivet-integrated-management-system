@@ -38,6 +38,7 @@ export const SYSTEM_ROLES = {
   MARKETING_STAFF: 'marketing-staff',
   CASHIER: 'cashier',
   INVENTORY_CLERK: 'inventory-clerk',
+  FINANCE_STAFF: 'finance-staff',
 } as const;
 
 export type SystemRole = typeof SYSTEM_ROLES[keyof typeof SYSTEM_ROLES];
@@ -48,11 +49,12 @@ export const ROLE_SIDEBAR_CONFIG = {
     sections: [
       'overview',
       'inventory-management', 'all-products', 'categories', 'low-stock',
-      'sales-pos', 'sales-records', 'sales-monitoring', 'daily-sales', 'product-sales', 'suppliers', 'brands',
+      'sales-pos', 'sales-records', 'daily-sales', 'product-sales', 'suppliers', 'brands',
+      'finance', 'expenses', 'cash-flow',
       'staff-user-management', 'user-accounts', 'session-history', 'user-roles-overview', 'roles-permissions', 'activity-logs',
-      'hr', 'hr-dashboard', 'staff', 'attendance-dashboard', 'leave-management', 'hr-analytics', 'payroll',
-      'marketing', 'marketing-overview', 'promotions-announcements', 'insights-analytics', 'client-notifications', 'facebook-integration',
-      'reports', 'exports', 'claims', 'settings'
+      'hr', 'staff', 'attendance-dashboard', 'leave-management', 'hr-analytics', 'payroll',
+      'marketing', 'marketing-overview', 'promotions-announcements', 'facebook-integration',
+      'reports','settings'
     ]
   },
   [SYSTEM_ROLES.HR_ADMIN]: {
@@ -84,6 +86,11 @@ export const ROLE_SIDEBAR_CONFIG = {
   [SYSTEM_ROLES.INVENTORY_CLERK]: {
     sections: [
       'overview', 'inventory-management', 'all-products', 'categories', 'low-stock'
+    ]
+  },
+  [SYSTEM_ROLES.FINANCE_STAFF]: {
+    sections: [
+      'finance', 'expenses', 'cash-flow'
     ]
   },
 };

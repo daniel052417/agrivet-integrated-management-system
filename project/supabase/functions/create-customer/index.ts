@@ -10,137 +10,273 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+/**
+ * Get current timestamp in Manila timezone as ISO string with timezone offset
+ * Manila, Philippines is UTC+8
+ * Returns an ISO string with +08:00 timezone offset so PostgreSQL
+ * correctly interprets it as Manila time and stores it appropriately.
+ */
+function getManilaTimestamp(): string {
+  const now = new Date()
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  })
+  
+  const parts = formatter.formatToParts(now)
+  const year = parts.find(p => p.type === 'year')!.value
+  const month = parts.find(p => p.type === 'month')!.value
+  const day = parts.find(p => p.type === 'day')!.value
+  const hour = parts.find(p => p.type === 'hour')!.value
+  const minute = parts.find(p => p.type === 'minute')!.value
+  const second = parts.find(p => p.type === 'second')!.value
+  
+  // Format as ISO string with +08:00 timezone offset (Manila is UTC+8)
+  // Format: YYYY-MM-DDTHH:mm:ss+08:00
+  return `${year}-${month}-${day}T${hour}:${minute}:${second}+08:00`
+}
+
+interface ResponseBody {
+  success: boolean
+  customer?: Record<string, unknown>
+  message?: string
+  skipped?: boolean
+  error?: string
+}
+
+const respond = (status: number, body: ResponseBody) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+  })
+
 serve(async (req) => {
-  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    // Create Supabase client with service role key
-    // Supabase automatically provides these environment variables to Edge Functions
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    // Get the request body
-    const { user_id, email, user_metadata, raw_user_meta_data } = await req.json()
+    const payload = await req.json()
+    const isAuthHook = Boolean(payload?.type && payload?.record)
+    const source = payload?.source ?? (isAuthHook ? 'auth-hook' : null)
 
-    if (!user_id || !email) {
+    if (!source || source === 'auth-hook') {
+      const provider =
+        payload?.record?.app_metadata?.provider ??
+        payload?.provider ??
+        payload?.user_metadata?.provider
+
+      if (provider && provider !== 'email') {
+        console.log('Skipping automatic customer creation for OAuth provider:', provider)
+        return respond(200, {
+          success: true,
+          skipped: true,
+          message: 'OAuth sign-ins must complete profile manually'
+        })
+      }
+
+      console.log('No source provided; ignoring request.')
+      return respond(200, {
+        success: true,
+        skipped: true,
+        message: 'No customer created – missing source'
+      })
+    }
+
+    const userId =
+      payload.user_id ??
+      payload?.record?.id ??
+      payload?.record?.user_id
+    const email =
+      payload.email ??
+      payload?.record?.email ??
+      payload?.record?.user_email
+
+    if (!userId || !email) {
       throw new Error('Missing required fields: user_id and email')
     }
 
-    console.log('Creating customer for user:', { user_id, email })
+    console.log('Processing customer request:', { userId, email, source })
 
-    // Extract user data from metadata
-    const firstName = extractFirstName(user_metadata, raw_user_meta_data, email)
-    const lastName = extractLastName(user_metadata, raw_user_meta_data)
-    const phone = extractPhone(user_metadata, raw_user_meta_data)
+    const metadata = payload.user_metadata ?? payload.raw_user_meta_data ?? payload?.record?.user_metadata ?? {}
+    const rawMetadata = payload.raw_user_meta_data ?? payload.user_metadata ?? {}
 
-    // Generate unique customer identifiers
-    const timestamp = Date.now().toString().slice(-8)
-    const customerNumber = `CUST-${timestamp}`
-    const customerCode = `C${timestamp}`
+    const firstName = extractFirstName(metadata, rawMetadata, email)
+    const lastName = extractLastName(metadata, rawMetadata)
+    const phone = extractPhone(metadata, rawMetadata)
 
-    // Create customer record
+    const address = payload.address ?? null
+    const city = payload.city ?? null
+    const province = payload.province ?? null
+    const postalCode = payload.postal_code ?? null
+    const customerType = payload.customer_type ?? 'individual'
+
+    const { data: existingCustomer } = await supabaseClient
+      .from('customers')
+      .select('*')
+      .eq('user_id', userId)
+      .maybeSingle()
+
+    if (existingCustomer) {
+      console.log('Customer already exists, updating...', existingCustomer.id)
+
+      const { error: updateError, data: updated } = await supabaseClient
+        .from('customers')
+        .update({
+          first_name: firstName || existingCustomer.first_name,
+          last_name: lastName || existingCustomer.last_name,
+          phone: phone ?? existingCustomer.phone,
+          address: address ?? existingCustomer.address,
+          city: city ?? existingCustomer.city,
+          province: province ?? existingCustomer.province,
+          postal_code: postalCode ?? existingCustomer.postal_code,
+          customer_type: customerType ?? existingCustomer.customer_type,
+          updated_at: getManilaTimestamp()
+        })
+        .eq('id', existingCustomer.id)
+        .select('*')
+        .maybeSingle()
+
+      if (updateError) {
+        throw new Error(`Failed to update customer: ${updateError.message}`)
+      }
+
+      return respond(200, {
+        success: true,
+        customer: sanitiseCustomer(updated ?? existingCustomer),
+        message: 'Customer updated'
+      })
+    }
+
+    const { customerNumber, customerCode } = generateCustomerIdentifiers()
+    const now = getManilaTimestamp()
+
     const { data: customer, error } = await supabaseClient
       .from('customers')
       .insert({
-        user_id,
+        user_id: userId,
         customer_number: customerNumber,
         customer_code: customerCode,
         first_name: firstName,
         last_name: lastName,
         email,
         phone,
-        customer_type: 'individual',
+        customer_type: customerType,
         is_active: true,
         is_guest: false,
-        registration_date: new Date().toISOString(),
-        total_spent: 0.00,
-        total_lifetime_spent: 0.00,
+        address,
+        city,
+        province,
+        postal_code: postalCode,
+        registration_date: now,
+        total_spent: 0,
+        total_lifetime_spent: 0,
         loyalty_points: 0,
         loyalty_tier: 'bronze',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        created_at: now,
+        updated_at: now
       })
       .select('*')
       .single()
 
     if (error) {
-      console.error('Error creating customer:', error)
       throw new Error(`Failed to create customer: ${error.message}`)
     }
 
     console.log('Customer created successfully:', customer.id)
 
-    return new Response(
-      JSON.stringify({ 
-        success: true, 
-        customer: {
-          id: customer.id,
-          customer_number: customer.customer_number,
-          email: customer.email,
-          first_name: customer.first_name,
-          last_name: customer.last_name
-        }
-      }),
-      { 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200 
-      }
-    )
+    return respond(200, {
+      success: true,
+      customer: sanitiseCustomer(customer),
+      message: 'Customer created'
+    })
 
   } catch (error) {
-    console.error('Edge function error:', error)
-    return new Response(
-      JSON.stringify({ 
-        success: false, 
-        error: error.message 
-      }),
-      { 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 400 
-      }
-    )
+    console.error('create-customer error:', error)
+    const message = error instanceof Error ? error.message : 'Unexpected error'
+    return respond(400, {
+      success: false,
+      error: message
+    })
   }
 })
 
-// Helper functions to extract user data
-function extractFirstName(userMetadata: any, rawUserMetaData: any, email: string): string {
+function extractFirstName(metadata: any, raw: any, email: string): string {
   return (
-    rawUserMetaData?.first_name ||
-    userMetadata?.first_name ||
-    userMetadata?.given_name ||
-    splitName(rawUserMetaData?.full_name || userMetadata?.full_name || userMetadata?.name || email)[0] ||
+    metadata?.first_name ||
+    raw?.first_name ||
+    metadata?.given_name ||
+    raw?.given_name ||
+    splitName(metadata?.full_name || raw?.full_name || metadata?.name)[0] ||
     email.split('@')[0]
   )
 }
 
-function extractLastName(userMetadata: any, rawUserMetaData: any): string {
-  const fullName = rawUserMetaData?.full_name || userMetadata?.full_name || userMetadata?.name || ''
+function extractLastName(metadata: any, raw: any): string {
+  const fullName = metadata?.full_name || raw?.full_name || metadata?.name || ''
   const nameParts = splitName(fullName)
-  
+
   return (
-    rawUserMetaData?.last_name ||
-    userMetadata?.last_name ||
-    userMetadata?.family_name ||
-    nameParts.slice(1).join(' ') ||
-    ''
+    metadata?.last_name ||
+    raw?.last_name ||
+    metadata?.family_name ||
+    raw?.family_name ||
+    nameParts.slice(1).join(' ')
   )
 }
 
-function extractPhone(userMetadata: any, rawUserMetaData: any): string | null {
+function extractPhone(metadata: any, raw: any): string | null {
   return (
-    rawUserMetaData?.phone ||
-    userMetadata?.phone ||
-    userMetadata?.phone_number ||
+    metadata?.phone ||
+    raw?.phone ||
+    metadata?.phone_number ||
+    raw?.phone_number ||
     null
   )
 }
 
-function splitName(fullName: string): string[] {
+function splitName(fullName?: string): string[] {
   if (!fullName) return []
   return fullName.trim().split(/\s+/)
+}
+
+function generateCustomerIdentifiers() {
+  const now = new Date()
+  const datePart = `${now.getFullYear()}${(now.getMonth() + 1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}`
+  const random = Math.floor(1000 + Math.random() * 9000)
+  return {
+    customerNumber: `CUST-${datePart}-${random}`,
+    customerCode: `C${datePart}${random}`
+  }
+}
+
+function sanitiseCustomer(customer: Record<string, unknown>) {
+  return {
+    id: customer.id,
+    customer_number: customer.customer_number,
+    customer_code: customer.customer_code,
+    email: customer.email,
+    first_name: customer.first_name,
+    last_name: customer.last_name,
+    phone: customer.phone,
+    address: customer.address,
+    city: customer.city,
+    province: customer.province,
+    postal_code: customer.postal_code,
+    customer_type: customer.customer_type,
+    is_active: customer.is_active,
+    created_at: customer.created_at,
+    updated_at: customer.updated_at
+  }
 }

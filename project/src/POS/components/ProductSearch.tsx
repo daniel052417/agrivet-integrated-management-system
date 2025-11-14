@@ -260,24 +260,24 @@ const ProductSearch: React.FC<ProductSearchProps> = ({ onAddToCart, filters }) =
   return (
     <div className="h-full flex flex-col bg-gray-50">
       {/* Search Header */}
-      <div className="bg-white p-6 border-b border-gray-200 shadow-sm">
-        <div className="flex flex-col lg:flex-row gap-4">
+      <div className="bg-white p-3 md:p-4 lg:p-6 border-b border-gray-200 shadow-sm">
+        <div className="flex flex-col lg:flex-row gap-3 md:gap-4">
           <div className="flex-1 relative">
-            <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+            <Search className="absolute left-3 md:left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
             <input
               ref={searchInputRef}
               type="text"
-              placeholder="Search products by name, SKU, or description..."
+              placeholder="Search products by name, SKU..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-12 pr-4 py-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-lg font-medium bg-gray-50 focus:bg-white transition-all duration-200"
+              className="w-full pl-10 md:pl-12 pr-4 py-3 md:py-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-base md:text-lg font-medium bg-gray-50 focus:bg-white transition-all duration-200 search-input-mobile"
             />
           </div>
-          <div className="flex gap-3">
+          <div className="flex gap-2 md:gap-3">
             <select
               value={selectedCategory}
               onChange={(e) => setSelectedCategory(e.target.value)}
-              className="px-4 py-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 bg-gray-50 focus:bg-white transition-all duration-200 font-medium"
+              className="px-3 md:px-4 py-3 md:py-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 bg-gray-50 focus:bg-white transition-all duration-200 font-medium text-sm md:text-base flex-1 md:flex-none min-w-0"
             >
               <option value="">All Categories</option>
               {categories.map(category => (
@@ -286,8 +286,8 @@ const ProductSearch: React.FC<ProductSearchProps> = ({ onAddToCart, filters }) =
                 </option>
               ))}
             </select>
-            <button className="px-6 py-4 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors duration-200 flex items-center gap-2 font-semibold">
-              <Barcode className="w-5 h-5" />
+            <button className="px-4 md:px-6 py-3 md:py-4 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 active:bg-emerald-800 transition-colors duration-200 flex items-center gap-2 font-semibold touch-button text-sm md:text-base">
+              <Barcode className="w-4 h-4 md:w-5 md:h-5" />
               <span className="hidden sm:inline">Scan</span>
             </button>
           </div>
@@ -295,19 +295,19 @@ const ProductSearch: React.FC<ProductSearchProps> = ({ onAddToCart, filters }) =
       </div>
 
       {/* Products Grid */}
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="flex-1 overflow-y-auto p-3 md:p-4 lg:p-6 custom-scrollbar">
         {isLoading ? (
           <div className="flex items-center justify-center h-64">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-600"></div>
           </div>
         ) : filteredProducts.length === 0 ? (
-          <div className="text-center py-12">
-            <Package className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-            <p className="text-gray-500 text-lg font-semibold">No products found</p>
-            <p className="text-gray-400">Try adjusting your search or filters</p>
+          <div className="text-center py-8 md:py-12">
+            <Package className="w-12 h-12 md:w-16 md:h-16 text-gray-400 mx-auto mb-4" />
+            <p className="text-gray-500 text-base md:text-lg font-semibold">No products found</p>
+            <p className="text-gray-400 text-sm md:text-base mt-2">Try adjusting your search or filters</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 md:gap-4 lg:gap-6 product-grid-mobile product-grid-tablet">
             {filteredProducts.map(product => {
               const PricingIcon = getPricingTypeIcon(product.pos_pricing_type);
               const stockQuantity = product.inventory?.quantity_available || 0;
@@ -409,10 +409,10 @@ const ProductSearch: React.FC<ProductSearchProps> = ({ onAddToCart, filters }) =
                           if (!isOutOfStock) handleProductSelect(product);
                         }}
                         disabled={isOutOfStock}
-                        className={`px-4 py-2 rounded-lg font-semibold transition-all duration-200 ${
+                        className={`px-3 md:px-4 py-2 rounded-lg font-semibold transition-all duration-200 touch-button text-xs md:text-sm w-full md:w-auto ${
                           isOutOfStock
                             ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                            : 'bg-emerald-600 text-white hover:bg-emerald-700 hover:scale-105 active:scale-95'
+                            : 'bg-emerald-600 text-white hover:bg-emerald-700 active:bg-emerald-800 active:scale-95'
                         }`}
                       >
                         {isOutOfStock ? 'Out of Stock' : 'Add to Cart'}

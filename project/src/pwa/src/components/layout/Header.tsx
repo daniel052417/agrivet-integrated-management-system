@@ -1,9 +1,10 @@
 import React from 'react'
-import { ShoppingCart, MapPin, Menu, User, Package } from 'lucide-react'
+import { ShoppingCart, MapPin, User, Package } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useCart } from '../../contexts/CartContext'
 import { useAuth } from '../../contexts/AuthContext'
 import { Branch } from '../../types'
+import logo from '../../assets/logo.png'
 
 interface HeaderProps {
   branch: Branch | null
@@ -24,9 +25,11 @@ const Header: React.FC<HeaderProps> = ({ branch }) => {
               onClick={() => navigate('/')}
               className="flex items-center space-x-2"
             >
-              <div className="w-8 h-8 bg-agrivet-green rounded-lg flex items-center justify-center">
-                <span className="text-white font-bold text-sm">A</span>
-              </div>
+              <img 
+                src={logo} 
+                alt="AgriVet Logo" 
+                className="h-8 w-auto object-contain"
+              />
               <span className="font-bold text-gray-900 text-lg">AgriVet</span>
             </button>
             
@@ -75,40 +78,9 @@ const Header: React.FC<HeaderProps> = ({ branch }) => {
             )}
           </nav>
 
-          {/* Mobile Menu */}
-          <div className="md:hidden flex items-center space-x-2">
-            <button
-              onClick={() => navigate('/orders')}
-              className="p-2 text-gray-700 hover:text-agrivet-green transition-colors"
-              title="My Orders"
-            >
-              <Package className="w-5 h-5" />
-            </button>
-            <button
-              onClick={() => navigate('/cart')}
-              className="relative p-2 text-gray-700 hover:text-agrivet-green transition-colors"
-            >
-              <ShoppingCart className="w-5 h-5" />
-              {getItemCount() > 0 && (
-                <span className="absolute -top-1 -right-1 bg-agrivet-green text-white text-xs rounded-full h-4 w-4 flex items-center justify-center">
-                  {getItemCount()}
-                </span>
-              )}
-            </button>
-            
-            {isAuthenticated && (
-              <button
-                onClick={() => navigate('/settings')}
-                className="p-2 text-gray-700 hover:text-agrivet-green transition-colors"
-                title="Settings"
-              >
-                <User className="w-5 h-5" />
-              </button>
-            )}
-            
-            <button className="p-2 text-gray-700 hover:text-agrivet-green transition-colors">
-              <Menu className="w-5 h-5" />
-            </button>
+          {/* Mobile - Only show logo and branch, navigation moved to bottom */}
+          <div className="md:hidden flex items-center">
+            {/* Mobile header is minimal - navigation is in bottom nav */}
           </div>
         </div>
       </div>

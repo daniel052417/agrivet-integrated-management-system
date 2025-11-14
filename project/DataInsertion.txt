@@ -1,0 +1,293 @@
+create table public.pos_transactions (
+  id uuid not null default gen_random_uuid (),
+  transaction_number character varying(50) not null,
+  pos_session_id uuid not null,
+  customer_id uuid null,
+  cashier_id uuid not null,
+  branch_id uuid null,
+  transaction_date timestamp with time zone not null default now(),
+  transaction_type character varying(20) not null default 'sale'::character varying,
+  subtotal numeric(10, 2) not null default 0.00,
+  discount_amount numeric(10, 2) not null default 0.00,
+  discount_percentage numeric(5, 2) not null default 0.00,
+  tax_amount numeric(10, 2) not null default 0.00,
+  total_amount numeric(10, 2) not null default 0.00,
+  payment_status character varying(20) not null default 'pending'::character varying,
+  status character varying(20) not null default 'active'::character varying,
+  notes text null,
+  created_at timestamp with time zone null default now(),
+  updated_at timestamp with time zone null default now(),
+  transaction_source character varying(20) null default 'pos'::character varying,
+  order_id uuid null,
+  constraint pos_transactions_pkey primary key (id),
+  constraint pos_transactions_transaction_number_key unique (transaction_number),
+  constraint pos_transactions_customer_id_fkey foreign KEY (customer_id) references customers (id),
+  constraint pos_transactions_order_id_fkey foreign KEY (order_id) references orders (id) on update CASCADE on delete set null,
+  constraint pos_transactions_cashier_id_fkey foreign KEY (cashier_id) references users (id),
+  constraint pos_transactions_pos_session_id_fkey foreign KEY (pos_session_id) references pos_sessions (id),
+  constraint pos_transactions_branch_id_fkey foreign KEY (branch_id) references branches (id),
+  constraint pos_transactions_source_check check (
+    (
+      (transaction_source)::text = any (
+        (
+          array[
+            'pos'::character varying,
+            'pwa'::character varying,
+            'delivery'::character varying,
+            'online'::character varying
+          ]
+        )::text[]
+      )
+    )
+  )
+) TABLESPACE pg_default;
+
+create index IF not exists idx_pos_transactions_pos_session_id on public.pos_transactions using btree (pos_session_id) TABLESPACE pg_default;
+
+create index IF not exists idx_pos_transactions_transaction_date on public.pos_transactions using btree (transaction_date) TABLESPACE pg_default;
+
+create index IF not exists idx_pos_transactions_payment_status on public.pos_transactions using btree (payment_status) TABLESPACE pg_default;
+
+create index IF not exists idx_pos_transactions_source on public.pos_transactions using btree (transaction_source) TABLESPACE pg_default;
+
+create index IF not exists idx_pos_transactions_transaction_type on public.pos_transactions using btree (transaction_type) TABLESPACE pg_default;
+
+create index IF not exists idx_pos_transactions_status on public.pos_transactions using btree (status) TABLESPACE pg_default;
+
+create index IF not exists idx_pos_transactions_type_status_date on public.pos_transactions using btree (transaction_type, status, transaction_date) TABLESPACE pg_default;
+
+
+
+create table public.pos_transaction_items (
+  id uuid not null default gen_random_uuid (),
+  transaction_id uuid not null,
+  product_id uuid not null,
+  product_name character varying(200) not null,
+  product_sku character varying(50) not null,
+  quantity numeric(10, 2) not null default 1,
+  unit_of_measure character varying(20) not null,
+  unit_price numeric(10, 2) not null default 0.00,
+  discount_amount numeric(10, 2) not null default 0.00,
+  discount_percentage numeric(5, 2) not null default 0.00,
+  line_total numeric(10, 2) not null default 0.00,
+  weight_kg numeric(10, 3) null,
+  expiry_date date null,
+  batch_number character varying(50) null,
+  created_at timestamp with time zone null default now(),
+  constraint pos_transaction_items_pkey primary key (id),
+  constraint pos_transaction_items_product_id_fkey foreign KEY (product_id) references products (id),
+  constraint pos_transaction_items_transaction_id_fkey foreign KEY (transaction_id) references pos_transactions (id) on delete CASCADE
+) TABLESPACE pg_default;
+
+create index IF not exists idx_pos_transaction_items_transaction_id on public.pos_transaction_items using btree (transaction_id) TABLESPACE pg_default;
+
+create index IF not exists idx_pos_transaction_items_product_id on public.pos_transaction_items using btree (product_id) TABLESPACE pg_default;
+
+
+
+
+Example row of pos_transactions table:
+
+INSERT INTO "public"."pos_transactions" ("id", "transaction_number", "pos_session_id", "customer_id", "cashier_id", "branch_id", "transaction_date", "transaction_type", "subtotal", "discount_amount", "discount_percentage", "tax_amount", "total_amount", "payment_status", "status", "notes", "created_at", "updated_at", "transaction_source", "order_id") VALUES ('375608df-809f-4137-bdc5-689705dd7562', 'TXN-20251101-110706', '8bca5999-d9b0-49e3-9a38-779f315e1bfd', null, 'dc5c00ba-6b63-4dd9-afe2-e4d771dda79f', '79ec90b9-d2a4-4d20-b971-53b8baf16f63', '2025-11-01 03:08:22.581501+00', 'sale', '12460.00', '0.00', '0.00', '0.00', '12460.00', 'completed', 'active', 'Payment via cash', '2025-11-01 03:08:22.581501+00', '2025-11-01 03:08:22.581501+00', 'pos', null);
+
+
+
+Rows in pos_sessions:
+
+[
+  {
+    "id": "3a9490e3-7111-4065-8fb2-41dc0d13cb36",
+    "cashier_id": "dc5c00ba-6b63-4dd9-afe2-e4d771dda79f",
+    "branch_id": "79ec90b9-d2a4-4d20-b971-53b8baf16f63"
+  },
+  {
+    "id": "c551f768-ff16-4fd0-a9d4-7a44681e9ac0",
+    "cashier_id": "dc5c00ba-6b63-4dd9-afe2-e4d771dda79f",
+    "branch_id": "79ec90b9-d2a4-4d20-b971-53b8baf16f63"
+  },
+  {
+    "id": "d992f83f-ba6e-45b4-9c63-0d47b7238957",
+    "cashier_id": "c75ff078-cb24-4026-a7d7-1721f7a403b0",
+    "branch_id": "79ec90b9-d2a4-4d20-b971-53b8baf16f63"
+  },
+  {
+    "id": "44c0cf9f-af46-4701-9a4c-1512a93cc3f2",
+    "cashier_id": "c75ff078-cb24-4026-a7d7-1721f7a403b0",
+    "branch_id": "79ec90b9-d2a4-4d20-b971-53b8baf16f63"
+  },
+  {
+    "id": "87d18fe2-2558-4ce6-a65d-1f3a5962b733",
+    "cashier_id": "dc5c00ba-6b63-4dd9-afe2-e4d771dda79f",
+    "branch_id": "79ec90b9-d2a4-4d20-b971-53b8baf16f63"
+  },
+  {
+    "id": "0f42db1a-c0d2-4055-ae78-0ea37e486f55",
+    "cashier_id": "dc5c00ba-6b63-4dd9-afe2-e4d771dda79f",
+    "branch_id": "79ec90b9-d2a4-4d20-b971-53b8baf16f63"
+  },
+  {
+    "id": "f96e4a4f-15eb-45be-84f0-fbae9c283a16",
+    "cashier_id": "dc5c00ba-6b63-4dd9-afe2-e4d771dda79f",
+    "branch_id": "79ec90b9-d2a4-4d20-b971-53b8baf16f63"
+  },
+  {
+    "id": "e3d08047-fba9-4534-8d9f-e56199fa2f0f",
+    "cashier_id": "dc5c00ba-6b63-4dd9-afe2-e4d771dda79f",
+    "branch_id": "79ec90b9-d2a4-4d20-b971-53b8baf16f63"
+  },
+  {
+    "id": "154c42d1-1758-4d8a-94c1-67baaccf5a80",
+    "cashier_id": "dc5c00ba-6b63-4dd9-afe2-e4d771dda79f",
+    "branch_id": "79ec90b9-d2a4-4d20-b971-53b8baf16f63"
+  },
+  {
+    "id": "d0895e47-a0d8-426a-a4b2-f5511c8d4440",
+    "cashier_id": "dc5c00ba-6b63-4dd9-afe2-e4d771dda79f",
+    "branch_id": "79ec90b9-d2a4-4d20-b971-53b8baf16f63"
+  },
+  {
+    "id": "0ac8f2dc-1067-4050-adb4-3405b7a0ca62",
+    "cashier_id": "dc5c00ba-6b63-4dd9-afe2-e4d771dda79f",
+    "branch_id": "79ec90b9-d2a4-4d20-b971-53b8baf16f63"
+  },
+  {
+    "id": "8effc32b-5ad6-4a3b-b78d-e8484be8cda5",
+    "cashier_id": "dc5c00ba-6b63-4dd9-afe2-e4d771dda79f",
+    "branch_id": "79ec90b9-d2a4-4d20-b971-53b8baf16f63"
+  },
+  {
+    "id": "b5f969f2-a73d-4f83-966c-cb6e7a424a61",
+    "cashier_id": "dc5c00ba-6b63-4dd9-afe2-e4d771dda79f",
+    "branch_id": "79ec90b9-d2a4-4d20-b971-53b8baf16f63"
+  },
+  {
+    "id": "37a30193-778e-403f-8e71-8b5ac5a0c7a4",
+    "cashier_id": "dc5c00ba-6b63-4dd9-afe2-e4d771dda79f",
+    "branch_id": "79ec90b9-d2a4-4d20-b971-53b8baf16f63"
+  },
+  {
+    "id": "60fe9484-9bb4-4d17-92b1-965db9ddaa54",
+    "cashier_id": "dc5c00ba-6b63-4dd9-afe2-e4d771dda79f",
+    "branch_id": "79ec90b9-d2a4-4d20-b971-53b8baf16f63"
+  },
+  {
+    "id": "c67b943b-0e24-4459-886b-6f546c622af3",
+    "cashier_id": "dc5c00ba-6b63-4dd9-afe2-e4d771dda79f",
+    "branch_id": "79ec90b9-d2a4-4d20-b971-53b8baf16f63"
+  },
+  {
+    "id": "8bca5999-d9b0-49e3-9a38-779f315e1bfd",
+    "cashier_id": "dc5c00ba-6b63-4dd9-afe2-e4d771dda79f",
+    "branch_id": "79ec90b9-d2a4-4d20-b971-53b8baf16f63"
+  },
+  {
+    "id": "c4400a23-5e3e-4da2-a37d-4f1bbf4cf255",
+    "cashier_id": "dc5c00ba-6b63-4dd9-afe2-e4d771dda79f",
+    "branch_id": "79ec90b9-d2a4-4d20-b971-53b8baf16f63"
+  },
+  {
+    "id": "6da301aa-ac35-4494-af7a-1fe3c20490a8",
+    "cashier_id": "c75ff078-cb24-4026-a7d7-1721f7a403b0",
+    "branch_id": "79ec90b9-d2a4-4d20-b971-53b8baf16f63"
+  },
+  {
+    "id": "fe10aeca-cab5-4239-ab68-b9923aff6e31",
+    "cashier_id": "dc5c00ba-6b63-4dd9-afe2-e4d771dda79f",
+    "branch_id": "79ec90b9-d2a4-4d20-b971-53b8baf16f63"
+  },
+  {
+    "id": "588d9dc1-35d7-43b6-9b14-1f0523b1809e",
+    "cashier_id": "c75ff078-cb24-4026-a7d7-1721f7a403b0",
+    "branch_id": "baa271c9-2684-4b23-8639-19accad02ce3"
+  },
+  {
+    "id": "898ac9b5-94a8-4ee6-a257-b5aa80f612bf",
+    "cashier_id": "4a2f009a-5bdb-4160-89f7-8626a5b9d2d8",
+    "branch_id": "066be500-992d-4806-a561-65b7515f9609"
+  },
+  {
+    "id": "2f073a51-336b-42bc-9d61-d2ad4625c7e8",
+    "cashier_id": "dc5c00ba-6b63-4dd9-afe2-e4d771dda79f",
+    "branch_id": "79ec90b9-d2a4-4d20-b971-53b8baf16f63"
+  },
+  {
+    "id": "2b821f70-e147-40c9-ab94-7f225a4919b7",
+    "cashier_id": "c75ff078-cb24-4026-a7d7-1721f7a403b0",
+    "branch_id": "baa271c9-2684-4b23-8639-19accad02ce3"
+  },
+  {
+    "id": "f2b79564-8783-4113-93ae-d169b39895fb",
+    "cashier_id": "4a2f009a-5bdb-4160-89f7-8626a5b9d2d8",
+    "branch_id": "066be500-992d-4806-a561-65b7515f9609"
+  },
+  {
+    "id": "bfd73bef-d9c4-418e-a0ac-bf13429b1c94",
+    "cashier_id": "dc5c00ba-6b63-4dd9-afe2-e4d771dda79f",
+    "branch_id": "79ec90b9-d2a4-4d20-b971-53b8baf16f63"
+  },
+  {
+    "id": "53289bf4-6bfc-4105-9710-5584bc58cf83",
+    "cashier_id": "4a2f009a-5bdb-4160-89f7-8626a5b9d2d8",
+    "branch_id": "066be500-992d-4806-a561-65b7515f9609"
+  },
+  {
+    "id": "29edc791-cf03-48c2-8f84-ce2c0acb5c71",
+    "cashier_id": "dc5c00ba-6b63-4dd9-afe2-e4d771dda79f",
+    "branch_id": "79ec90b9-d2a4-4d20-b971-53b8baf16f63"
+  },
+  {
+    "id": "27baa4f6-67bd-4923-b2c4-fc0aad3be05c",
+    "cashier_id": "c75ff078-cb24-4026-a7d7-1721f7a403b0",
+    "branch_id": "baa271c9-2684-4b23-8639-19accad02ce3"
+  },
+  {
+    "id": "2108e9c1-5779-4799-bdc8-40827c36d35a",
+    "cashier_id": "4a2f009a-5bdb-4160-89f7-8626a5b9d2d8",
+    "branch_id": "066be500-992d-4806-a561-65b7515f9609"
+  },
+  {
+    "id": "67d3e44c-39da-47c0-91d4-05d60f5ff90b",
+    "cashier_id": "dc5c00ba-6b63-4dd9-afe2-e4d771dda79f",
+    "branch_id": "79ec90b9-d2a4-4d20-b971-53b8baf16f63"
+  },
+  {
+    "id": "00136e22-97ab-4a0a-a382-b12a69609aca",
+    "cashier_id": "c75ff078-cb24-4026-a7d7-1721f7a403b0",
+    "branch_id": "baa271c9-2684-4b23-8639-19accad02ce3"
+  },
+  {
+    "id": "ef992664-05b6-4d45-8ed2-0ae5237354b0",
+    "cashier_id": "4a2f009a-5bdb-4160-89f7-8626a5b9d2d8",
+    "branch_id": "066be500-992d-4806-a561-65b7515f9609"
+  },
+  {
+    "id": "9e3c7524-9e47-4783-be50-c63d303aa926",
+    "cashier_id": "dc5c00ba-6b63-4dd9-afe2-e4d771dda79f",
+    "branch_id": "79ec90b9-d2a4-4d20-b971-53b8baf16f63"
+  },
+  {
+    "id": "cb4eb43f-e90e-4217-9943-a121e49918ec",
+    "cashier_id": "c75ff078-cb24-4026-a7d7-1721f7a403b0",
+    "branch_id": "baa271c9-2684-4b23-8639-19accad02ce3"
+  },
+  {
+    "id": "b608854d-2e5d-49d8-a462-92bb177f4473",
+    "cashier_id": "4a2f009a-5bdb-4160-89f7-8626a5b9d2d8",
+    "branch_id": "066be500-992d-4806-a561-65b7515f9609"
+  }
+]
+
+
+rows in inventory table:
+
+INSERT INTO "public"."inventory" ("id", "branch_id", "quantity_on_hand", "quantity_reserved", "quantity_available", "reorder_level", "max_stock_level", "last_counted", "updated_at", "base_unit", "product_id", "batch_number", "expiry_date", "batch_no", "expiration_date") VALUES ('115fdb58-f3ec-405e-9495-459db6e626b8', '066be500-992d-4806-a561-65b7515f9609', '1.00', '0.00', '1.00', '10.00', '100.00', null, '2025-10-25 16:09:56.10984+00', 'sack', '24c3ed39-401c-41d6-ad76-bcaf0a47f091', null, null, null, null), ('1b914a0b-5e6b-42d3-9239-e7ebb7adf720', '79ec90b9-d2a4-4d20-b971-53b8baf16f63', '49.00', '0.00', '49.00', '10.00', '100.00', null, '2025-10-30 07:52:08.308+00', 'sack', 'dc2dd3b2-2da1-41d2-8ef7-540dfbf3f753', null, null, null, null), ('1e4c120d-ad40-400a-99d8-21fc50b6e047', 'baa271c9-2684-4b23-8639-19accad02ce3', '50.00', '0.00', '50.00', '10.00', '100.00', null, '2025-10-25 16:02:57.457016+00', 'sack', 'cf394640-89f4-441f-9707-05b60a79bc54', null, null, null, null), ('262f6fb6-8997-4894-996f-ea35a5cf451c', '066be500-992d-4806-a561-65b7515f9609', '50.00', '0.00', '50.00', '10.00', '100.00', null, '2025-10-25 16:09:56.10984+00', 'sack', 'cf394640-89f4-441f-9707-05b60a79bc54', null, null, null, null), ('2bb25236-ad95-4ff7-b2d3-da7fa17ec63b', 'baa271c9-2684-4b23-8639-19accad02ce3', '50.00', '0.00', '50.00', '10.00', '100.00', null, '2025-10-25 15:39:45.870057+00', 'sack', '17bcaa7b-4123-4e85-bb3d-35a66d0640bd', null, null, null, null), ('35793e3d-16b3-4374-801c-083238d50ea7', '066be500-992d-4806-a561-65b7515f9609', '50.00', '0.00', '50.00', '10.00', '100.00', null, '2025-10-25 16:09:56.10984+00', 'sack', 'b7b088c9-842a-4996-bb84-7b21f1b65f4f', null, null, null, null), ('3a32dcbf-1387-4a7f-ad1d-f74c663f5772', '066be500-992d-4806-a561-65b7515f9609', '50.00', '0.00', '50.00', '10.00', '100.00', null, '2025-10-25 16:09:56.10984+00', 'sack', '1981ce54-8390-4f13-afb4-222520b90906', null, null, null, null), ('3ecf7b14-c0bc-4ba0-9e48-ed3ca3c09948', '066be500-992d-4806-a561-65b7515f9609', '50.00', '0.00', '50.00', '10.00', '100.00', null, '2025-10-25 16:09:56.10984+00', 'sack', '7aaa91a0-cc82-4e9b-90cb-0ef2eeb2c604', null, null, null, null), ('451bdf36-ada5-46f2-82e7-68ab152b819d', '79ec90b9-d2a4-4d20-b971-53b8baf16f63', '49.00', '0.00', '49.00', '10.00', '100.00', null, '2025-10-29 16:31:35.336+00', 'sack', '3b3dd92a-b569-4914-9257-472389beff43', null, null, null, null), ('45395962-b27a-45bf-bf96-e42e7f1e1232', 'baa271c9-2684-4b23-8639-19accad02ce3', '50.00', '0.00', '50.00', '10.00', '100.00', null, '2025-10-25 15:19:27.648393+00', 'bag', 'e27b1411-96d2-4985-b63e-4f0e002fb57e', null, null, null, null), ('4d892da7-40c0-4908-9f6f-5e0936100605', '79ec90b9-d2a4-4d20-b971-53b8baf16f63', '48.00', '0.00', '48.00', '10.00', '100.00', null, '2025-11-01 03:07:07.811+00', 'sack', 'e13772bc-8456-4bdb-9c29-b622df74da79', null, null, null, null), ('4f4056b2-bb6d-4a93-ba83-6ed28130c25a', '79ec90b9-d2a4-4d20-b971-53b8baf16f63', '50.00', '0.00', '50.00', '10.00', '100.00', null, '2025-10-25 16:09:56.10984+00', 'sack', 'd1e961c4-4f0a-47ea-8717-9172d24629ad', null, null, null, null), ('501a2095-0b3f-4ce9-9eb6-95f5b1c8bc4a', '79ec90b9-d2a4-4d20-b971-53b8baf16f63', '50.00', '0.00', '50.00', '10.00', '100.00', null, '2025-10-25 16:09:56.10984+00', 'sack', 'b7b088c9-842a-4996-bb84-7b21f1b65f4f', null, null, null, null), ('55a8ed48-870c-4e7f-bee0-fe60a467f091', '79ec90b9-d2a4-4d20-b971-53b8baf16f63', '49.00', '0.00', '49.00', '10.00', '100.00', null, '2025-11-01 03:07:08.974+00', 'sack', '7aaa91a0-cc82-4e9b-90cb-0ef2eeb2c604', null, null, null, null), ('5759c340-6b44-4ef3-baa0-6cb49689bdf9', '066be500-992d-4806-a561-65b7515f9609', '50.00', '0.00', '50.00', '10.00', '100.00', null, '2025-10-25 16:09:56.10984+00', 'sack', '744802b6-10ea-403c-8542-a9c563327d18', null, null, null, null), ('5a698990-75e2-4c71-b60e-40661642d752', '79ec90b9-d2a4-4d20-b971-53b8baf16f63', '49.00', '0.00', '49.00', '10.00', '100.00', null, '2025-11-01 03:07:08.717+00', 'sack', 'cf394640-89f4-441f-9707-05b60a79bc54', null, null, null, null), ('60bbbdb6-560e-448d-a3bd-955f8d91ef0e', 'baa271c9-2684-4b23-8639-19accad02ce3', '50.00', '0.00', '50.00', '10.00', '100.00', null, '2025-10-25 15:40:35.923826+00', 'sack', 'e13772bc-8456-4bdb-9c29-b622df74da79', null, null, null, null), ('68e74a12-8e39-4771-a938-e753c39b2369', '066be500-992d-4806-a561-65b7515f9609', '50.00', '0.00', '50.00', '10.00', '100.00', null, '2025-10-25 16:09:56.10984+00', 'bag', 'e27b1411-96d2-4985-b63e-4f0e002fb57e', null, null, null, null), ('7b0625c0-79dc-49b4-8d8d-ec8be8088756', '79ec90b9-d2a4-4d20-b971-53b8baf16f63', '50.00', '0.00', '50.00', '10.00', '100.00', null, '2025-10-25 16:09:56.10984+00', 'sack', '744802b6-10ea-403c-8542-a9c563327d18', null, null, null, null), ('7dad9013-24c0-4a1e-a589-939d84bbc49b', 'baa271c9-2684-4b23-8639-19accad02ce3', '50.00', '0.00', '50.00', '10.00', '100.00', null, '2025-10-25 15:17:17.504067+00', 'sack', '3b3dd92a-b569-4914-9257-472389beff43', null, null, null, null), ('8ab6e23f-e014-4a73-bc69-ab71f906d166', '066be500-992d-4806-a561-65b7515f9609', '50.00', '0.00', '50.00', '10.00', '100.00', null, '2025-10-25 16:09:56.10984+00', 'sack', '2ca4cc05-7c96-4e0e-8818-75238ed630d2', null, null, null, null), ('93f36efb-8ea9-4632-9477-48fe3b944eeb', '066be500-992d-4806-a561-65b7515f9609', '50.00', '0.00', '50.00', '10.00', '100.00', null, '2025-10-25 16:09:56.10984+00', 'sack', 'd1e961c4-4f0a-47ea-8717-9172d24629ad', null, null, null, null), ('9cde5783-be9a-4ad1-be6a-9a3fce4cc92a', '066be500-992d-4806-a561-65b7515f9609', '50.00', '0.00', '50.00', '10.00', '100.00', null, '2025-10-25 16:09:56.10984+00', 'sack', 'ce5fb47d-d041-4460-ba18-d61cc3f95455', null, null, 'BN-2025-001', '2025-10-31'), ('a6853a79-d92b-4fd2-8f02-e5660c59f868', '79ec90b9-d2a4-4d20-b971-53b8baf16f63', '49.00', '0.00', '49.00', '10.00', '100.00', null, '2025-10-29 16:31:35.048+00', 'sack', 'ce5fb47d-d041-4460-ba18-d61cc3f95455', null, null, 'BN-2025-001', '2025-10-31'), ('ac01abea-1bc8-41c9-8bc9-11fdf4dc9ffb', '066be500-992d-4806-a561-65b7515f9609', '50.00', '0.00', '50.00', '10.00', '100.00', null, '2025-10-25 16:09:56.10984+00', 'sack', '3b3dd92a-b569-4914-9257-472389beff43', null, null, null, '2025-11-13'), ('b248c803-83a2-4fc9-98b4-9be442ad9e87', 'baa271c9-2684-4b23-8639-19accad02ce3', '50.00', '0.00', '50.00', '10.00', '100.00', null, '2025-10-25 15:44:15.395467+00', 'sack', 'd1e961c4-4f0a-47ea-8717-9172d24629ad', null, null, null, null), ('b547a2ec-84ce-4617-b21e-276f0d80b26d', 'baa271c9-2684-4b23-8639-19accad02ce3', '50.00', '0.00', '50.00', '10.00', '100.00', null, '2025-10-25 16:04:39.70692+00', 'sack', '7aaa91a0-cc82-4e9b-90cb-0ef2eeb2c604', null, null, null, null), ('b7b51a33-cb34-4145-add5-1984d918868e', '79ec90b9-d2a4-4d20-b971-53b8baf16f63', '49.00', '0.00', '49.00', '10.00', '100.00', null, '2025-10-30 07:52:05.177+00', 'sack', '24c3ed39-401c-41d6-ad76-bcaf0a47f091', null, null, null, null), ('b85e8da9-92d6-4b9f-912b-0919f275d146', '79ec90b9-d2a4-4d20-b971-53b8baf16f63', '49.00', '0.00', '49.00', '10.00', '100.00', null, '2025-10-26 05:57:54.524+00', 'sack', '1981ce54-8390-4f13-afb4-222520b90906', null, null, null, null), ('b89ebc5c-ffdb-424c-9320-8944c9b91144', 'baa271c9-2684-4b23-8639-19accad02ce3', '50.00', '0.00', '50.00', '10.00', '100.00', null, '2025-10-25 15:15:34.332335+00', 'sack', '24c3ed39-401c-41d6-ad76-bcaf0a47f091', null, null, null, null), ('ba61ffdc-9109-4489-9c7b-6e9ee21efc1d', '066be500-992d-4806-a561-65b7515f9609', '50.00', '0.00', '50.00', '10.00', '100.00', null, '2025-10-25 16:09:56.10984+00', 'sack', 'dc2dd3b2-2da1-41d2-8ef7-540dfbf3f753', null, null, null, null), ('c38d9b8f-559a-410f-944d-5b4f9f7c4693', 'baa271c9-2684-4b23-8639-19accad02ce3', '50.00', '0.00', '50.00', '10.00', '100.00', null, '2025-10-25 15:21:43.041292+00', 'sack', 'ce5fb47d-d041-4460-ba18-d61cc3f95455', null, null, 'BN-2025-001', '2025-10-31'), ('c4f56ed5-70c6-4fbb-bd8a-f26132dcca5d', '79ec90b9-d2a4-4d20-b971-53b8baf16f63', '49.00', '0.00', '49.00', '10.00', '100.00', null, '2025-11-01 03:07:07.476+00', 'sack', '17bcaa7b-4123-4e85-bb3d-35a66d0640bd', null, null, null, null), ('c860db43-5af2-4139-8921-597201585a91', 'baa271c9-2684-4b23-8639-19accad02ce3', '50.00', '0.00', '50.00', '10.00', '100.00', null, '2025-10-25 15:43:25.507613+00', 'sack', '744802b6-10ea-403c-8542-a9c563327d18', null, null, null, null), ('cead42fc-5c34-42b5-a096-f21216c6f34e', 'baa271c9-2684-4b23-8639-19accad02ce3', '50.00', '0.00', '50.00', '10.00', '100.00', null, '2025-10-25 15:41:40.39845+00', 'sack', '2ca4cc05-7c96-4e0e-8818-75238ed630d2', null, null, null, null), ('d5edb202-7046-4e82-8b22-b905530cf3d6', '79ec90b9-d2a4-4d20-b971-53b8baf16f63', '40.00', '0.00', '40.00', '10.00', '100.00', null, '2025-10-26 10:52:18.752+00', 'bag', 'e27b1411-96d2-4985-b63e-4f0e002fb57e', null, null, null, null), ('dcd145fc-d8af-4ab3-b914-bebf7c630b87', 'baa271c9-2684-4b23-8639-19accad02ce3', '50.00', '0.00', '50.00', '10.00', '100.00', null, '2025-10-25 16:02:09.946899+00', 'sack', 'dc2dd3b2-2da1-41d2-8ef7-540dfbf3f753', null, null, null, null), ('e22e2321-e755-4809-89b1-a1aa012a3c68', '066be500-992d-4806-a561-65b7515f9609', '50.00', '0.00', '50.00', '10.00', '100.00', null, '2025-10-25 16:09:56.10984+00', 'sack', 'e13772bc-8456-4bdb-9c29-b622df74da79', null, null, null, null), ('e537fbfc-a6fc-4496-9228-299cca1e3f8e', 'baa271c9-2684-4b23-8639-19accad02ce3', '50.00', '0.00', '50.00', '10.00', '100.00', null, '2025-10-25 15:45:03.751841+00', 'sack', 'b7b088c9-842a-4996-bb84-7b21f1b65f4f', null, null, null, null), ('e66c1acc-841d-4ba9-8cb4-58b41604628a', 'baa271c9-2684-4b23-8639-19accad02ce3', '50.00', '0.00', '50.00', '10.00', '100.00', null, '2025-10-25 15:13:17.088349+00', 'sack', '1981ce54-8390-4f13-afb4-222520b90906', null, null, null, null), ('eedb218a-88e2-4e4f-bc60-5c41ad4e52fb', '066be500-992d-4806-a561-65b7515f9609', '50.00', '0.00', '50.00', '10.00', '100.00', null, '2025-10-25 16:09:56.10984+00', 'sack', '17bcaa7b-4123-4e85-bb3d-35a66d0640bd', null, null, null, null), ('fc554b17-5f70-4e76-a2da-7a492c7f1850', '79ec90b9-d2a4-4d20-b971-53b8baf16f63', '49.00', '0.00', '49.00', '10.00', '100.00', null, '2025-11-01 03:07:08.307+00', 'sack', '2ca4cc05-7c96-4e0e-8818-75238ed630d2', null, null, null, null);
+
+
+Rows in product_units table":
+
+INSERT INTO "public"."product_units" ("id", "product_id", "unit_name", "unit_label", "conversion_factor", "is_base_unit", "is_sellable", "price_per_unit", "min_sellable_quantity", "created_at") VALUES ('0ab2208a-396b-40c1-a3db-c753e475441f', '482a74d0-f5da-47e2-874d-9dc1e9412e18', 'Tube', 'tube', '1.0000', 'true', 'true', '654.00', '1.000', '2025-11-11 17:23:31.269048+00'), ('117daa29-e1a3-4f36-b1ce-89a841cd6d0f', 'dc2dd3b2-2da1-41d2-8ef7-540dfbf3f753', 'Kilogram', 'kg', '1.0000', 'false', 'true', '44.00', '0.250', '2025-10-25 16:02:09.830598+00'), ('1d9713d3-d113-40c2-b8cc-d0bf73985da6', '744802b6-10ea-403c-8542-a9c563327d18', 'Kilogram', 'kg', '1.0000', 'false', 'true', '48.00', '0.250', '2025-10-25 15:43:25.364968+00'), ('1fb26e9f-3a7f-497e-bac9-fc13cdf1bd14', '2ca4cc05-7c96-4e0e-8818-75238ed630d2', 'Kilogram', 'kg', '1.0000', 'false', 'true', '38.00', '0.250', '2025-10-25 15:41:40.280226+00'), ('399a398f-7fb8-4997-8899-125378edaff6', '24c3ed39-401c-41d6-ad76-bcaf0a47f091', 'Kilogram', 'kg', '1.0000', 'false', 'true', '46.00', '0.250', '2025-10-25 15:15:34.222795+00'), ('3ffda301-9313-48fb-aaf9-044ba1d9f406', 'e13772bc-8456-4bdb-9c29-b622df74da79', 'Kilogram', 'kg', '1.0000', 'false', 'true', '40.00', '0.250', '2025-10-25 15:40:35.792131+00'), ('557fb7ff-8b49-477e-a3b4-cf2d46c19249', 'e13772bc-8456-4bdb-9c29-b622df74da79', 'Sack', 'sack', '50.0000', 'true', 'true', '1900.00', '1.000', '2025-10-25 15:40:35.792131+00'), ('5a3354ad-3165-4229-806a-041ee61da2d7', '792469ae-7154-4e24-a53b-0ce15aed7901', 'Kilogram', 'kg', '1.0000', 'true', 'true', '356.40', '1.000', '2025-11-11 17:23:31.269048+00'), ('5e02f744-aad4-404c-8356-117747ad7931', '86fc8c3b-3182-453b-ab34-c105609aa92a', 'Kilogram', 'kg', '1.0000', 'true', 'true', '348.90', '1.000', '2025-11-11 17:23:31.269048+00'), ('64cd37a8-a074-4a1b-b4df-cc4f972fec11', '1981ce54-8390-4f13-afb4-222520b90906', 'Sack', 'sack', '50.0000', 'true', 'true', '2175.00', '1.000', '2025-10-25 15:13:16.873088+00'), ('683004b1-7589-41b9-b8e9-76d730f173d4', '2ca4cc05-7c96-4e0e-8818-75238ed630d2', 'Sack', 'sack', '50.0000', 'true', 'true', '1800.00', '1.000', '2025-10-25 15:41:40.280226+00'), ('73a404b6-6adc-4f74-bcdd-3369248c6eac', '7aaa91a0-cc82-4e9b-90cb-0ef2eeb2c604', 'Sack', 'sack', '50.0000', 'true', 'true', '2800.00', '1.000', '2025-10-25 16:04:39.498095+00'), ('799e101c-d732-4588-a3c4-378860ceb113', 'cf394640-89f4-441f-9707-05b60a79bc54', 'Sack', 'sack', '50.0000', 'true', 'true', '2160.00', '1.000', '2025-10-25 16:02:57.357625+00'), ('887d72e8-9cdf-4edc-a6e8-5753203e8e14', '17bcaa7b-4123-4e85-bb3d-35a66d0640bd', 'Sack', 'sack', '50.0000', 'true', 'true', '1900.00', '1.000', '2025-10-25 15:39:45.653733+00'), ('8f732a46-7e14-4d2b-ae6e-96888117bbb3', '744802b6-10ea-403c-8542-a9c563327d18', 'Sack', 'sack', '50.0000', 'true', 'true', '2300.00', '1.000', '2025-10-25 15:43:25.364968+00'), ('93981121-51fe-4232-9e3e-efbbf5743882', 'd1e961c4-4f0a-47ea-8717-9172d24629ad', 'Sack', 'sack', '50.0000', 'true', 'true', '2500.00', '1.000', '2025-10-25 15:44:15.295992+00'), ('9de766b8-389d-42c4-a980-0ec93f5766f6', '7aaa91a0-cc82-4e9b-90cb-0ef2eeb2c604', 'Kilogram', 'kg', '1.0000', 'false', 'true', '58.00', '0.250', '2025-10-25 16:04:39.498095+00'), ('a05a0acf-2514-4415-8c7e-47aa218db8d1', 'b8f84882-70f1-44ca-8030-cb935a11d799', 'Tablet', 'tablet', '1.0000', 'true', 'true', '886.80', '1.000', '2025-11-11 17:23:31.269048+00'), ('a30fa119-0326-4a46-8046-5de2d126c3c7', '1981ce54-8390-4f13-afb4-222520b90906', 'Kilogram', 'kg', '1.0000', 'false', 'true', '45.00', '0.250', '2025-10-25 15:13:16.873088+00'), ('bbcd598c-e6b7-42ea-a4c5-15fb6b3c8d03', 'ef3f923c-e743-4525-b031-638f5f7bdcda', 'Kilogram', 'kg', '1.0000', 'true', 'true', '1258.80', '1.000', '2025-11-11 17:23:31.269048+00'), ('bbefd4d0-3b8f-4f39-b13b-9f15405b694b', '17bcaa7b-4123-4e85-bb3d-35a66d0640bd', 'Kilogram', 'kg', '1.0000', 'false', 'true', '40.00', '0.250', '2025-10-25 15:39:45.653733+00'), ('ce1a59e2-627b-47ed-a653-015f268d3c59', 'b7b088c9-842a-4996-bb84-7b21f1b65f4f', 'Sack', 'sack', '50.0000', 'true', 'true', '2500.00', '1.000', '2025-10-25 15:45:03.586268+00'), ('d1625f57-453a-4c44-94ed-997f0d983db9', 'cf394640-89f4-441f-9707-05b60a79bc54', 'Kilogram', 'kg', '1.0000', 'false', 'true', '46.00', '0.250', '2025-10-25 16:02:57.357625+00'), ('d37096c4-b1e9-4bd7-b474-fed86c662ef1', 'b7b088c9-842a-4996-bb84-7b21f1b65f4f', 'Kilogram', 'kg', '1.0000', 'false', 'true', '52.00', '0.250', '2025-10-25 15:45:03.586268+00'), ('d7aac22c-d64a-4391-a4f2-4db8668a0ea4', 'd1e961c4-4f0a-47ea-8717-9172d24629ad', 'Kilogram', 'kg', '1.0000', 'false', 'true', '52.00', '0.250', '2025-10-25 15:44:15.295992+00'), ('e3501486-b51a-4311-8c52-b5a847f2fe73', 'ce5fb47d-d041-4460-ba18-d61cc3f95455', 'Sack', 'sack', '25.0000', 'true', 'true', '1135.00', '1.000', '2025-10-25 15:21:42.935516+00'), ('e57ab28b-e3f3-43c8-9cb4-0570acd75b84', 'dc2dd3b2-2da1-41d2-8ef7-540dfbf3f753', 'Sack', 'sack', '50.0000', 'true', 'true', '2100.00', '1.000', '2025-10-25 16:02:09.830598+00'), ('ecf42cb0-80ce-4bf1-9319-ee1ba10bc1e5', 'ce5fb47d-d041-4460-ba18-d61cc3f95455', 'Kilogram', 'kg', '1.0000', 'false', 'true', '47.00', '0.250', '2025-10-25 15:21:42.935516+00'), ('f51e7869-7b13-4aaa-9579-4478ce6585d3', '3b3dd92a-b569-4914-9257-472389beff43', 'Kilogram', 'kg', '1.0000', 'false', 'true', '47.00', '0.250', '2025-10-25 15:17:17.387201+00'), ('f6ed4cc9-e4a3-45b6-b47f-11c6b9b6acf8', 'e27b1411-96d2-4985-b63e-4f0e002fb57e', 'Bag', 'bag', '1.0000', 'true', 'true', '127.00', '1.000', '2025-10-25 15:19:27.547026+00'), ('f82ff8cb-ba39-4741-aa2b-1fbae954ad71', '24c3ed39-401c-41d6-ad76-bcaf0a47f091', 'Sack', 'sack', '50.0000', 'true', 'true', '2190.00', '1.000', '2025-10-25 15:15:34.222795+00'), ('f8e282db-d7c4-44a3-baa8-af78136837da', '3b3dd92a-b569-4914-9257-472389beff43', 'Sack', 'sack', '50.0000', 'true', 'true', '2250.00', '1.000', '2025-10-25 15:17:17.387201+00'), ('fd8477f8-51f7-4356-8a2f-5454b40d884e', 'fd1ceff3-9a0d-4505-9b43-132c853d3bd6', 'Tablet', 'tablet', '1.0000', 'true', 'true', '2038.80', '1.000', '2025-11-11 17:23:31.269048+00');
+
+Rows in products table:
+
+INSERT INTO "public"."products" ("id", "sku", "name", "description", "category_id", "brand", "unit_of_measure", "weight", "dimensions", "is_prescription_required", "is_active", "created_at", "updated_at", "barcode", "supplier_id", "image_url", "cost", "requires_expiry_date", "requires_batch_tracking", "is_quick_sale", "batch_number", "expiry_date", "batch_no", "expiration_date") VALUES ('17bcaa7b-4123-4e85-bb3d-35a66d0640bd', 'FEED-006', 'Hog Starter Pellet', '', 'db2dc7a7-c58f-4f3f-90b9-e5f3f7c948d3', 'General Milling Corp.', 'sack', null, null, 'false', 'true', '2025-10-25 15:39:45.354307+00', '2025-10-25 15:39:45.354307+00', null, '0c164880-4226-4355-8dc2-1e3bf6cb617a', 'https://prhxgpbqkpdnjpmxndyp.supabase.co/storage/v1/object/public/product-images/1761406783190-l9hws7hkh8b.jpg', '1900.00', 'false', 'false', 'false', null, null, null, null), ('1981ce54-8390-4f13-afb4-222520b90906', 'FEED-001', 'B-MEG Integra 4000', '', 'db2dc7a7-c58f-4f3f-90b9-e5f3f7c948d3', 'B-MEG', 'sack', null, null, 'false', 'true', '2025-10-25 15:13:16.643729+00', '2025-10-25 15:13:16.643729+00', null, '0c164880-4226-4355-8dc2-1e3bf6cb617a', 'https://prhxgpbqkpdnjpmxndyp.supabase.co/storage/v1/object/public/product-images/1761405194589-j81zzbd9pm.jpg', '1820.00', 'false', 'false', 'false', null, null, null, null), ('24c3ed39-401c-41d6-ad76-bcaf0a47f091', 'FEED-002', 'B-MEG Integra 3000 Plus (Poultry)', '', 'db2dc7a7-c58f-4f3f-90b9-e5f3f7c948d3', 'B-MEG', 'sack', null, null, 'false', 'true', '2025-10-25 15:15:34.070522+00', '2025-10-25 15:15:34.070522+00', null, '0c164880-4226-4355-8dc2-1e3bf6cb617a', 'https://prhxgpbqkpdnjpmxndyp.supabase.co/storage/v1/object/public/product-images/1761405332325-guiljvu0kig.jpg', '1825.00', 'false', 'false', 'false', null, null, null, null), ('2ca4cc05-7c96-4e0e-8818-75238ed630d2', 'FEED-007', 'Hog Grower Pellet', '', 'db2dc7a7-c58f-4f3f-90b9-e5f3f7c948d3', 'General Milling Corp.', 'sack', null, null, 'false', 'true', '2025-10-25 15:41:40.132253+00', '2025-10-25 15:41:40.132253+00', null, '0c164880-4226-4355-8dc2-1e3bf6cb617a', 'https://prhxgpbqkpdnjpmxndyp.supabase.co/storage/v1/object/public/product-images/1761406899758-r0la4rstbgp.jpg', '1500.00', 'false', 'false', 'false', null, null, null, null), ('3b3dd92a-b569-4914-9257-472389beff43', 'FEED-003', 'B-MEG Integra 3000', '', 'db2dc7a7-c58f-4f3f-90b9-e5f3f7c948d3', 'B-MEG', 'sack', null, null, 'false', 'true', '2025-10-25 15:17:17.269571+00', '2025-10-25 15:17:17.269571+00', null, '0c164880-4226-4355-8dc2-1e3bf6cb617a', 'https://prhxgpbqkpdnjpmxndyp.supabase.co/storage/v1/object/public/product-images/1761405436893-8idusyqkvon.jpg', '1875.00', 'false', 'false', 'false', null, null, null, null), ('482a74d0-f5da-47e2-874d-9dc1e9412e18', 'FRONTLINE-CAT-1PK', 'Frontline Plus Spot-on for Cats 1pk', 'Spot-on solution for flea and tick control', '4045e370-3cf4-4f66-810c-90ef9360740d', 'Frontline', 'tube', null, null, 'true', 'true', '2025-11-11 17:09:40.22057+00', '2025-11-11 17:09:40.22057+00', null, null, 'https://example.com/frontline_cat_1pk.jpg', '545.00', 'false', 'false', 'false', null, null, null, null), ('5cccb888-12ba-4bcd-92df-c95a49d85c0c', 'FEED-001', 'B-MEG Integra 4000', '', 'db2dc7a7-c58f-4f3f-90b9-e5f3f7c948d3', 'B-MEG', 'kg', null, null, 'false', 'true', '2025-10-25 15:09:36.44553+00', '2025-10-25 15:09:36.44553+00', null, '0c164880-4226-4355-8dc2-1e3bf6cb617a', 'https://prhxgpbqkpdnjpmxndyp.supabase.co/storage/v1/object/public/product-images/1761404975589-1wu88g8cwqe.jpg', '0.00', 'false', 'false', 'false', null, null, null, null), ('744802b6-10ea-403c-8542-a9c563327d18', 'FEED-008', 'Broiler Starter Crumble', '', 'db2dc7a7-c58f-4f3f-90b9-e5f3f7c948d3', 'General Milling Corp.', 'sack', null, null, 'false', 'true', '2025-10-25 15:43:25.246146+00', '2025-10-25 15:43:25.246146+00', null, '0c164880-4226-4355-8dc2-1e3bf6cb617a', 'https://prhxgpbqkpdnjpmxndyp.supabase.co/storage/v1/object/public/product-images/1761407004774-d39tsntydcj.jpg', '2080.00', 'false', 'false', 'false', null, null, null, null), ('792469ae-7154-4e24-a53b-0ce15aed7901', 'PURINA-ONE-CHKN-1.2KG', 'Purina ONE Indoor Advantage Chicken Dry Cat Food 1.2kg', 'Premium dry cat food for adult indoor cats', 'db2dc7a7-c58f-4f3f-90b9-e5f3f7c948d3', 'Purina', 'kg', '1.200', null, 'false', 'true', '2025-11-11 17:09:40.22057+00', '2025-11-11 17:09:40.22057+00', null, null, 'https://example.com/purina_one_1.2kg.jpg', '297.00', 'false', 'false', 'false', null, null, null, null), ('7aaa91a0-cc82-4e9b-90cb-0ef2eeb2c604', 'FEED-013', 'Pigrolac Early Wean Immunobooster', '', 'db2dc7a7-c58f-4f3f-90b9-e5f3f7c948d3', 'Pigrolac', 'sack', null, null, 'false', 'true', '2025-10-25 16:04:39.206313+00', '2025-10-25 16:04:39.206313+00', null, '0c164880-4226-4355-8dc2-1e3bf6cb617a', 'https://prhxgpbqkpdnjpmxndyp.supabase.co/storage/v1/object/public/product-images/1761408278374-025gm8zpj48f.jpg', '1800.00', 'false', 'false', 'false', null, null, null, null), ('86fc8c3b-3182-453b-ab34-c105609aa92a', 'MEO-ADULT-TUNA-1.2KG', 'Me-O Adult Dry Cat Food Tuna Flavour 1.2kg', 'Balanced dry cat food for adult cats', 'db2dc7a7-c58f-4f3f-90b9-e5f3f7c948d3', 'Me-O', 'kg', '1.200', null, 'false', 'true', '2025-11-11 17:09:40.22057+00', '2025-11-11 17:09:40.22057+00', null, null, 'https://example.com/meo_tuna_1.2kg.jpg', '290.75', 'false', 'false', 'false', null, null, null, null), ('b7b088c9-842a-4996-bb84-7b21f1b65f4f', 'FEED-010', 'Power Chick Booster Mash', '', 'db2dc7a7-c58f-4f3f-90b9-e5f3f7c948d3', 'General Milling Corp.', 'sack', null, null, 'false', 'true', '2025-10-25 15:45:03.363171+00', '2025-10-25 15:45:03.363171+00', null, '0c164880-4226-4355-8dc2-1e3bf6cb617a', 'https://prhxgpbqkpdnjpmxndyp.supabase.co/storage/v1/object/public/product-images/1761407102350-xrtewhtl26a.jpg', '2090.00', 'false', 'false', 'false', null, null, null, null), ('b8f84882-70f1-44ca-8030-cb935a11d799', 'NEXGARD-XS-2-3.5KG', 'NexGard Chewable Dogs Tick/Flea 2-3.5kg', 'Monthly beef-flavored chewable for small dogs', '4045e370-3cf4-4f66-810c-90ef9360740d', 'NexGard', 'tablet', null, null, 'true', 'true', '2025-11-11 17:09:40.22057+00', '2025-11-11 17:09:40.22057+00', null, null, 'https://example.com/nexgard_2-3.5kg.jpg', '739.00', 'false', 'false', 'false', null, null, null, null), ('ce5fb47d-d041-4460-ba18-d61cc3f95455', 'FEED-005', 'B-MEG Integra 2500', '', 'db2dc7a7-c58f-4f3f-90b9-e5f3f7c948d3', 'B-MEG', 'sack', null, null, 'false', 'true', '2025-10-25 15:21:42.827456+00', '2025-10-25 15:21:42.827456+00', null, '0c164880-4226-4355-8dc2-1e3bf6cb617a', 'https://prhxgpbqkpdnjpmxndyp.supabase.co/storage/v1/object/public/product-images/1761405701109-lf3i8gln0cd.jpg', '945.00', 'false', 'false', 'false', null, null, 'BN-2025-001', '2025-10-31'), ('cf394640-89f4-441f-9707-05b60a79bc54', 'FEED-012', 'Pigrolac Vital Hog Finisher', '', 'db2dc7a7-c58f-4f3f-90b9-e5f3f7c948d3', 'Pigrolac', 'sack', null, null, 'false', 'true', '2025-10-25 16:02:57.2605+00', '2025-10-25 16:02:57.2605+00', null, '0c164880-4226-4355-8dc2-1e3bf6cb617a', 'https://prhxgpbqkpdnjpmxndyp.supabase.co/storage/v1/object/public/product-images/1761408176365-0uz9f378pm2.jpg', '1750.00', 'false', 'false', 'false', null, null, null, null), ('d1e961c4-4f0a-47ea-8717-9172d24629ad', 'FEED-009', 'Broiler Finisher Crumble', '', 'db2dc7a7-c58f-4f3f-90b9-e5f3f7c948d3', 'General Milling Corp.', 'sack', null, null, 'false', 'true', '2025-10-25 15:44:15.166864+00', '2025-10-25 15:44:15.166864+00', null, '0c164880-4226-4355-8dc2-1e3bf6cb617a', 'https://prhxgpbqkpdnjpmxndyp.supabase.co/storage/v1/object/public/product-images/1761407053870-5kfe46x0bjk.jpg', '2090.00', 'false', 'false', 'false', null, null, null, null), ('dc2dd3b2-2da1-41d2-8ef7-540dfbf3f753', 'FEED-011', 'Pigrolac Vital Hog Grower', '', 'db2dc7a7-c58f-4f3f-90b9-e5f3f7c948d3', 'Pigrolac', 'sack', null, null, 'false', 'true', '2025-10-25 16:02:09.70512+00', '2025-10-25 16:02:09.70512+00', null, '0c164880-4226-4355-8dc2-1e3bf6cb617a', 'https://prhxgpbqkpdnjpmxndyp.supabase.co/storage/v1/object/public/product-images/1761408129286-cu65ofjwxpq.jpg', '1750.00', 'false', 'false', 'false', null, null, null, null), ('e13772bc-8456-4bdb-9c29-b622df74da79', 'FEED-007', 'Hog Starter Value Plus Crumble', '', 'db2dc7a7-c58f-4f3f-90b9-e5f3f7c948d3', 'General Milling Corp.', 'sack', null, null, 'false', 'true', '2025-10-25 15:40:35.636875+00', '2025-10-25 15:40:35.636875+00', null, '0c164880-4226-4355-8dc2-1e3bf6cb617a', 'https://prhxgpbqkpdnjpmxndyp.supabase.co/storage/v1/object/public/product-images/1761406835165-02parh0m0z6i.jpg', '1585.00', 'false', 'false', 'false', null, null, null, null), ('e27b1411-96d2-4985-b63e-4f0e002fb57e', 'FEED-004', 'B-MEG Super Biik Booster + Milk Formula', '', 'db2dc7a7-c58f-4f3f-90b9-e5f3f7c948d3', 'B-MEG', 'bag', null, null, 'false', 'true', '2025-10-25 15:19:27.451508+00', '2025-10-25 15:19:27.451508+00', null, '0c164880-4226-4355-8dc2-1e3bf6cb617a', 'https://prhxgpbqkpdnjpmxndyp.supabase.co/storage/v1/object/public/product-images/1761405565629-5630hobi9ob.png', '105.00', 'false', 'false', 'false', null, null, null, null), ('ef3f923c-e743-4525-b031-638f5f7bdcda', 'ROYALCANIN-MINI-1KG', 'Royal Canin Mini Adult Dog Dry Food 1kg', 'Complete dry dog food for small breed adult dogs', 'db2dc7a7-c58f-4f3f-90b9-e5f3f7c948d3', 'Royal Canin', 'kg', '1.000', null, 'false', 'true', '2025-11-11 17:09:40.22057+00', '2025-11-11 17:09:40.22057+00', null, null, 'https://example.com/royal_canin_mini_1kg.jpg', '1049.00', 'false', 'false', 'false', null, null, null, null), ('fd1ceff3-9a0d-4505-9b43-132c853d3bd6', 'BRAVECTO-20-40KG', 'Bravecto Tick & Flea Chewable Tablet Dogs 20-40kg', '12-week protection chewable for dogs', '4045e370-3cf4-4f66-810c-90ef9360740d', 'Bravecto', 'tablet', null, null, 'true', 'true', '2025-11-11 17:09:40.22057+00', '2025-11-11 17:09:40.22057+00', null, null, 'https://example.com/bravecto_20-40kg.jpg', '1699.00', 'false', 'false', 'false', null, null, null, null);
+

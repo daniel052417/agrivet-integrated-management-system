@@ -5,11 +5,11 @@ import {
   Megaphone, Calendar, DollarSign,
   Archive, Warehouse, ChevronDown,
   Menu, X, LogOut, UserCheck,
-  Clock, Tag, Target, Star, Gift, Building
+  Clock, Tag, Target, Star, Gift, Building, Receipt, Activity
 } from 'lucide-react';
 import logo from '../../../assets/logo.png';
 import { CustomUser } from '../../../lib/customAuth';
-import { settingsService } from '../../../lib/settingsService'; // ✅ ADD THIS
+import { settingsService } from '../../../lib/settingsService';
 
 interface SimplifiedSidebarProps {
   user: CustomUser;
@@ -30,17 +30,18 @@ interface MenuItem {
 const SimplifiedSidebar: React.FC<SimplifiedSidebarProps> = ({ user, activeSection, onSectionChange, onLogout }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [expandedCategories, setExpandedCategories] = useState<string[]>(['Default']);
-  const [hrSettings, setHrSettings] = useState<any>(null); // ✅ Already exists
+  const [hrSettings, setHrSettings] = useState<any>(null);
+  const [companyLogo, setCompanyLogo] = useState<string | null>(null);
+  const [appName, setAppName] = useState('TIONGSON');
   
   // Check if user is super admin
   const isSuperAdmin = user.role_name === 'super-admin' || user.role === 'super-admin';
 
-  // ✅ ADD THIS useEffect to load HR settings
   useEffect(() => {
     loadHRSettings();
+    loadLogoSettings();
   }, []);
 
-  // ✅ ADD THIS function
   const loadHRSettings = async () => {
     try {
       const settings = await settingsService.getHRSettings();
@@ -48,6 +49,17 @@ const SimplifiedSidebar: React.FC<SimplifiedSidebarProps> = ({ user, activeSecti
       console.log('🔧 HR Settings loaded in sidebar:', settings);
     } catch (err) {
       console.error('Error loading HR settings:', err);
+    }
+  };
+
+  const loadLogoSettings = async () => {
+    try {
+      const settings = await settingsService.getAllSettings();
+      const general = settings.general || {};
+      setCompanyLogo(general.companyLogo || settings.company_logo || null);
+      setAppName(general.companyName || settings.company_name || 'TIONGSON');
+    } catch (error) {
+      console.error('Error loading logo settings:', error);
     }
   };
 
@@ -112,11 +124,25 @@ const SimplifiedSidebar: React.FC<SimplifiedSidebarProps> = ({ user, activeSecti
       category: 'Sales',
       children: [
         { id: 'sales-records', label: 'All Sales Records', icon: BarChart3, category: 'Sales' },
-        { id: 'sales-monitoring', label: 'Sales Monitoring', icon: TrendingUp, category: 'Sales' },
         { id: 'daily-sales', label: 'Daily Sales Summary', icon: Calendar, category: 'Sales' },
         { id: 'product-sales', label: 'Product Sales Report', icon: FileText, category: 'Sales' },
       ]
     },
+
+    {
+      id: 'finance',
+      label: 'Finance Management',
+      icon: DollarSign,
+      category: 'Finance',
+      children: [
+        // { id: 'finance-dashboard', label: 'Finance Dashboard', icon: BarChart3, category: 'Finance' },
+        // { id: 'sales-income', label: 'Sales Income Summary', icon: TrendingUp, category: 'Finance' },
+        { id: 'expenses', label: 'Expenses', icon: Receipt, category: 'Finance' },
+        { id: 'cash-flow', label: 'Cash Flow Overview', icon: Activity, category: 'Finance' },
+        // { id: 'financial-reports', label: 'Reports & Exports', icon: FileText, category: 'Finance' },
+      ]
+    },
+
     
     { 
       id: 'staff-user-management',
@@ -137,7 +163,6 @@ const SimplifiedSidebar: React.FC<SimplifiedSidebarProps> = ({ user, activeSecti
       icon: Users, 
       category: 'HR',
       children: [
-        { id: 'hr-dashboard', label: 'HR Dashboard', icon: Users, category: 'Default' },
         { id: 'staff', label: 'Employee Management', icon: UserCheck, category: 'HR' },
         { id: 'attendance-dashboard', label: 'Attendance Dashboard', icon: Clock, category: 'HR' },
         // ✅ Only show Leave Management if enabled in settings
@@ -156,8 +181,8 @@ const SimplifiedSidebar: React.FC<SimplifiedSidebarProps> = ({ user, activeSecti
       children: [
         { id: 'marketing-overview', label: 'Overview', icon: BarChart3, category: 'Marketing' },
         { id: 'promotions-announcements', label: 'Promotions & Announcements', icon: Tag, category: 'Marketing'},
-        { id: 'insights-analytics', label: 'Insights & Analytics', icon: TrendingUp, category: 'Marketing' },
-        { id: 'client-notifications', label: 'Client Notifications', icon: Gift, category: 'Marketing' },
+        // { id: 'insights-analytics', label: 'Insights & Analytics', icon: TrendingUp, category: 'Marketing' },
+        // { id: 'client-notifications', label: 'Client Notifications', icon: Gift, category: 'Marketing' },
         { id: 'facebook-integration', label: 'Facebook Integration', icon: Users, category: 'Marketing' },
       ]
     },
@@ -169,8 +194,6 @@ const SimplifiedSidebar: React.FC<SimplifiedSidebarProps> = ({ user, activeSecti
       category: 'Reports',
     },
     
-    { id: 'exports', label: 'Exports & Reports', icon: FileText, category: 'Other' },
-    { id: 'claims', label: 'Claims', icon: MessageSquare, category: 'Other' },
     { id: 'settings', label: 'Settings', icon: Settings, category: 'Other' },
   ];
 
@@ -278,6 +301,7 @@ const SimplifiedSidebar: React.FC<SimplifiedSidebarProps> = ({ user, activeSecti
     { name: 'Default', items: filteredMenuItems.filter(item => item.category === 'Default') },
     { name: 'Inventory', items: filteredMenuItems.filter(item => item.category === 'Inventory') },
     { name: 'Sales', items: filteredMenuItems.filter(item => item.category === 'Sales') },
+    { name: 'Finance', items: filteredMenuItems.filter(item => item.category === 'Finance') },
     { name: 'Staff & Users', items: filteredMenuItems.filter(item => item.category === 'Staff & Users') },
     { name: 'HR', items: filteredMenuItems.filter(item => item.category === 'HR') },
     { name: 'Marketing', items: filteredMenuItems.filter(item => item.category === 'Marketing') },
@@ -306,14 +330,34 @@ const SimplifiedSidebar: React.FC<SimplifiedSidebarProps> = ({ user, activeSecti
           {!isCollapsed && (
             <div className="flex items-center space-x-3">
               <div className="w-10 h-10 rounded-xl overflow-hidden shadow-lg">
-                <img src={logo} alt="AGRIVET" className="w-full h-full object-cover" />
+                <img 
+                  src={companyLogo || logo} 
+                  alt="Company Logo" 
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    // Fallback to default logo if company logo fails to load
+                    e.currentTarget.src = logo;
+                  }}
+                />
               </div>
               <div>
-                <h1 className="text-xl font-bold text-green-800">TIONGSON</h1>
+                <h1 className="text-xl font-bold text-green-800">{appName}</h1>
                 <p className="text-xs text-gray-500">
                   {isSuperAdmin ? 'Super Admin Dashboard' : 'Admin Dashboard'}
                 </p>
               </div>
+            </div>
+          )}
+          {isCollapsed && (
+            <div className="w-10 h-10 rounded-xl overflow-hidden shadow-lg mx-auto">
+              <img 
+                src={companyLogo || logo} 
+                alt="Company Logo" 
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  e.currentTarget.src = logo;
+                }}
+              />
             </div>
           )}
           

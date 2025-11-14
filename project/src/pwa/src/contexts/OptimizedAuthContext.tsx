@@ -228,6 +228,13 @@ export const OptimizedAuthProvider: React.FC<AuthProviderProps> = ({ children })
       
       const response = await authService.login({ email, password })
       
+      if (response.requiresPasswordReset) {
+        return {
+          success: false,
+          error: response.error || 'We sent you an email to set up your password.'
+        }
+      }
+
       if (response.user) {
         console.log('✅ AuthContext: Login successful')
         setUser(response.user)

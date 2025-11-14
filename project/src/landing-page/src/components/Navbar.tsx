@@ -1,13 +1,12 @@
 import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Menu, X, ShoppingCart, LogIn } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
 import Logo from '../assets/logo.png';
+
 const Navbar = () => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const location = useLocation();
-  const navigate = useNavigate();
   useEffect(() => {
     const handleScroll = () => {
       setIsScrolled(window.scrollY > 20); 
@@ -82,7 +81,7 @@ const Navbar = () => {
 
           {/* CTA Buttons */}
           <div className="hidden lg:flex items-center space-x-4">
-            <button onClick={() => window.location.href = 'http://localhost:3001/branch-selection'}
+            <button onClick={() => window.location.href = 'https://tiongsononline.vercel.app/branch-selection'}
             className="flex items-center space-x-2 px-4 py-2 text-gray-700 hover:text-green-600 transition-colors duration-200">
               <ShoppingCart size={20} />
               

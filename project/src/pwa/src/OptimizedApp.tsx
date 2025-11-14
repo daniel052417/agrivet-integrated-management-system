@@ -27,6 +27,7 @@ import MainLayout from './layouts/MainLayout'
 import KioskLayout from './layouts/KioskLayout'
 
 import AuthCallback from './pages/AuthCallback'
+import PasswordReset from './pages/PasswordReset'
 
 // Performance monitoring component
 const PerformanceMonitor: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -61,6 +62,7 @@ function OptimizedApp() {
                       {/* Public routes */}
                       <Route path="/" element={<Navigate to="/branch-selection" replace />} />
                       <Route path="/auth/callback" element={<AuthCallback />} />
+                      <Route path="/auth/password-reset" element={<PasswordReset />} />
                       <Route path="/branch-selection" element={
                         <KioskLayout>
                           <BranchSelection />

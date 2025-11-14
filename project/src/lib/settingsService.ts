@@ -1,5 +1,6 @@
 // lib/settingsService.ts
-import { supabase } from './supabase';
+import { supabaseService } from './supabase';
+import { simplifiedAuth } from './simplifiedAuth';
 
 interface HRSettings {
   enable_deduction_for_absences: boolean;
@@ -42,23 +43,25 @@ class SettingsService {
       return this.cachedSettings;
     }
 
-    // Fetch from database
+    // Fetch from database (system_settings table)
     try {
-      console.log('🔄 Fetching fresh settings from database...');
-      const { data, error } = await supabase.rpc('get_system_setting', {
-        setting_key: 'app_settings'
-      });
+      console.log('🔄 Fetching fresh settings from database (system_settings)...');
+      const { data, error } = await supabaseService
+        .from('system_settings')
+        .select('value')
+        .eq('key', 'app_settings')
+        .single();
 
       if (error) {
         console.error('Error fetching settings:', error);
         return this.getDefaultSettings();
       }
 
-      if (data) {
-        this.cachedSettings = data;
+      if (data && data.value) {
+        this.cachedSettings = data.value;
         this.cacheTimestamp = now;
         console.log('✅ Settings loaded and cached');
-        return data;
+        return data.value;
       }
 
       // Return defaults if nothing found
@@ -68,6 +71,141 @@ class SettingsService {
       return this.getDefaultSettings();
     }
   }
+
+  // Determine a valid user ID to use for updated_by
+  private async getUpdaterUserId(): Promise<string> {
+    // 1) Try in-memory authenticated user
+    const current = simplifiedAuth.getCurrentUser();
+    if (current?.id) return current.id;
+
+    // 2) Try env-provided default user id
+    const fallbackEnv = (import.meta as any)?.env?.VITE_DEFAULT_UPDATED_BY as string | undefined;
+    if (fallbackEnv) return fallbackEnv;
+
+    // 3) Query a privileged user from users table
+    // Try super-admin/admin roles first
+    const rolesToTry = ['super-admin', 'admin'];
+    for (const role of rolesToTry) {
+      const { data, error } = await supabaseService
+        .from('users')
+        .select('id')
+        .eq('is_active', true as any)
+        .eq('role', role)
+        .order('last_login', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (!error && data?.id) return data.id as string;
+    }
+
+    // 4) Fallback: any active user
+    {
+      const { data, error } = await supabaseService
+        .from('users')
+        .select('id')
+        .eq('is_active', true as any)
+        .order('last_login', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (!error && data?.id) return data.id as string;
+    }
+
+    // 5) Final fallback: any user
+    {
+      const { data, error } = await supabaseService
+        .from('users')
+        .select('id')
+        .limit(1)
+        .maybeSingle();
+      if (!error && data?.id) return data.id as string;
+    }
+
+    throw new Error('No authenticated user found for updated_by (public.users)');
+  }
+
+  // Alias for getSettings to match component expectations
+  async getAllSettings(): Promise<any> {
+    return this.getSettings();
+  }
+
+  // Deep merge utility function
+  private deepMerge(target: any, source: any): any {
+    const output = { ...target };
+    
+    if (this.isObject(target) && this.isObject(source)) {
+      Object.keys(source).forEach(key => {
+        if (this.isObject(source[key])) {
+          if (!(key in target)) {
+            Object.assign(output, { [key]: source[key] });
+          } else {
+            output[key] = this.deepMerge(target[key], source[key]);
+          }
+        } else {
+          Object.assign(output, { [key]: source[key] });
+        }
+      });
+    }
+    
+    return output;
+  }
+
+  private isObject(item: any): boolean {
+    return item && typeof item === 'object' && !Array.isArray(item);
+  }
+
+  async updateSettings(newSettings: Partial<any>): Promise<boolean> {
+    try {
+      console.log('🔄 Updating settings in database (system_settings)...');
+
+      // Get current settings first
+      const currentSettings = await this.getSettings();
+
+      // Deep merge with new settings to preserve nested structures
+      const mergedSettings = this.deepMerge(currentSettings, newSettings);
+
+      // Also maintain flat keys for backward compatibility (merge flat keys from both)
+      Object.keys(newSettings).forEach(sectionKey => {
+        if (this.isObject(newSettings[sectionKey])) {
+          // If it's a nested object (like general, security, etc.), also add flat keys
+          Object.keys(newSettings[sectionKey]).forEach(key => {
+            // Convert camelCase to snake_case for flat keys
+            const flatKey = key.replace(/([A-Z])/g, '_$1').toLowerCase();
+            mergedSettings[flatKey] = newSettings[sectionKey][key];
+          });
+        }
+      });
+
+      // Determine updater user id using multiple strategies
+      const updatedBy = await this.getUpdaterUserId();
+
+      // Upsert into system_settings with conflict on key
+      const { error } = await supabaseService
+        .from('system_settings')
+        .upsert(
+          [{
+            key: 'app_settings',
+            value: mergedSettings,
+            description: 'Main application settings',
+            is_public: false,
+            updated_by: updatedBy,
+          }],
+          { onConflict: 'key' }
+        );
+
+      if (error) {
+        console.error('Error updating settings:', error);
+        return false;
+      }
+
+      // Clear cache to force fresh fetch on next request
+      this.clearCache();
+      console.log('✅ Settings updated successfully');
+      return true;
+    } catch (error) {
+      console.error('Error updating settings:', error);
+      return false;
+    }
+  }
+
 
   async getHRSettings(): Promise<HRSettings> {
     const allSettings = await this.getSettings();
@@ -128,6 +266,7 @@ class SettingsService {
       contact_email: 'admin@agrivet.com',
       support_phone: '+63 2 8123 4567',
       company_address: '123 Business St, Manila, Philippines',
+      company_logo: null,
       brand_color: '#3B82F6',
       currency: 'PHP',
       auto_save: true,
@@ -137,22 +276,29 @@ class SettingsService {
       date_format: 'YYYY-MM-DD',
       receipt_header: 'Thank you for your business!',
       receipt_footer: 'Visit us again soon!',
-      default_branch: 'main',
+      show_logo_on_receipt: true,
+      receipt_number_prefix: 'RCP',
+      default_branch: '',
       selected_timezone: 'Asia/Manila',
       selected_theme: 'light',
       selected_language: 'en',
       
       // Security Settings Defaults
       session_timeout: 30,
-      require_2fa: false,
-      password_min_length: 8,
-      password_require_special: true,
-      password_expiration: 90,
       login_attempts: 5,
       lockout_duration: 15,
-      ip_whitelist: [],
-      ip_banlist: [],
-      audit_log_visibility: true,
+      require_email_verification: false,
+      require_mfa: false,
+      require_2fa: false, // Backward compatibility
+      mfa_applies_to: {
+        superAdmin: true,
+        cashier: true
+      },
+      password_min_length: 8,
+      password_require_special: true,
+      password_require_mixed_case: false,
+      allow_login_only_verified_browsers: false,
+      notify_owner_on_new_device: false,
       
       // Notification Settings Defaults
       email_notifications: true,

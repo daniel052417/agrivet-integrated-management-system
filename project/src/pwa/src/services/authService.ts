@@ -1,4 +1,6 @@
 import { supabase } from './supabase'
+import { getAuthRedirectUrl } from '../utils/authUtils'
+import { getManilaTimestamp } from '../utils/dateTime'
 
 export interface AuthUser {
   id: string
@@ -32,6 +34,8 @@ export interface AuthResponse {
   session: any | null
   error: string | null
   requiresProfileCompletion?: boolean 
+  requiresPasswordReset?: boolean
+  passwordResetEmailSent?: boolean
 }
 
 class AuthService {
@@ -92,7 +96,8 @@ class AuthService {
           first_name: data.first_name,
           last_name: data.last_name,
           phone: data.phone
-        }
+        },
+        source: 'pwa-registration'
       })
 
       if (!customerResult.success) {
@@ -177,6 +182,18 @@ class AuthService {
 
       if (authError) {
         console.error('❌ AuthService: Supabase Auth error:', authError)
+
+        if (this.isInvalidCredentialsError(authError)) {
+          const resetResult = await this.initiatePasswordResetFlow(credentials.email)
+          return {
+            user: null,
+            session: null,
+            error: resetResult.message,
+            requiresPasswordReset: resetResult.requiresPasswordReset,
+            passwordResetEmailSent: resetResult.emailSent
+          }
+        }
+
         return {
           user: null,
           session: null,
@@ -247,8 +264,8 @@ class AuthService {
       await supabase
         .from('customers')
         .update({ 
-          last_purchase_date: new Date().toISOString(),
-          updated_at: new Date().toISOString()
+          last_purchase_date: getManilaTimestamp(),
+          updated_at: getManilaTimestamp()
         })
         .eq('user_id', authData.user.id)
 
@@ -259,6 +276,17 @@ class AuthService {
       }
     } catch (error) {
       console.error('❌ AuthService: Login caught an error:', error)
+      if (this.isInvalidCredentialsError(error)) {
+        const resetResult = await this.initiatePasswordResetFlow(credentials.email)
+        return {
+          user: null,
+          session: null,
+          error: resetResult.message,
+          requiresPasswordReset: resetResult.requiresPasswordReset,
+          passwordResetEmailSent: resetResult.emailSent
+        }
+      }
+
       return {
         user: null,
         session: null,
@@ -271,20 +299,21 @@ class AuthService {
   async socialLogin(provider: 'google' | 'facebook'): Promise<AuthResponse> {
     try {
       console.log('🔐 Social Login: Starting OAuth flow with provider:', provider)
+      const redirectUrl = getAuthRedirectUrl('/auth/callback')
       console.log('🔐 Social Login: Current origin:', window.location.origin)
       console.log('🔐 Social Login: Current URL:', window.location.href)
-      console.log('🔐 Social Login: Redirect will be to:', `${window.location.origin}/auth/callback`)
+      console.log('🔐 Social Login: Redirect will be to:', redirectUrl)
       console.log('🔐 Social Login: Supabase client ready:', !!supabase)
       
       // Use Supabase Auth for social login (creates in auth.users automatically)
       console.log('🔐 Social Login: Calling supabase.auth.signInWithOAuth...')
       console.log('🔐 Social Login: Provider:', provider)
-      console.log('🔐 Social Login: Redirect URL:', `${window.location.origin}/auth/callback`)
+      console.log('🔐 Social Login: Using redirect URL:', redirectUrl)
       
       const { data, error: authError } = await supabase.auth.signInWithOAuth({
         provider: provider,
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
+          redirectTo: redirectUrl,
           skipBrowserRedirect: false,
           queryParams: {
             access_type: 'offline',
@@ -457,8 +486,8 @@ class AuthService {
       await supabase
         .from('customers')
         .update({
-          last_purchase_date: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
+          last_purchase_date: getManilaTimestamp(),
+          updated_at: getManilaTimestamp(),
         })
         .eq('id', existingCustomer.id)
   
@@ -553,6 +582,12 @@ class AuthService {
     email: string
     user_metadata: any
     raw_user_meta_data: any
+    address?: string | null
+    city?: string | null
+    province?: string | null
+    postal_code?: string | null
+    customer_type?: string
+    source?: string
   }): Promise<{ success: boolean; customer?: any; error?: string }> {
     try {
       console.log('📞 Edge Function: Calling create-customer function...')
@@ -586,6 +621,43 @@ class AuthService {
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Edge Function call failed' 
+      }
+    }
+  }
+
+  private isInvalidCredentialsError(error: unknown): boolean {
+    if (!error) return false
+    const message = (error as { message?: string })?.message?.toLowerCase() ?? ''
+    return message.includes('invalid login credentials')
+  }
+
+  private async initiatePasswordResetFlow(email: string): Promise<{ emailSent: boolean; requiresPasswordReset: boolean; message: string }> {
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: getAuthRedirectUrl('/auth/password-reset')
+      })
+
+      if (error) {
+        console.error('❌ AuthService: Failed to send password reset email:', error)
+        return {
+          emailSent: false,
+          requiresPasswordReset: false,
+          message: error.message || 'Invalid email or password'
+        }
+      }
+
+      console.log('✉️ AuthService: Password reset email sent')
+      return {
+        emailSent: true,
+        requiresPasswordReset: true,
+        message: 'We couldn’t sign you in. If you originally used Google, check your email to set a password.'
+      }
+    } catch (err) {
+      console.error('❌ AuthService: Error initiating password reset flow:', err)
+      return {
+        emailSent: false,
+        requiresPasswordReset: false,
+        message: 'Invalid email or password'
       }
     }
   }

@@ -10,6 +10,7 @@ interface SessionSummary {
   totalTransactions: number;
   duration: string;
   expectedCash: number;
+  totalExpenses: number;
 }
 
 interface ClosingCashModalProps {
@@ -239,6 +240,14 @@ export default function ClosingCashModal({
               <div>
                 <p className="text-gray-500 text-sm">Starting Cash</p>
                 <p className="font-bold text-gray-900 text-lg">₱{sessionSummary.startingCash.toFixed(2)}</p>
+              </div>
+              <div>
+                <p className="text-gray-500 text-sm">Total Sales</p>
+                <p className="font-bold text-emerald-600 text-lg">₱{sessionSummary.totalSales.toFixed(2)}</p>
+              </div>
+              <div>
+                <p className="text-gray-500 text-sm">Approved Expenses</p>
+                <p className="font-bold text-red-600 text-lg">₱{(sessionSummary.totalExpenses || 0).toFixed(2)}</p>
               </div>
               <div>
                 <p className="text-gray-500 text-sm">Expected Cash</p>

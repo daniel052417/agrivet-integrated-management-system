@@ -1,9 +1,8 @@
 import { ArrowRight } from 'lucide-react';
 import { motion } from 'framer-motion';
-import store from '../assets/store.jpg';
-import { useNavigate } from 'react-router-dom';
+import store from '../assets/Store.jpg';
+
 const Hero = () => {
-  const navigate = useNavigate();
   return (
     <section className="relative min-h-screen flex items-center justify-center overflow-hidden bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50">
       {/* Animated Background Elements */}
@@ -94,7 +93,7 @@ const Hero = () => {
                 whileTap={{ scale: 0.95 }}
                 className="group flex items-center justify-center space-x-2 px-8 py-4 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl hover:shadow-xl transition-all duration-200"
               >
-                <span onClick={() => window.location.href = 'http://localhost:3001/branch-selection'} className="font-semibold">Shop Now</span>
+                <span onClick={() => window.location.href = 'https://tiongsononline.vercel.app/branch-selection'} className="font-semibold">Shop Now</span>
                 <ArrowRight
                   size={20}
                   className="group-hover:translate-x-1 transition-transform duration-200"
@@ -156,49 +155,6 @@ const Hero = () => {
                     className="rounded-2xl w-full h-full object-cover"
                   />
                 </div>
-              </motion.div>
-
-              {/* Floating Elements */}
-              <motion.div 
-                initial={{ opacity: 0, x: 50, y: -50 }}
-                animate={{ opacity: 1, x: 0, y: 0 }}
-                transition={{ duration: 0.8, delay: 1.2 }}
-                className="absolute -top-6 -right-6 bg-white rounded-xl shadow-lg p-4"
-              >
-                <motion.div
-                  animate={{ y: [0, -10, 0] }}
-                  transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
-                  className="flex items-center space-x-3"
-                >
-                  <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
-                    <span className="text-2xl">⭐</span>
-                  </div>
-                  <div>
-                    <p className="text-sm font-bold text-gray-900">4.9/5</p>
-                    <p className="text-xs text-gray-600">Customer Rating</p>
-                  </div>
-                </motion.div>
-              </motion.div>
-
-              <motion.div 
-                initial={{ opacity: 0, x: -50, y: 50 }}
-                animate={{ opacity: 1, x: 0, y: 0 }}
-                transition={{ duration: 0.8, delay: 1.4 }}
-                className="absolute -bottom-6 -left-6 bg-white rounded-xl shadow-lg p-4"
-              >
-                <motion.div
-                  animate={{ y: [0, -10, 0] }}
-                  transition={{ duration: 3, repeat: Infinity, ease: "easeInOut", delay: 1.5 }}
-                  className="flex items-center space-x-3"
-                >
-                  <div className="w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center">
-                    <span className="text-2xl">📦</span>
-                  </div>
-                  <div>
-                    <p className="text-sm font-bold text-gray-900">Fast Delivery</p>
-                    <p className="text-xs text-gray-600">Same Day Available</p>
-                  </div>
-                </motion.div>
               </motion.div>
             </div>
           </motion.div>

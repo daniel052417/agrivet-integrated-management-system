@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Calendar, DollarSign, ShoppingCart, TrendingUp, Users, Clock, Package } from 'lucide-react';
+import { Calendar, DollarSign, ShoppingCart, TrendingUp, Users, Clock, Package, Star, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 const DailySalesSummary: React.FC = () => {
@@ -15,7 +15,10 @@ const DailySalesSummary: React.FC = () => {
   const [avgOrder, setAvgOrder] = useState<number>(0);
   const [growthPct, setGrowthPct] = useState<number>(0);
 
-  const [hourlyBreakdown, setHourlyBreakdown] = useState<{ hour: string; sales: number; orders: number; customers: number; }[]>([]);
+  const [hourlyBreakdown, setHourlyBreakdown] = useState<{ hour: string; hour24: number; sales: number; orders: number; customers: number; percentOfDay: number; trend: 'up' | 'down' | 'flat'; diffAmount: number; }[]>([]);
+
+  const [branchFilter, setBranchFilter] = useState<string>('all');
+  const [branches, setBranches] = useState<{ id: string; name: string }[]>([]);
 
   const [topSellingToday, setTopSellingToday] = useState<{ product: string; quantity: number; revenue: string; percentage: number; }[]>([]);
 
@@ -25,13 +28,29 @@ const DailySalesSummary: React.FC = () => {
 
   const maxHourlySales = useMemo(() => Math.max(0, ...hourlyBreakdown.map(h => h.sales)), [hourlyBreakdown]);
   const peak = useMemo(() => {
-    const p = hourlyBreakdown.reduce((prev, cur) => (cur.sales > prev.sales ? cur : prev), { hour: '—', sales: 0, orders: 0, customers: 0 });
+    const p = hourlyBreakdown.reduce((prev, cur) => (cur.sales > prev.sales ? cur : prev), { hour: '—', hour24: -1, sales: 0, orders: 0, customers: 0, percentOfDay: 0, trend: 'flat', diffAmount: 0 });
     return p;
   }, [hourlyBreakdown]);
 
   useEffect(() => {
     loadDailyData();
-  }, [selectedDate]);
+  }, [selectedDate, branchFilter]);
+
+  useEffect(() => {
+    const loadBranches = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('branches')
+          .select('id, name, is_active')
+          .eq('is_active', true)
+          .order('name');
+        if (error) throw error;
+        setBranches([{ id: 'all', name: 'All Branches' } as any, ...((data as any[]) || [])]);
+      } catch (e) {
+      }
+    };
+    loadBranches();
+  }, []);
 
   const loadDailyData = async () => {
     try {
@@ -43,7 +62,11 @@ const DailySalesSummary: React.FC = () => {
       const endOfDay = new Date(selectedDate);
       endOfDay.setHours(23, 59, 59, 999);
 
-      // Load transactions for selected date
+      const prevStart = new Date(startOfDay);
+      prevStart.setDate(prevStart.getDate() - 1);
+      const prevEnd = new Date(endOfDay);
+      prevEnd.setDate(prevEnd.getDate() - 1);
+
       const { data: transactions, error: transactionsError } = await supabase
         .from('pos_transactions')
         .select(`
@@ -55,35 +78,49 @@ const DailySalesSummary: React.FC = () => {
         .lte('transaction_date', endOfDay.toISOString())
         .order('transaction_date', { ascending: true });
 
+      let filteredTransactions = transactions || [];
+      if (branchFilter !== 'all') {
+        filteredTransactions = filteredTransactions.filter(t => t.branch_id === branchFilter);
+      }
+
+      const { data: prevTransactions, error: prevErr } = await supabase
+        .from('pos_transactions')
+        .select(`id, transaction_date, total_amount, branch_id`)
+        .gte('transaction_date', prevStart.toISOString())
+        .lte('transaction_date', prevEnd.toISOString())
+        .order('transaction_date', { ascending: true });
+      if (prevErr) throw prevErr;
+      let filteredPrev = prevTransactions || [];
+      if (branchFilter !== 'all') {
+        filteredPrev = filteredPrev.filter(t => t.branch_id === branchFilter);
+      }
+
       if (transactionsError) throw transactionsError;
 
-      // Load staff information directly from staff table
-      const userIds = [...new Set(transactions?.map(t => t.cashier_id).filter(Boolean) || [])];
+      const userIds = [...new Set(filteredTransactions?.map((t: any) => t.cashier_id).filter(Boolean) || [])];
       const { data: staff, error: staffError } = await supabase
-        .from('staff')
+        .from('users')
         .select(`
-          id, first_name, last_name, department, email
+          id, first_name, last_name, email
         `)
         .in('id', userIds)
         .eq('is_active', true);
 
       if (staffError) throw staffError;
 
-      // Load transaction items for top selling products (using pos_transaction_items table)
       const { data: items, error: itemsError } = await supabase
         .from('pos_transaction_items')
         .select(`
           quantity, unit_price, line_total,
           product_name
         `)
-        .in('transaction_id', transactions?.map(t => t.id) || []);
+        .in('transaction_id', filteredTransactions?.map((t: any) => t.id) || []);
 
       if (itemsError) throw itemsError;
 
-      // Calculate metrics
-      const sales = transactions?.reduce((sum, t) => sum + (t.total_amount || 0), 0) || 0;
-      const orders = transactions?.length || 0;
-      const customers = new Set(transactions?.map(t => t.customer_id).filter(Boolean)).size;
+      const sales = filteredTransactions?.reduce((sum: number, t: any) => sum + (t.total_amount || 0), 0) || 0;
+      const orders = filteredTransactions?.length || 0;
+      const customers = new Set(filteredTransactions?.map((t: any) => t.customer_id).filter(Boolean)).size;
       const avg = orders > 0 ? sales / orders : 0;
 
       setTotalSales(sales);
@@ -91,29 +128,47 @@ const DailySalesSummary: React.FC = () => {
       setCustomersServed(customers);
       setAvgOrder(avg);
 
-      // Calculate growth (mock data for now)
       setGrowthPct(5.2);
 
-      // Calculate hourly breakdown
-      const hourlyData = Array.from({ length: 24 }, (_, i) => ({
-        hour: `${i.toString().padStart(2, '0')}:00`,
+      const operatingHours = Array.from({ length: 12 }, (_, idx) => 7 + idx);
+      const hours = operatingHours;
+      const hourlyData = hours.map((h) => ({
+        hour: `${((h + 11) % 12) + 1} ${h < 12 ? 'AM' : 'PM'}`,
+        hour24: h,
         sales: 0,
         orders: 0,
-        customers: 0
+        customers: 0,
+        percentOfDay: 0,
+        trend: 'flat' as 'up' | 'down' | 'flat',
+        diffAmount: 0,
       }));
 
-      transactions?.forEach(transaction => {
+      filteredTransactions?.forEach((transaction: any) => {
         const hour = new Date(transaction.transaction_date).getHours();
-        hourlyData[hour].sales += transaction.total_amount || 0;
-        hourlyData[hour].orders += 1;
-        if (transaction.customer_id) {
-          hourlyData[hour].customers += 1;
+        const idx = hours.indexOf(hour);
+        if (idx !== -1) {
+          hourlyData[idx].sales += transaction.total_amount || 0;
+          hourlyData[idx].orders += 1;
+          if (transaction.customer_id) hourlyData[idx].customers += 1;
         }
+      });
+
+      const prevMap = new Map<number, number>();
+      filteredPrev?.forEach((t: any) => {
+        const h = new Date(t.transaction_date).getHours();
+        prevMap.set(h, (prevMap.get(h) || 0) + (t.total_amount || 0));
+      });
+
+      hourlyData.forEach((h) => {
+        h.percentOfDay = sales > 0 ? (h.sales / sales) * 100 : 0;
+        const prev = prevMap.get(h.hour24) || 0;
+        const diff = h.sales - prev;
+        h.diffAmount = diff;
+        h.trend = diff > 0 ? 'up' : diff < 0 ? 'down' : 'flat';
       });
 
       setHourlyBreakdown(hourlyData);
 
-      // Calculate top selling products
       const productSales = new Map<string, { quantity: number; revenue: number; name: string }>();
       
       items?.forEach(item => {
@@ -136,15 +191,14 @@ const DailySalesSummary: React.FC = () => {
 
       setTopSellingToday(topProducts);
 
-      // Format today's transactions
-      const formattedTransactions = transactions?.slice(0, 10).map(transaction => {
+      const formattedTransactions = filteredTransactions?.slice(0, 10).map((transaction: any) => {
         const staffMember = staff?.find(s => s.id === transaction.cashier_id);
         return {
           time: new Date(transaction.transaction_date).toLocaleTimeString(),
           customer: transaction.customers 
             ? `${(transaction.customers as any).first_name || ''} ${(transaction.customers as any).last_name || ''}`.trim()
             : 'Walk-in Customer',
-          items: ['Multiple items'], // This would be calculated from transaction items
+          items: ['Multiple items'],
           total: transaction.total_amount || 0,
           payment: transaction.payment_status || 'Unknown',
           staff: staffMember
@@ -155,7 +209,6 @@ const DailySalesSummary: React.FC = () => {
 
       setTodaysTransactions(formattedTransactions);
 
-      // Calculate payment status distribution
       const paymentData = new Map<string, number>();
       transactions?.forEach(transaction => {
         const status = transaction.payment_status || 'Unknown';
@@ -188,6 +241,13 @@ const DailySalesSummary: React.FC = () => {
     }).format(amount);
   };
 
+  const getBarColor = (percentOfDay: number, isPeak: boolean) => {
+    if (isPeak) return 'bg-indigo-600';
+    if (percentOfDay >= 25) return 'bg-green-600';
+    if (percentOfDay >= 10) return 'bg-yellow-500';
+    return 'bg-red-500';
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -213,7 +273,7 @@ const DailySalesSummary: React.FC = () => {
   }
 
   return (
-    <div className="daily-sales-summary">
+    <div className="p-6 space-y-6">
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Daily Sales Summary</h1>
           <p className="text-gray-600">Comprehensive daily sales analysis and insights</p>
@@ -221,7 +281,7 @@ const DailySalesSummary: React.FC = () => {
 
         {/* Date Selector */}
         <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 mb-6">
-          <div className="flex items-center space-x-4">
+          <div className="flex flex-col md:flex-row md:items-center md:space-x-4 gap-3">
             <Calendar className="w-5 h-5 text-gray-500" />
             <label className="text-sm font-medium text-gray-700">Select Date:</label>
             <input
@@ -230,6 +290,19 @@ const DailySalesSummary: React.FC = () => {
               onChange={(e) => setSelectedDate(e.target.value)}
               className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
+            <div className="flex items-center space-x-2">
+              <label className="text-sm font-medium text-gray-700">Branch:</label>
+              <select
+                aria-label="Filter by branch"
+                value={branchFilter}
+                onChange={(e) => setBranchFilter(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {branches.map((b: any) => (
+                  <option key={b.id} value={b.id}>{b.name}</option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
 
@@ -294,24 +367,44 @@ const DailySalesSummary: React.FC = () => {
         {/* Hourly Breakdown */}
         <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 mb-8">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Hourly Sales Breakdown</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {hourlyBreakdown.slice(0, 8).map((hour, index) => (
-              <div key={index} className="text-center">
-                <div className="text-sm text-gray-600 mb-2">{hour.hour}</div>
-                <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
-                  <div 
-                    className="bg-blue-500 h-2 rounded-full"
-                    style={{ width: `${maxHourlySales > 0 ? (hour.sales / maxHourlySales) * 100 : 0}%` }}
-                  ></div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 max-h-[28rem] overflow-y-auto pr-1">
+            {hourlyBreakdown.map((h, index) => {
+              const widthPct = maxHourlySales > 0 ? (h.sales / maxHourlySales) * 100 : 0;
+              const isPeak = h.hour24 === peak.hour24 && peak.sales > 0;
+              const color = getBarColor(h.percentOfDay, !!isPeak);
+              return (
+                <div key={index} className="text-left" aria-label={`Sales at ${h.hour}: ${formatCurrency(h.sales)}, ${h.orders} orders`}>
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-gray-700 font-medium">{h.hour}</span>
+                      {isPeak && (
+                        <span className="inline-flex items-center text-xs text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full">
+                          <Star className="w-3 h-3 mr-1" /> Peak
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-xs text-gray-500 flex items-center gap-1">
+                      <span>{h.percentOfDay.toFixed(1)}%</span>
+                      {h.trend === 'up' && <ArrowUpRight className="w-3 h-3 text-green-600" aria-label="Higher than previous day" />}
+                      {h.trend === 'down' && <ArrowDownRight className="w-3 h-3 text-red-600" aria-label="Lower than previous day" />}
+                    </div>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-3 mb-1" title={`${formatCurrency(h.sales)} • ${h.orders} orders`}>
+                    <div
+                      className={`h-3 rounded-full ${color}`}
+                      style={{ width: `${widthPct}%` }}
+                    ></div>
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-gray-600">
+                    <span>{formatCurrency(h.sales)}</span>
+                    <span>{h.orders} orders</span>
+                  </div>
                 </div>
-                <div className="text-xs text-gray-500">
-                  {formatCurrency(hour.sales)} ({hour.orders} orders)
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
           {peak.sales > 0 && (
-            <div className="mt-4 p-3 bg-blue-50 rounded-lg">
+            <div className="mt-4 p-3 bg-blue-50 rounded-lg" role="status" aria-live="polite">
               <div className="flex items-center space-x-2">
                 <Clock className="w-4 h-4 text-blue-600" />
                 <span className="text-sm font-medium text-blue-900">

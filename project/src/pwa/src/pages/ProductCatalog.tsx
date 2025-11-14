@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Search, Filter, ShoppingCart, ArrowLeft, Grid, List, Star, User } from 'lucide-react'
+import { Search, Filter, ArrowLeft, Grid, List, Star } from 'lucide-react'
 import { useBranch } from '../contexts/BranchContext'
 import { useCart } from '../contexts/CartContext'
-import { useAuth } from '../contexts/AuthContext'
 import { ProductWithUnits, SearchFilters, Category, Promotion, ProductUnit } from '../types'
 import { promotionService } from '../services/promotionService'
 import { supabase } from '../services/supabase'
@@ -34,9 +33,8 @@ const useDebounce = <T,>(value: T, delay: number): T => {
 
 const ProductCatalog: React.FC = () => {
   const navigate = useNavigate()
-  const { selectedBranch } = useBranch()
-  const { getItemCount, addItem } = useCart()
-  const { isAuthenticated } = useAuth()
+  const { selectedBranch, clearBranch } = useBranch()
+  const { addItem } = useCart()
   const isLoadingPromotionsRef = useRef(false)
   
   // Product and category state
@@ -47,6 +45,7 @@ const ProductCatalog: React.FC = () => {
   
   // UI state
   const [showFilters, setShowFilters] = useState(false)
+  const [isMobile, setIsMobile] = useState(false)
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
@@ -72,14 +71,31 @@ const ProductCatalog: React.FC = () => {
   const [showPromoModal, setShowPromoModal] = useState(false)
   const [currentModalIndex, setCurrentModalIndex] = useState(0)
 
+  // Detect mobile device
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768)
+    }
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
+    return () => window.removeEventListener('resize', checkMobile)
+  }, [])
+
+  // Force list view on mobile
+  useEffect(() => {
+    if (isMobile) {
+      setViewMode('list')
+    }
+  }, [isMobile])
+
   useEffect(() => {
     if (!selectedBranch) {
-      navigate('/branch-selection')
+      navigate('/branch-selection', { replace: true })
       return
     }
     loadCategories()
     loadPromotions()
-  }, [selectedBranch])
+  }, [selectedBranch, navigate])
 
   // ✅ Separate effect for products with debounced search
   useEffect(() => {
@@ -158,7 +174,7 @@ const ProductCatalog: React.FC = () => {
       }
 
       const productsWithUnits = productsData
-        .map(product => {
+        .map((product: any) => {
           const sellableUnits = product.product_units?.filter((unit: any) => unit.is_sellable) || []
           const defaultUnit = sellableUnits.find((unit: any) => unit.is_base_unit) || sellableUnits[0]
           
@@ -280,7 +296,7 @@ const ProductCatalog: React.FC = () => {
       
       if (carouselData.promotions.length > 0) {
         const promotionIds = carouselData.promotions.map(p => p.id)
-        const shouldShow = promotionService.shouldShowModal(promotionIds)
+        const shouldShow = promotionService.shouldShowModal()
         
         if (shouldShow) {
           setShowPromoModal(true)
@@ -418,8 +434,12 @@ const ProductCatalog: React.FC = () => {
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center space-x-2 sm:space-x-3 flex-1 min-w-0">
               <button
-                onClick={() => navigate('/branch-selection')}
+                onClick={() => {
+                  clearBranch()
+                  navigate('/branch-selection?change=true', { replace: true })
+                }}
                 className="p-1.5 sm:p-2 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
+                aria-label="Back to branch selection"
               >
                 <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5" />
               </button>
@@ -434,19 +454,13 @@ const ProductCatalog: React.FC = () => {
             </div>
             
             <div className="flex items-center space-x-1.5 sm:space-x-2 flex-shrink-0">
-              <button
-                onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}
-                className="p-1.5 sm:p-2 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                {viewMode === 'grid' ? <List className="w-4 h-4 sm:w-5 sm:h-5" /> : <Grid className="w-4 h-4 sm:w-5 sm:h-5" />}
-              </button>
-              
-              {isAuthenticated && (
+              {/* Hide view toggle on mobile - always list view */}
+              {!isMobile && (
                 <button
-                  onClick={() => navigate('/settings')}
-                  className="p-1.5 sm:p-2 hover:bg-gray-100 rounded-lg transition-colors hidden sm:block"
+                  onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}
+                  className="p-1.5 sm:p-2 hover:bg-gray-100 rounded-lg transition-colors"
                 >
-                  <User className="w-4 h-4 sm:w-5 sm:h-5" />
+                  {viewMode === 'grid' ? <List className="w-4 h-4 sm:w-5 sm:h-5" /> : <Grid className="w-4 h-4 sm:w-5 sm:h-5" />}
                 </button>
               )}
             </div>
@@ -550,7 +564,10 @@ const ProductCatalog: React.FC = () => {
                     Clear All Filters
                   </button>
                   <button
-                    onClick={() => navigate('/branch-selection')}
+                    onClick={() => {
+                      clearBranch()
+                      navigate('/branch-selection?change=true', { replace: true })
+                    }}
                     className="btn-outline"
                   >
                     Change Branch

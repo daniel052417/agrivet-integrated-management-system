@@ -1,14 +1,29 @@
 import { createClient } from '@supabase/supabase-js'
+import { getAuthRedirectUrl } from '../utils/authUtils'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+const isDevEnvironment = import.meta.env.DEV
+const isBrowser = typeof window !== 'undefined'
 
-console.log('🔧 Supabase Config Debug:')
-console.log('🔧 VITE_SUPABASE_URL:', supabaseUrl ? 'Present' : 'Missing')
-console.log('🔧 VITE_SUPABASE_ANON_KEY:', supabaseAnonKey ? 'Present' : 'Missing')
-console.log('🔧 Full URL:', supabaseUrl)
-console.log('🔧 Key starts with:', supabaseAnonKey?.substring(0, 10) + '...')
-console.log('🔧 Environment check:', {
+const devLog = (...args: unknown[]) => {
+  if (isDevEnvironment) {
+    console.log(...args)
+  }
+}
+
+const devWarn = (...args: unknown[]) => {
+  if (isDevEnvironment) {
+    console.warn(...args)
+  }
+}
+
+devLog('🔧 Supabase Config Debug:')
+devLog('🔧 VITE_SUPABASE_URL:', supabaseUrl ? 'Present' : 'Missing')
+devLog('🔧 VITE_SUPABASE_ANON_KEY:', supabaseAnonKey ? 'Present' : 'Missing')
+devLog('🔧 Full URL:', supabaseUrl)
+devLog('🔧 Key starts with:', supabaseAnonKey?.substring(0, 10) + '...')
+devLog('🔧 Environment check:', {
   NODE_ENV: import.meta.env.MODE,
   DEV: import.meta.env.DEV,
   PROD: import.meta.env.PROD,
@@ -16,8 +31,8 @@ console.log('🔧 Environment check:', {
 })
 
 // Check all available environment variables
-console.log('🔧 All environment variables:', Object.keys(import.meta.env))
-console.log('🔧 VITE_ variables:', Object.keys(import.meta.env).filter(key => key.startsWith('VITE_')))
+devLog('🔧 All environment variables:', Object.keys(import.meta.env))
+devLog('🔧 VITE_ variables:', Object.keys(import.meta.env).filter(key => key.startsWith('VITE_')))
 
 // Create Supabase client based on environment variables
 let supabaseClient: any
@@ -26,13 +41,15 @@ if (!supabaseUrl || !supabaseAnonKey) {
   console.error('❌ Missing Supabase environment variables')
   console.error('❌ VITE_SUPABASE_URL:', supabaseUrl)
   console.error('❌ VITE_SUPABASE_ANON_KEY:', supabaseAnonKey ? 'Present but empty' : 'Missing')
-  console.error('❌ Please create a .env file with your Supabase credentials')
-  console.error('❌ Example .env file:')
-  console.error('❌ VITE_SUPABASE_URL=https://your-project-id.supabase.co')
-  console.error('❌ VITE_SUPABASE_ANON_KEY=your-anon-key-here')
+  if (isDevEnvironment) {
+    console.error('❌ Please create a .env file with your Supabase credentials')
+    console.error('❌ Example .env file:')
+    console.error('❌ VITE_SUPABASE_URL=https://your-project-id.supabase.co')
+    console.error('❌ VITE_SUPABASE_ANON_KEY=your-anon-key-here')
+  }
   
   // Create a mock Supabase client to prevent app crashes
-  console.warn('⚠️ Creating mock Supabase client to prevent app crashes')
+  devWarn('⚠️ Creating mock Supabase client to prevent app crashes')
   supabaseClient = {
     auth: {
       signInWithOAuth: () => Promise.resolve({ data: null, error: { message: 'Supabase not configured' } }),
@@ -60,36 +77,37 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 export const supabase = supabaseClient
 
-// Test Supabase connection
-console.log('🔧 Supabase Client Created:')
-console.log('🔧 Client instance:', !!supabase)
-console.log('🔧 Auth instance:', !!supabase.auth)
+// Test Supabase connection (dev only to avoid unnecessary production traffic)
+if (isDevEnvironment && isBrowser) {
+  devLog('🔧 Supabase Client Created:')
+  devLog('🔧 Client instance:', !!supabase)
+  devLog('🔧 Auth instance:', !!supabase.auth)
 
-// Test OAuth providers availability
-const testOAuthProviders = async () => {
-  try {
-    console.log('🔧 Testing OAuth providers...')
-    // This will help us see if Google OAuth is properly configured
-    const { data, error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
-        skipBrowserRedirect: true // Don't actually redirect, just test
+  const testOAuthProviders = async () => {
+    try {
+      devLog('🔧 Testing OAuth providers...')
+      // This will help us see if Google OAuth is properly configured
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: getAuthRedirectUrl('/auth/callback'),
+          skipBrowserRedirect: true // Don't actually redirect, just test
+        }
+      })
+      
+      if (error) {
+        console.error('🔧 OAuth Provider Test Error:', error)
+      } else {
+        devLog('🔧 OAuth Provider Test Success:', data)
       }
-    })
-    
-    if (error) {
-      console.error('🔧 OAuth Provider Test Error:', error)
-    } else {
-      console.log('🔧 OAuth Provider Test Success:', data)
+    } catch (err) {
+      console.error('🔧 OAuth Provider Test Exception:', err)
     }
-  } catch (err) {
-    console.error('🔧 OAuth Provider Test Exception:', err)
   }
-}
 
-// Run the test (but don't block the app)
-setTimeout(testOAuthProviders, 1000)
+  // Run the test (but don't block the app)
+  setTimeout(testOAuthProviders, 1000)
+}
 
 // Session management state
 let isInitializing = false
@@ -112,19 +130,19 @@ const hasValidAnonymousSession = async (): Promise<boolean> => {
   try {
     const { data: { session }, error } = await supabase.auth.getSession()
     if (error) {
-      console.warn('⚠️ Error checking existing session:', error)
+      devWarn('⚠️ Error checking existing session:', error)
       return false
     }
     
     // Check if we have an anonymous session
     if (session?.user && session.user.is_anonymous) {
-      console.log('✅ Found existing anonymous session:', session.user.id)
+      devLog('✅ Found existing anonymous session:', session.user.id)
       return true
     }
     
     return false
   } catch (error) {
-    console.warn('⚠️ Error checking session:', error)
+    devWarn('⚠️ Error checking session:', error)
     return false
   }
 }
@@ -133,7 +151,7 @@ const hasValidAnonymousSession = async (): Promise<boolean> => {
 const initializeAnonymousSessionWithRetry = async (): Promise<boolean> => {
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
-      console.log(`🔐 Attempting anonymous sign-in (attempt ${attempt + 1}/${MAX_RETRIES})...`)
+      devLog(`🔐 Attempting anonymous sign-in (attempt ${attempt + 1}/${MAX_RETRIES})...`)
       
       const { data, error } = await supabase.auth.signInAnonymously()
       
@@ -143,7 +161,7 @@ const initializeAnonymousSessionWithRetry = async (): Promise<boolean> => {
         // If it's a rate limit error, wait longer before retrying
         if (error.message?.includes('rate limit') || error.message?.includes('429')) {
           const delay = getRetryDelay(attempt) * 2 // Double delay for rate limits
-          console.log(`⏳ Rate limited, waiting ${delay}ms before retry...`)
+          devLog(`⏳ Rate limited, waiting ${delay}ms before retry...`)
           await new Promise(resolve => setTimeout(resolve, delay))
           continue
         }
@@ -151,7 +169,7 @@ const initializeAnonymousSessionWithRetry = async (): Promise<boolean> => {
         // For other errors, use normal retry delay
         if (attempt < MAX_RETRIES - 1) {
           const delay = getRetryDelay(attempt)
-          console.log(`⏳ Waiting ${delay}ms before retry...`)
+          devLog(`⏳ Waiting ${delay}ms before retry...`)
           await new Promise(resolve => setTimeout(resolve, delay))
           continue
         }
@@ -160,7 +178,7 @@ const initializeAnonymousSessionWithRetry = async (): Promise<boolean> => {
       }
       
       if (data?.user) {
-        console.log('✅ Anonymous session established:', data.user.id)
+        devLog('✅ Anonymous session established:', data.user.id)
         return true
       }
       
@@ -170,7 +188,7 @@ const initializeAnonymousSessionWithRetry = async (): Promise<boolean> => {
       
       if (attempt < MAX_RETRIES - 1) {
         const delay = getRetryDelay(attempt)
-        console.log(`⏳ Waiting ${delay}ms before retry...`)
+        devLog(`⏳ Waiting ${delay}ms before retry...`)
         await new Promise(resolve => setTimeout(resolve, delay))
       }
     }
@@ -184,14 +202,14 @@ const initializeAnonymousSessionWithRetry = async (): Promise<boolean> => {
 export const startGuestSession = async (): Promise<boolean> => {
   // If currently initializing, wait for the existing promise
   if (isInitializing && initPromise) {
-    console.log('⏳ Guest session initialization in progress, waiting...')
+    devLog('⏳ Guest session initialization in progress, waiting...')
     return await initPromise
   }
   
   // Check if we already have a valid session
   const hasValidSession = await hasValidAnonymousSession()
   if (hasValidSession) {
-    console.log('✅ Reusing existing anonymous session')
+    devLog('✅ Reusing existing anonymous session')
     return true
   }
   
@@ -217,12 +235,12 @@ export const hasValidSession = async (): Promise<boolean> => {
 export const resetGuestSession = () => {
   isInitializing = false
   initPromise = null
-  console.log('🔄 Guest session state reset')
+  devLog('🔄 Guest session state reset')
 }
 
 // Debug the created client
-console.log('🔧 Supabase Client Created:')
-console.log('🔧 Client instance:', !!supabase)
+devLog('🔧 Supabase Client Created:')
+devLog('🔧 Client instance:', !!supabase)
 
 // Database types - Updated to match the provided schema
 // NOTE: This app uses auth.users (Supabase's built-in auth table) for authentication

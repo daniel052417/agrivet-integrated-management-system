@@ -1,49 +1,44 @@
-import { useState, useEffect } from 'react';
-import LoginPage from './Login/components/LoginPage';
-import AccountActivation from './components/auth/AccountActivation';
-import OpeningCashModal from './components/modals/OpeningCashModal';
+import { useState, useEffect, useMemo, useCallback, Suspense, lazy } from 'react';
+import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { customAuth, CustomUser } from './lib/customAuth';
-import { getDashboardForRole } from './lib/rolePages';
-import { posSessionService } from './lib/posSessionService';
+import { logger } from './utils/logger';
+
+// Lazy load route components for code splitting
+const LandingPage = lazy(() => import('./components/landing/LandingPage'));
+const AttendanceTerminal = lazy(() => import('./components/attendance/AttendanceTerminal'));
+const AccountActivation = lazy(() => import('./components/auth/AccountActivation'));
+const LoginPageWrapper = lazy(() => import('./components/auth/LoginPageWrapper'));
+const DashboardWrapper = lazy(() => import('./components/dashboard/DashboardWrapper'));
+
+// Loading component for Suspense fallback
+const LoadingFallback = () => (
+  <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+    <div className="text-center">
+      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+      <p className="text-gray-600">Loading...</p>
+    </div>
+  </div>
+);
 
 function App() {
   const [user, setUser] = useState<CustomUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [loginForm, setLoginForm] = useState({
-    username: '',
-    password: '',
-    showPassword: false
-  });
+  const location = useLocation();
+  const navigate = useNavigate();
 
-  // State for Opening Cash Modal
-  const [showOpeningCashModal, setShowOpeningCashModal] = useState(false);
-  const [needsOpeningCash, setNeedsOpeningCash] = useState(false);
-
-  // Check if we're on the activation page
-  const isActivationPage = () => {
+  // Memoize activation page check
+  const isActivationPage = useMemo(() => {
     const urlParams = new URLSearchParams(window.location.search);
-    const isActivation = window.location.pathname === '/activate' && urlParams.has('token');
-    console.log('🔍 Activation page check:', {
-      pathname: window.location.pathname,
-      hasToken: urlParams.has('token'),
-      token: urlParams.get('token'),
-      isActivation
-    });
-    return isActivation;
-  };
+    return location.pathname === '/activate' && urlParams.has('token');
+  }, [location.pathname]);
 
-  // Check authentication status
-  useEffect(() => {
-    // Skip auth check if we're on activation page
-    if (isActivationPage()) {
-      setIsLoading(false);
-      return;
-    }
-    checkAuthStatus();
-  }, []);
+  // Memoize public routes check
+  const isPublicRoute = useMemo(() => {
+    return location.pathname === '/' || location.pathname === '/attendance-terminal';
+  }, [location.pathname]);
 
-  const checkAuthStatus = async () => {
+  // Memoize check auth status function
+  const checkAuthStatus = useCallback(async () => {
     try {
       setIsLoading(true);
       
@@ -60,135 +55,48 @@ function App() {
       if (userData) {
         setUser(userData);
         customAuth.setCurrentUser(userData);
+      } else {
+        // Not authenticated, redirect to landing page
+        navigate('/');
       }
     } catch (err: any) {
-      console.error('Auth check error:', err);
-      setError(err.message || 'Authentication error');
+      logger.error('Auth check error:', err);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [navigate]);
 
-  const handleLogin = async (credentials: { username: string; password: string }) => {
-    try {
-      setError('');
-      const userData = await customAuth.signInWithPassword(
-        credentials.username,
-        credentials.password
-      );
-      
-      // Check if user is a cashier and needs to set opening cash
-      const isCashier = userData.role_name === 'cashier' || userData.role === 'cashier';
-      
-      if (isCashier) {
-        // Check if there's an existing POS session
-        const hasPosSession = (userData as any).current_pos_session;
-        
-        if (hasPosSession) {
-          // If POS session exists, check if it needs opening cash
-          const session = (userData as any).current_pos_session;
-          
-          // If starting_cash is 0 or null, show modal
-          if (!session.starting_cash || session.starting_cash === 0) {
-            setNeedsOpeningCash(true);
-            setShowOpeningCashModal(true);
-          }
-        } else {
-          // No POS session exists, show modal to create one
-          setNeedsOpeningCash(true);
-          setShowOpeningCashModal(true);
-        }
-      }
-      
-      setUser(userData);
-    } catch (err: any) {
-      console.error('Login error:', err);
-      setError(err.message || 'Login failed');
+  // Check authentication status
+  useEffect(() => {
+    // Skip auth check if we're on activation page or public routes
+    if (isActivationPage || isPublicRoute) {
+      setIsLoading(false);
+      return;
     }
-  };
 
-  const handleOpeningCashSubmit = async (amount: number) => {
-    try {
-      if (!user) return;
-
-      console.log('💰 Submitting opening cash:', amount);
-
-      // Check if there's an existing POS session
-      const existingSession = (user as any).current_pos_session;
-
-      if (existingSession) {
-        // Update existing session with opening cash
-        await posSessionService.updateSession(existingSession.id, {
-          starting_cash: amount
-        });
-        
-        console.log('✅ Updated existing POS session with opening cash');
-      } else {
-        // Create new POS session
-        if (!user.branch_id) {
-          throw new Error('User does not have a branch assigned');
-        }
-
-        const terminalId = await posSessionService.getAvailableTerminalForBranch(
-          user.branch_id,
-          user.id
-        );
-
-        const newSession = await posSessionService.createSession({
-          cashier_id: user.id,
-          branch_id: user.branch_id,
-          terminal_id: terminalId || undefined,
-          starting_cash: amount,
-          notes: `Session started by ${user.first_name} ${user.last_name} with opening cash ₱${amount.toFixed(2)}`
-        });
-
-        // Update user object with new session
-        (user as any).current_pos_session = newSession;
-        
-        console.log('✅ Created new POS session with opening cash');
-      }
-
-      // Close modal and mark as complete
-      setShowOpeningCashModal(false);
-      setNeedsOpeningCash(false);
-      setError('');
-
-    } catch (err: any) {
-      console.error('❌ Error setting opening cash:', err);
-      throw new Error(err.message || 'Failed to set opening cash');
+    // For protected routes, check auth
+    if (location.pathname !== '/login' && location.pathname !== '/activate') {
+      checkAuthStatus();
+    } else {
+      setIsLoading(false);
     }
-  };
+  }, [location.pathname, isActivationPage, isPublicRoute, checkAuthStatus]);
 
-  const handleLogout = async () => {
+  const handleLoginSuccess = useCallback((userData: CustomUser) => {
+    setUser(userData);
+    // Navigate to dashboard (will be handled by ProtectedRoute)
+    navigate('/dashboard');
+  }, [navigate]);
+
+  const handleLogout = useCallback(async () => {
     try {
       await customAuth.signOut();
       setUser(null);
-      setError('');
-      setShowOpeningCashModal(false);
-      setNeedsOpeningCash(false);
+      navigate('/');
     } catch (err: any) {
-      console.error('Logout error:', err);
-      setError(err.message || 'Logout failed');
+      logger.error('Logout error:', err);
     }
-  };
-
-  const handleUsernameChange = (value: string) => {
-    setLoginForm(prev => ({ ...prev, username: value }));
-  };
-
-  const handlePasswordChange = (value: string) => {
-    setLoginForm(prev => ({ ...prev, password: value }));
-  };
-
-  const handleToggleShowPassword = () => {
-    setLoginForm(prev => ({ ...prev, showPassword: !prev.showPassword }));
-  };
-
-  // Get dashboard component for user's role
-  const getDashboardComponent = () => {
-    if (!user) return null;
-    return getDashboardForRole(user.role_name || user.role);
-  };
+  }, [navigate]);
 
   // Show loading spinner
   if (isLoading) {
@@ -202,101 +110,58 @@ function App() {
     );
   }
 
-  // Show activation page if on /activate route
-  if (isActivationPage()) {
-    console.log('🎯 Rendering AccountActivation component');
-    return (
-      <AccountActivation
-        onNavigate={(path) => {
-          console.log('🔄 Navigating to:', path);
-          window.location.href = path;
-        }}
-      />
-    );
-  }
-
-  // Show login if not authenticated
-  if (!user) {
-    return (
-      <LoginPage
-        username={loginForm.username}
-        password={loginForm.password}
-        showPassword={loginForm.showPassword}
-        isLoading={isLoading}
-        error={error}
-        onUsernameChange={handleUsernameChange}
-        onPasswordChange={handlePasswordChange}
-        onToggleShowPassword={handleToggleShowPassword}
-        onLoginSubmit={(e) => {
-          e.preventDefault();
-          handleLogin({
-            username: loginForm.username,
-            password: loginForm.password,
-          });
-        }}
-      />
-    );
-  }
-
-  // Render role-based dashboard
-  const renderDashboard = () => {
-    if (!user) {
-      return null;
-    }
-
-    const DashboardComponent = getDashboardComponent();
-    
-    if (!DashboardComponent) {
-      // Fallback for unknown roles
-      console.warn(`Unknown role: ${user.role_name}, falling back to default dashboard`);
-      return (
-        <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
-            <h2 className="text-2xl font-bold text-gray-800 mb-4">Access Denied</h2>
-            <p className="text-gray-600">Your role does not have access to any dashboard.</p>
-            <p className="text-sm text-gray-500 mt-2">Role: {user.role_name}</p>
-            <button
-              onClick={handleLogout}
-              className="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-            >
-              Logout
-            </button>
-          </div>
-        </div>
-      );
-    }
-    
-    // Render the appropriate dashboard component
-    return <DashboardComponent user={user} onLogout={handleLogout} />;
-  };
-
   return (
-    <div className="min-h-screen bg-gray-100">
-      {renderDashboard()}
-      
-      {/* Opening Cash Modal for Cashiers */}
-      {user && showOpeningCashModal && (
-        <OpeningCashModal
-          isOpen={showOpeningCashModal}
-          cashierName={`${user.first_name} ${user.last_name}`}
-          onSubmit={handleOpeningCashSubmit}
-          onClose={() => {
-            // Only allow closing if not required
-            if (!needsOpeningCash) {
-              setShowOpeningCashModal(false);
-            }
-          }}
-          isClosable={!needsOpeningCash}
+    <Suspense fallback={<LoadingFallback />}>
+      <Routes>
+        {/* Public Routes */}
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/attendance-terminal" element={<AttendanceTerminal />} />
+        <Route 
+          path="/activate" 
+          element={
+            <AccountActivation 
+              onNavigate={(path) => window.location.href = path} 
+            />
+          } 
         />
-      )}
-      
-      {/* Error Display */}
-      {error && (
-        <div className="fixed bottom-4 right-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
-          {error}
-        </div>
-      )}
-    </div>
+        
+        {/* Login Route */}
+        <Route 
+          path="/login" 
+          element={
+            user ? (
+              <Navigate to="/dashboard" replace />
+            ) : (
+              <LoginPageWrapper onLoginSuccess={handleLoginSuccess} />
+            )
+          } 
+        />
+        
+        {/* Protected Dashboard Route */}
+        <Route 
+          path="/dashboard" 
+          element={
+            user ? (
+              <DashboardWrapper user={user} onLogout={handleLogout} />
+            ) : (
+              <Navigate to="/login" replace />
+            )
+          } 
+        />
+        
+        {/* Redirect authenticated users from root to dashboard */}
+        <Route 
+          path="*" 
+          element={
+            user ? (
+              <Navigate to="/dashboard" replace />
+            ) : (
+              <Navigate to="/" replace />
+            )
+          } 
+        />
+      </Routes>
+    </Suspense>
   );
 }
 

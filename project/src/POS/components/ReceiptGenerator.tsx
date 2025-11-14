@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Printer, Download, Mail, MessageSquare } from 'lucide-react';
 import { CartItem, Customer, POSTransaction, Payment } from '../../types/pos';
+import { settingsService } from '../../lib/settingsService';
 
 interface ReceiptGeneratorProps {
   transaction: POSTransaction;
@@ -23,6 +24,30 @@ const ReceiptGenerator: React.FC<ReceiptGeneratorProps> = ({
   onEmail,
   onSMS
 }) => {
+  const [companyLogo, setCompanyLogo] = useState<string | null>(null);
+  const [showLogoOnReceipt, setShowLogoOnReceipt] = useState(true);
+  const [receiptHeader, setReceiptHeader] = useState('Thank you for your purchase!');
+  const [receiptFooter, setReceiptFooter] = useState('Visit us again soon!');
+  const [companyName, setCompanyName] = useState('AGRIVET STORE');
+
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const settings = await settingsService.getAllSettings();
+        const general = settings.general || {};
+        
+        setCompanyLogo(general.companyLogo || settings.company_logo || null);
+        setShowLogoOnReceipt(general.showLogoOnReceipt ?? settings.show_logo_on_receipt ?? true);
+        setReceiptHeader(general.receiptHeader || settings.receipt_header || 'Thank you for your purchase!');
+        setReceiptFooter(general.receiptFooter || settings.receipt_footer || 'Visit us again soon!');
+        setCompanyName(general.companyName || settings.company_name || 'AGRIVET STORE');
+      } catch (error) {
+        console.error('Error loading receipt settings:', error);
+      }
+    };
+
+    loadSettings();
+  }, []);
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat('en-PH', {
       style: 'currency',
@@ -51,8 +76,23 @@ const ReceiptGenerator: React.FC<ReceiptGeneratorProps> = ({
     <div className="bg-white rounded-lg shadow-lg p-6 max-w-md mx-auto">
       {/* Receipt Header */}
       <div className="text-center border-b border-gray-200 pb-4 mb-4">
-        <h2 className="text-xl font-bold text-gray-900">AGRIVET STORE</h2>
-        <p className="text-sm text-gray-600">Thank you for your purchase!</p>
+        {/* Company Logo */}
+        {showLogoOnReceipt && companyLogo && (
+          <div className="mb-3">
+            <img 
+              src={companyLogo} 
+              alt="Company Logo" 
+              className="h-16 mx-auto object-contain"
+              onError={(e) => {
+                // Hide logo if it fails to load
+                e.currentTarget.style.display = 'none';
+              }}
+            />
+          </div>
+        )}
+        
+        <h2 className="text-xl font-bold text-gray-900">{companyName}</h2>
+        <p className="text-sm text-gray-600">{receiptHeader}</p>
         <div className="mt-2 text-xs text-gray-500">
           <p>Transaction: {transaction.transaction_number}</p>
           <p>Date: {formatDate(transaction.transaction_date)}</p>
@@ -147,8 +187,7 @@ const ReceiptGenerator: React.FC<ReceiptGeneratorProps> = ({
 
       {/* Receipt Footer */}
       <div className="text-center text-xs text-gray-500">
-        <p>Thank you for your business!</p>
-        <p>Visit us again soon!</p>
+        <p>{receiptFooter}</p>
         <p className="mt-2">Receipt ID: {transaction.id.slice(-8).toUpperCase()}</p>
       </div>
 

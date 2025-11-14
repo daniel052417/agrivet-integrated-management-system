@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react'
+import React, { useEffect, useRef } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
 import { useBranch } from '../../contexts/BranchContext'
@@ -14,6 +14,7 @@ const SmartRouter: React.FC<SmartRouterProps> = ({ children }) => {
   const location = useLocation()
   const { user, isAuthenticated, isLoading } = useAuth()
   const { selectedBranch, availableBranches, selectBranch } = useBranch()
+  const hasProcessedChangeParam = useRef(false)
 
   useEffect(() => {
     const handleSmartRouting = async () => {
@@ -44,7 +45,32 @@ const SmartRouter: React.FC<SmartRouterProps> = ({ children }) => {
             selectBranch(preferredBranch)
           }
 
+          // Check if user explicitly wants to change branch (query parameter or sessionStorage flag)
+          const searchParams = new URLSearchParams(location.search)
+          const wantsToChangeBranch = searchParams.get('change') === 'true'
+          const explicitBranchChange = sessionStorage.getItem('explicit-branch-change') === 'true'
+
+          // If user explicitly wants to change branch, allow navigation
+          if ((wantsToChangeBranch || explicitBranchChange) && location.pathname === '/branch-selection') {
+            if (wantsToChangeBranch && !hasProcessedChangeParam.current) {
+              console.log('✅ SmartRouter: Allowing explicit branch change navigation')
+              hasProcessedChangeParam.current = true
+              // Set sessionStorage flag to persist across URL changes
+              sessionStorage.setItem('explicit-branch-change', 'true')
+              // Remove the query parameter to clean up the URL
+              navigate('/branch-selection', { replace: true })
+            }
+            return // Don't redirect, allow user to stay on branch-selection
+          }
+
+          // Clear the flag when user navigates away from branch-selection
+          if (location.pathname !== '/branch-selection' && explicitBranchChange) {
+            sessionStorage.removeItem('explicit-branch-change')
+            hasProcessedChangeParam.current = false
+          }
+
           // If we're on branch selection or auth selection, redirect to catalog
+          // UNLESS user explicitly wants to change branch (handled above)
           if (location.pathname === '/branch-selection' || location.pathname === '/auth-selection') {
             console.log('🎯 SmartRouter: Redirecting to catalog with preferred branch')
             navigate('/catalog', { replace: true })

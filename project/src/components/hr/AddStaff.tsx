@@ -1,18 +1,87 @@
 import React, { useState, useEffect } from 'react';
-import { Building, Phone, Mail, Calendar, DollarSign, User, Briefcase, Save, ArrowLeft, UserPlus, Shield, CheckCircle, XCircle, Key, MapPin, UserCog, Clock, Hash } from 'lucide-react';
-import { staffManagementApi, CreateStaffData, CreateStaffWithAccountData } from '../../lib/staffApi';
-import { ValidationService, SecurityService } from '../../lib/validation';
+import { Building, Phone, Mail, Calendar, DollarSign, User, Briefcase, Save, UserPlus, Shield, CheckCircle, XCircle, MapPin, UserCog, Clock, Hash, Camera } from 'lucide-react';
+import { staffManagementApi, CreateStaffData } from '../../lib/staffApi';
+import { ValidationService } from '../../lib/validation';
 import { supabase } from '../../lib/supabase';
+import { emailService } from '../../lib/emailService';
+import FaceRegistration from './FaceRegistration';
+import { faceRegistrationService, StaffFaceData } from '../../lib/faceRegistrationService';
+
+const WORK_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+const formatTimeForInput = (value?: string | null) => {
+  if (!value) return '';
+  if (/^\d{2}:\d{2}$/.test(value)) return value;
+  const match = value.match(/^(\d{2}:\d{2})/);
+  return match ? match[1] : '';
+};
+
+const normalizeTimePayload = (value?: string) => {
+  if (!value) return undefined;
+  if (/^\d{2}:\d{2}$/.test(value)) return `${value}:00`;
+  return value;
+};
+
+const formatDateForInput = (value?: string | null) => {
+  if (!value) return '';
+  const match = value.match(/^\d{4}-\d{2}-\d{2}/);
+  if (match) return match[0];
+  const parsed = new Date(value);
+  if (!isNaN(parsed.getTime())) {
+    return parsed.toISOString().slice(0, 10);
+  }
+  return value.slice(0, 10);
+};
 
 interface AddStaffProps {
   onBack?: () => void;
+  initialData?: any; // Staff data for edit mode
 }
 
-const AddStaff: React.FC<AddStaffProps> = ({ onBack }) => {
+interface StaffFormData {
+  first_name: string;
+  last_name: string;
+  middle_name: string;
+  email: string;
+  phone: string;
+  address: string;
+  date_of_birth: string;
+  gender: string;
+  marital_status: string;
+  position: string;
+  department: string;
+  hire_date: string;
+  is_active: boolean;
+  employee_id: string;
+  role: string;
+  branch_id?: string;
+  salary?: number;
+  employment_type: string;
+  salary_type: string;
+  work_schedule: string;
+  payment_method: string;
+  createUserAccount: boolean;
+  accountDetails: {
+    role: string;
+    sendEmailInvite: boolean;
+  };
+  use_default_schedule: boolean;
+  work_days: string[];
+  time_in: string;
+  time_out: string;
+  break_start: string;
+  break_end: string;
+}
+
+const AddStaff: React.FC<AddStaffProps> = ({ onBack, initialData }) => {
   const [loading, setLoading] = useState(false);
   const [branches, setBranches] = useState<Array<{ id: string; name: string }>>([]);
   const [roles, setRoles] = useState<Array<{ id: string; name: string; display_name: string; description?: string; is_active: boolean }>>([]);
-  const [form, setForm] = useState<CreateStaffWithAccountData>({
+  const [showFaceRegistration, setShowFaceRegistration] = useState(false);
+  const [faceData, setFaceData] = useState<StaffFaceData | null>(null);
+  const [existingFaceData, setExistingFaceData] = useState<StaffFaceData | null>(null);
+  const isEditMode = !!initialData;
+  const [form, setForm] = useState<StaffFormData>({
     first_name: '',
     last_name: '',
     middle_name: '',
@@ -22,14 +91,6 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack }) => {
     date_of_birth: '',
     gender: '',
     marital_status: 'single',
-    sss_number: '',
-    philhealth_number: '',
-    pagibig_number: '',
-    tin_number: '',
-    bank_account: '',
-    bank_name: '',
-    emergency_contact: '',
-    emergency_phone: '',
     position: '',
     department: '',
     hire_date: new Date().toISOString().slice(0, 10),
@@ -40,26 +101,151 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack }) => {
     salary: undefined,
     employment_type: 'Regular',
     salary_type: 'Monthly',
-    work_schedule: '',
+  work_schedule: '',
     payment_method: '',
     createUserAccount: false,
     accountDetails: {
       role: 'staff',
       sendEmailInvite: false,
-    }
+    },
+  use_default_schedule: true,
+  work_days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+  time_in: '',
+  time_out: '',
+  break_start: '',
+  break_end: ''
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [showPassword, setShowPassword] = useState(false);
-  const [generatedPassword, setGeneratedPassword] = useState<string>('');
   const [autoGenerateId, setAutoGenerateId] = useState(false);
   const [showSuccessAlert, setShowSuccessAlert] = useState(false);
   const [showErrorAlert, setShowErrorAlert] = useState(false);
   const [alertMessage, setAlertMessage] = useState('');
 
+  const handleUseDefaultScheduleToggle = (checked: boolean) => {
+    setForm(prev => ({
+      ...prev,
+      use_default_schedule: checked,
+      work_days: checked
+        ? ['Mon', 'Tue', 'Wed', 'Thu', 'Fri']
+        : (prev.work_days.length ? prev.work_days : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'])
+    }));
+    setErrors(prev => {
+      if (!prev.work_days && !prev.time_in && !prev.time_out) return prev;
+      const newErrors = { ...prev };
+      if (checked) {
+        delete newErrors.work_days;
+        delete newErrors.time_in;
+        delete newErrors.time_out;
+      }
+      return newErrors;
+    });
+  };
+
+  const handleWorkDayToggle = (day: string) => {
+    setForm(prev => {
+      const exists = prev.work_days.includes(day);
+      const updatedDays = exists
+        ? prev.work_days.filter(d => d !== day)
+        : [...prev.work_days, day].sort((a, b) => WORK_DAYS.indexOf(a) - WORK_DAYS.indexOf(b));
+      return { ...prev, work_days: updatedDays };
+    });
+    setErrors(prev => {
+      if (!prev.work_days) return prev;
+      const newErrors = { ...prev };
+      delete newErrors.work_days;
+      return newErrors;
+    });
+  };
+
+  const syncUserRoleAssignment = async (userId: string, roleId: string, roleName: string) => {
+    try {
+      await supabase
+        .from('user_roles')
+        .upsert({
+          user_id: userId,
+          role_id: roleId,
+          is_primary: true,
+          assigned_at: new Date().toISOString(),
+          is_active: true
+        }, { onConflict: 'user_id,role_id' });
+
+      await supabase
+        .from('user_roles')
+        .update({ is_primary: false })
+        .eq('user_id', userId)
+        .neq('role_id', roleId);
+
+      await supabase
+        .from('users')
+        .update({
+          role: roleName,
+          role_id: roleId,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', userId);
+    } catch (roleError) {
+      console.error('Error syncing user role:', roleError);
+    }
+  };
+
   useEffect(() => {
     loadBranches();
     loadRoles();
-  }, []);
+    
+    // If in edit mode, load existing face data
+    if (initialData?.id) {
+      loadExistingFaceData(initialData.id);
+    }
+    
+    // If in edit mode, populate form with initial data
+    if (initialData) {
+      setForm({
+        first_name: initialData.first_name || '',
+        last_name: initialData.last_name || '',
+        middle_name: initialData.middle_name || '',
+        email: initialData.email || '',
+        phone: initialData.phone || '',
+        address: initialData.address || '',
+        date_of_birth: formatDateForInput(initialData.date_of_birth) || '',
+        gender: initialData.gender || '',
+        marital_status: initialData.marital_status || 'single',
+        position: initialData.position || '',
+        department: initialData.department || '',
+        hire_date: formatDateForInput(initialData.hire_date) || new Date().toISOString().slice(0, 10),
+        is_active: initialData.is_active !== undefined ? initialData.is_active : true,
+        employee_id: initialData.employee_id || '',
+        role: initialData.role || initialData.position || 'staff',
+        branch_id: initialData.branch_id || undefined,
+        salary: initialData.salary || undefined,
+        employment_type: initialData.employment_type || 'Regular',
+        salary_type: initialData.salary_type || 'Monthly',
+        work_schedule: initialData.work_schedule || '',
+        payment_method: initialData.payment_method || '',
+        createUserAccount: false,
+        accountDetails: {
+          role: initialData.role || initialData.position || 'staff',
+          sendEmailInvite: false,
+        },
+        use_default_schedule: initialData.use_default_schedule ?? true,
+        work_days: initialData.work_days && Array.isArray(initialData.work_days) && initialData.work_days.length > 0
+          ? initialData.work_days
+          : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+        time_in: formatTimeForInput(initialData.time_in),
+        time_out: formatTimeForInput(initialData.time_out),
+        break_start: formatTimeForInput(initialData.break_start),
+        break_end: formatTimeForInput(initialData.break_end)
+      });
+    }
+  }, [initialData]);
+
+  const loadExistingFaceData = async (staffId: string) => {
+    try {
+      const existingFace = await faceRegistrationService.getStaffFace(staffId);
+      setExistingFaceData(existingFace);
+    } catch (error) {
+      console.error('Error loading existing face data:', error);
+    }
+  };
 
   const loadBranches = async () => {
     try {
@@ -87,6 +273,10 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack }) => {
 
   const checkForDuplicates = async (): Promise<Record<string, string>> => {
     const duplicateErrors: Record<string, string> = {};
+
+    if (isEditMode) {
+      return duplicateErrors;
+    }
 
     try {
       // Check for email duplication in staff table
@@ -199,6 +389,18 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack }) => {
       }
     }
 
+    if (!form.use_default_schedule) {
+      if (!form.work_days || form.work_days.length === 0) {
+        newErrors.work_days = 'Select at least one work day';
+      }
+      if (!form.time_in?.trim()) {
+        newErrors.time_in = 'Time in is required';
+      }
+      if (!form.time_out?.trim()) {
+        newErrors.time_out = 'Time out is required';
+      }
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -224,53 +426,198 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack }) => {
     }
 
     try {
-      // Generate employee ID if auto-generate is enabled
-      const finalEmployeeId = autoGenerateId ? generateEmployeeId() : form.employee_id;
+      // Generate employee ID if auto-generate is enabled (creation only)
+      const generatedEmployeeId = autoGenerateId ? generateEmployeeId() : form.employee_id;
+      const finalEmployeeId = isEditMode ? (initialData?.employee_id || form.employee_id) : generatedEmployeeId;
       
-      if (form.createUserAccount) {
-        const formWithGeneratedId = {
-          ...form,
-          employee_id: finalEmployeeId
+      const selectedRoleRecord = roles.find(role => role.name === form.position || role.id === form.position);
+      const scheduleSummary = form.use_default_schedule
+        ? 'Default schedule'
+        : `${form.work_days.join(', ')} • ${(form.time_in || '--:--')} - ${(form.time_out || '--:--')}${form.break_start && form.break_end ? ` (Break ${form.break_start}-${form.break_end})` : ''}`;
+      const positionDisplay = selectedRoleRecord?.display_name || selectedRoleRecord?.name || form.position;
+      const roleName = selectedRoleRecord?.name || form.role;
+
+      let userAccountIdForSync = initialData?.user_account_id || null;
+      let roleSynced = false;
+
+      const baseStaffData = {
+        first_name: form.first_name,
+        last_name: form.last_name,
+        middle_name: form.middle_name,
+        phone: form.phone,
+        address: form.address,
+        date_of_birth: form.date_of_birth,
+        gender: form.gender,
+        marital_status: form.marital_status,
+        position: positionDisplay || '',
+        hire_date: form.hire_date,
+        is_active: form.is_active,
+        role: roleName,
+        branch_id: form.branch_id,
+        salary: form.salary,
+        employment_type: form.employment_type,
+        salary_type: form.salary_type,
+        work_schedule: scheduleSummary,
+        use_default_schedule: form.use_default_schedule,
+        work_days: form.use_default_schedule ? null : form.work_days,
+        time_in: form.use_default_schedule ? null : normalizeTimePayload(form.time_in),
+        time_out: form.use_default_schedule ? null : normalizeTimePayload(form.time_out),
+        break_start: form.use_default_schedule ? null : normalizeTimePayload(form.break_start),
+        break_end: form.use_default_schedule ? null : normalizeTimePayload(form.break_end)
+      };
+      
+      const createPayload: CreateStaffData = {
+        ...baseStaffData,
+        email: form.email,
+        employee_id: finalEmployeeId
+      };
+
+      let createdStaff;
+      if (isEditMode && initialData?.id) {
+        // Update existing staff
+        const updatePayload = {
+          id: initialData.id,
+          ...baseStaffData
         };
-        await staffManagementApi.enhancedStaff.createStaffWithAccount(formWithGeneratedId);
-        setAlertMessage('Staff member and user account created successfully!');
-        setShowSuccessAlert(true);
+        createdStaff = await staffManagementApi.staff.updateStaff(updatePayload);
+        
+        // Update face data if it was registered
+        if (faceData && faceData.staff_id !== createdStaff.id) {
+          try {
+            faceData.staff_id = createdStaff.id;
+            if (existingFaceData?.id) {
+              await faceRegistrationService.updateFaceDescriptor(existingFaceData.id, faceData);
+            } else {
+              await faceRegistrationService.saveFaceDescriptor(faceData);
+            }
+            console.log('✅ Face data updated for staff member');
+          } catch (faceError) {
+            console.error('Error updating face data:', faceError);
+            // Don't fail the entire operation if face update fails
+          }
+        }
       } else {
-        const staffData: CreateStaffData = {
-          first_name: form.first_name,
-          last_name: form.last_name,
-          middle_name: form.middle_name,
-          email: form.email,
-          phone: form.phone,
-          address: form.address,
-          date_of_birth: form.date_of_birth,
-          gender: form.gender,
-          marital_status: form.marital_status,
-          sss_number: form.sss_number,
-          philhealth_number: form.philhealth_number,
-          pagibig_number: form.pagibig_number,
-          tin_number: form.tin_number,
-          bank_account: form.bank_account,
-          bank_name: form.bank_name,
-          emergency_contact: form.emergency_contact,
-          emergency_phone: form.emergency_phone,
-          position: form.position,
-          department: form.department,
-          hire_date: form.hire_date,
-          is_active: form.is_active,
-          employee_id: finalEmployeeId,
-          role: form.role,
-          branch_id: form.branch_id,
-          salary: form.salary,
-          employment_type: form.employment_type,
-          salary_type: form.salary_type,
-          work_schedule: form.work_schedule,
-          payment_method: form.payment_method
-        };
-        await staffManagementApi.staff.createStaff(staffData);
-        setAlertMessage('Staff member created successfully!');
-        setShowSuccessAlert(true);
+        // Create new staff
+        createdStaff = await staffManagementApi.staff.createStaff(createPayload);
+        
+        // Save face data if it was registered before staff creation
+        if (faceData && !faceData.staff_id) {
+          try {
+            faceData.staff_id = createdStaff.id;
+            await faceRegistrationService.saveFaceDescriptor(faceData);
+            console.log('✅ Face data saved for new staff member');
+          } catch (faceError) {
+            console.error('Error saving face data:', faceError);
+            // Don't fail the entire operation if face save fails
+          }
+        }
       }
+
+      userAccountIdForSync = userAccountIdForSync || createdStaff?.user_account_id || null;
+      
+      // If user account creation is requested, create account with magic link
+      if (form.createUserAccount) {
+        try {
+          // Generate verification token (UUID)
+          const activationToken = crypto.randomUUID();
+          const tokenExpiry = new Date();
+          tokenExpiry.setHours(tokenExpiry.getHours() + 24); // 24 hours from now
+
+          // Create user account with Pending Activation status
+          const { data: userData, error: userError } = await supabase
+            .from('users')
+            .insert({
+              email: form.email,
+              first_name: form.first_name,
+              last_name: form.last_name,
+              phone: form.phone || '',
+              role: roleName || form.accountDetails.role,
+              role_id: selectedRoleRecord?.id || null,
+              branch_id: form.branch_id,
+              is_active: true,
+              account_status: 'pending_activation',
+              user_type: 'staff',
+              password_hash: null, // No password until activation
+              email_verified: false,
+              verification_token: activationToken,
+              token_expiry: tokenExpiry.toISOString(),
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            })
+            .select()
+            .single();
+
+          if (userError) throw userError;
+
+          // Assign role to the user
+          const { data: allRoles, error: allRolesError } = await supabase
+            .from('roles')
+            .select('id, name, display_name')
+            .eq('is_active', true);
+
+          if (!allRolesError && allRoles && allRoles.length > 0) {
+            const preferredRoleNames = [
+              selectedRoleRecord?.name,
+              form.accountDetails?.role,
+              'staff',
+              'user'
+            ].filter(Boolean) as string[];
+
+            const roleToAssign =
+              allRoles.find(role => preferredRoleNames.includes(role.name)) ||
+              allRoles[0];
+
+            if (roleToAssign) {
+              await supabase
+                .from('user_roles')
+                .insert({
+                  user_id: userData.id,
+                  role_id: roleToAssign.id,
+                  assigned_at: new Date().toISOString()
+                });
+              await syncUserRoleAssignment(userData.id, roleToAssign.id, roleToAssign.name);
+              roleSynced = true;
+            }
+          }
+
+          // Link staff to user account
+          await supabase
+            .from('staff')
+            .update({ user_account_id: userData.id })
+            .eq('id', createdStaff.id);
+
+          userAccountIdForSync = userData.id;
+
+          // Send activation email
+          try {
+            const emailResult = await emailService.sendActivationEmail({
+              to: form.email,
+              name: `${form.first_name} ${form.last_name}`,
+              activationToken: activationToken
+            });
+
+            if (emailResult.success) {
+              setAlertMessage('Staff member and user account created successfully! Activation email has been sent to the staff member.');
+            } else {
+              setAlertMessage('Staff member and user account created successfully! However, the activation email could not be sent. Please send the activation link manually.');
+            }
+          } catch (emailError: any) {
+            console.error('Error sending activation email:', emailError);
+            setAlertMessage('Staff member and user account created successfully! However, the activation email could not be sent. Please send the activation link manually.');
+          }
+        } catch (accountError: any) {
+          console.error('Error creating user account:', accountError);
+          setAlertMessage(`Staff member created successfully! However, user account creation failed: ${accountError.message || 'Unknown error'}`);
+        }
+      } else {
+        setAlertMessage('Staff member created successfully!');
+      }
+      
+      if (!roleSynced && userAccountIdForSync && selectedRoleRecord) {
+        await syncUserRoleAssignment(userAccountIdForSync, selectedRoleRecord.id, selectedRoleRecord.name);
+      }
+
+      setShowSuccessAlert(true);
 
       // Reset form
       setForm({
@@ -283,14 +630,6 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack }) => {
         date_of_birth: '',
         gender: '',
         marital_status: 'single',
-        sss_number: '',
-        philhealth_number: '',
-        pagibig_number: '',
-        tin_number: '',
-        bank_account: '',
-        bank_name: '',
-        emergency_contact: '',
-        emergency_phone: '',
         position: '',
         department: '',
         hire_date: new Date().toISOString().slice(0, 10),
@@ -307,7 +646,13 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack }) => {
         accountDetails: {
           role: 'staff',
           sendEmailInvite: false,
-        }
+        },
+        use_default_schedule: true,
+        work_days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+        time_in: '',
+        time_out: '',
+        break_start: '',
+        break_end: ''
       });
       setAutoGenerateId(false);
     } catch (error: any) {
@@ -319,25 +664,9 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack }) => {
     }
   };
 
-  const generatePassword = () => {
-    const password = SecurityService.generateSecurePassword();
-    setGeneratedPassword(password);
-    setForm(prev => ({
-      ...prev,
-      accountDetails: {
-        role: 'staff',
-        sendEmailInvite: false,
-        ...prev.accountDetails,
-        password: password
-      }
-    }));
-  };
-
-  const copyPassword = () => {
-    navigator.clipboard.writeText(generatedPassword);
-  };
 
   const checkEmailDuplicate = async (email: string) => {
+    if (isEditMode) return;
     if (!email.trim() || !ValidationService.isValidEmail(email)) return;
     
     try {
@@ -375,6 +704,7 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack }) => {
   };
 
   const checkEmployeeIdDuplicate = async (employeeId: string) => {
+    if (isEditMode) return;
     if (!employeeId.trim() || autoGenerateId) return;
     
     try {
@@ -441,8 +771,14 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack }) => {
                 <UserPlus className="w-6 h-6 text-blue-600" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold text-gray-900">Add New Staff Member</h1>
-                <p className="text-gray-600">Create a new staff member and optionally a user account</p>
+                <h1 className="text-2xl font-bold text-gray-900">
+                  {isEditMode ? 'Edit Staff Member' : 'Add New Staff Member'}
+                </h1>
+                <p className="text-gray-600">
+                  {isEditMode 
+                    ? 'Update staff member information and optionally register face' 
+                    : 'Create a new staff member and optionally a user account'}
+                </p>
               </div>
             </div>
           </div>
@@ -475,7 +811,7 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack }) => {
                 <input
                   type="text"
                   value={form.first_name}
-                  onChange={(e) => setForm(prev => ({ ...prev, first_name: e.target.value }))}
+                  onChange={(e) => setForm((prev: StaffFormData) => ({ ...prev, first_name: e.target.value }))}
                   className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                     errors.first_name ? 'border-red-300' : 'border-gray-300'
                   }`}
@@ -493,7 +829,7 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack }) => {
                 <input
                   type="text"
                   value={form.last_name}
-                  onChange={(e) => setForm(prev => ({ ...prev, last_name: e.target.value }))}
+                  onChange={(e) => setForm((prev: StaffFormData) => ({ ...prev, last_name: e.target.value }))}
                   className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                     errors.last_name ? 'border-red-300' : 'border-gray-300'
                   }`}
@@ -511,7 +847,7 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack }) => {
                 <input
                   type="text"
                   value={form.middle_name}
-                  onChange={(e) => setForm(prev => ({ ...prev, middle_name: e.target.value }))}
+                  onChange={(e) => setForm((prev: StaffFormData) => ({ ...prev, middle_name: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Enter middle name (optional)"
                 />
@@ -527,10 +863,11 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack }) => {
                     type="email"
                     value={form.email}
                     onChange={(e) => {
-                      setForm(prev => ({ ...prev, email: e.target.value }));
+                      if (isEditMode) return;
+                      setForm((prev: StaffFormData) => ({ ...prev, email: e.target.value }));
                       // Clear any existing email error when user starts typing
                       if (errors.email === 'A staff member with this email already exists') {
-                        setErrors(prev => {
+                        setErrors((prev: Record<string, string>) => {
                           const newErrors = { ...prev };
                           delete newErrors.email;
                           return newErrors;
@@ -538,9 +875,10 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack }) => {
                       }
                     }}
                     onBlur={(e) => checkEmailDuplicate(e.target.value)}
+                    disabled={isEditMode}
                     className={`w-full pl-10 pr-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                       errors.email ? 'border-red-300' : 'border-gray-300'
-                    }`}
+                    } ${isEditMode ? 'bg-gray-100 text-gray-500' : ''}`}
                     placeholder="Enter email address"
                   />
                 </div>
@@ -558,7 +896,7 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack }) => {
                   <input
                     type="tel"
                     value={form.phone}
-                    onChange={(e) => setForm(prev => ({ ...prev, phone: e.target.value }))}
+                    onChange={(e) => setForm((prev: StaffFormData) => ({ ...prev, phone: e.target.value }))}
                     className={`w-full pl-10 pr-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                       errors.phone ? 'border-red-300' : 'border-gray-300'
                     }`}
@@ -579,7 +917,7 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack }) => {
                   <input
                     type="text"
                     value={form.address}
-                    onChange={(e) => setForm(prev => ({ ...prev, address: e.target.value }))}
+                    onChange={(e) => setForm((prev: StaffFormData) => ({ ...prev, address: e.target.value }))}
                     className={`w-full pl-10 pr-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                       errors.address ? 'border-red-300' : 'border-gray-300'
                     }`}
@@ -600,7 +938,7 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack }) => {
                   <input
                     type="date"
                     value={form.date_of_birth}
-                    onChange={(e) => setForm(prev => ({ ...prev, date_of_birth: e.target.value }))}
+                    onChange={(e) => setForm((prev: StaffFormData) => ({ ...prev, date_of_birth: e.target.value }))}
                     className={`w-full pl-10 pr-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                       errors.date_of_birth ? 'border-red-300' : 'border-gray-300'
                     }`}
@@ -619,7 +957,7 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack }) => {
                   <UserCog className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                   <select
                     value={form.gender}
-                    onChange={(e) => setForm(prev => ({ ...prev, gender: e.target.value }))}
+                    onChange={(e) => setForm((prev: StaffFormData) => ({ ...prev, gender: e.target.value }))}
                     className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="">Select Gender</option>
@@ -638,7 +976,7 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack }) => {
                   <UserCog className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                   <select
                     value={form.marital_status}
-                    onChange={(e) => setForm(prev => ({ ...prev, marital_status: e.target.value }))}
+                    onChange={(e) => setForm((prev: StaffFormData) => ({ ...prev, marital_status: e.target.value }))}
                     className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="single">Single</option>
@@ -670,8 +1008,8 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack }) => {
                       type="text"
                       value={form.employee_id}
                       onChange={(e) => {
+                        if (isEditMode) return;
                         setForm(prev => ({ ...prev, employee_id: e.target.value }));
-                        // Clear any existing employee ID error when user starts typing
                         if (errors.employee_id === 'A staff member with this employee ID already exists') {
                           setErrors(prev => {
                             const newErrors = { ...prev };
@@ -681,16 +1019,17 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack }) => {
                         }
                       }}
                       onBlur={(e) => checkEmployeeIdDuplicate(e.target.value)}
-                      disabled={autoGenerateId}
+                      disabled={autoGenerateId || isEditMode}
                       className={`w-full pl-10 pr-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                         errors.employee_id ? 'border-red-300' : 'border-gray-300'
-                      } ${autoGenerateId ? 'bg-gray-100' : ''}`}
-                      placeholder={autoGenerateId ? 'Auto-generated' : 'Enter employee ID'}
+                      } ${(autoGenerateId || isEditMode) ? 'bg-gray-100 text-gray-500' : ''}`}
+                      placeholder={autoGenerateId || isEditMode ? 'Auto-generated' : 'Enter employee ID'}
                     />
                   </div>
                   <button
                     type="button"
                     onClick={() => {
+                      if (isEditMode) return;
                       setAutoGenerateId(!autoGenerateId);
                       if (!autoGenerateId) {
                         setForm(prev => ({ ...prev, employee_id: generateEmployeeId() }));
@@ -698,7 +1037,8 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack }) => {
                         setForm(prev => ({ ...prev, employee_id: '' }));
                       }
                     }}
-                    className={`px-4 py-2 rounded-md transition-colors ${
+                    disabled={isEditMode}
+                    className={`px-4 py-2 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                       autoGenerateId 
                         ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' 
                         : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -718,7 +1058,18 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack }) => {
                 </label>
                 <select
                   value={form.position}
-                  onChange={(e) => setForm(prev => ({ ...prev, position: e.target.value }))}
+                  onChange={(e) => {
+                    const newPosition = e.target.value;
+                    setForm((prev: StaffFormData) => ({
+                      ...prev,
+                      position: newPosition,
+                      role: newPosition || prev.role,
+                      accountDetails: {
+                        ...prev.accountDetails,
+                        role: prev.createUserAccount && newPosition ? newPosition : prev.accountDetails.role
+                      }
+                    }));
+                  }}
                   className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                     errors.position ? 'border-red-300' : 'border-gray-300'
                   }`}
@@ -737,31 +1088,13 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack }) => {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Department
-                </label>
-                <select
-                  value={form.department}
-                  onChange={(e) => setForm(prev => ({ ...prev, department: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">Select Department</option>
-                  <option value="Sales">Sales</option>
-                  <option value="Inventory">Inventory</option>
-                  <option value="HR">HR</option>
-                  <option value="Admin">Admin</option>
-                  <option value="Finance">Finance</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
                   Branch *
                 </label>
                 <div className="relative">
                   <Building className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                   <select
                     value={form.branch_id || ''}
-                    onChange={(e) => setForm(prev => ({ ...prev, branch_id: e.target.value || undefined }))}
+                    onChange={(e) => setForm((prev: StaffFormData) => ({ ...prev, branch_id: e.target.value || undefined }))}
                     className={`w-full pl-10 pr-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                       errors.branch_id ? 'border-red-300' : 'border-gray-300'
                     }`}
@@ -786,7 +1119,7 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack }) => {
                   <input
                     type="date"
                     value={form.hire_date}
-                    onChange={(e) => setForm(prev => ({ ...prev, hire_date: e.target.value }))}
+                    onChange={(e) => setForm((prev: StaffFormData) => ({ ...prev, hire_date: e.target.value }))}
                     className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
@@ -798,13 +1131,11 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack }) => {
                 </label>
                 <select
                   value={form.employment_type}
-                  onChange={(e) => setForm(prev => ({ ...prev, employment_type: e.target.value }))}
+                  onChange={(e) => setForm((prev: StaffFormData) => ({ ...prev, employment_type: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="Regular">Regular</option>
-                  <option value="Probationary">Probationary</option>
                   <option value="Part-time">Part-time</option>
-                  <option value="Contract">Contract</option>
                 </select>
               </div>
 
@@ -817,7 +1148,7 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack }) => {
                   <input
                     type="number"
                     value={form.salary || ''}
-                    onChange={(e) => setForm(prev => ({ ...prev, salary: e.target.value ? Number(e.target.value) : undefined }))}
+                    onChange={(e) => setForm((prev: StaffFormData) => ({ ...prev, salary: e.target.value ? Number(e.target.value) : undefined }))}
                     className={`w-full pl-10 pr-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                       errors.salary ? 'border-red-300' : 'border-gray-300'
                     }`}
@@ -835,7 +1166,7 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack }) => {
                 </label>
                 <select
                   value={form.salary_type}
-                  onChange={(e) => setForm(prev => ({ ...prev, salary_type: e.target.value }))}
+                  onChange={(e) => setForm((prev: StaffFormData) => ({ ...prev, salary_type: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="Daily">Daily</option>
@@ -844,37 +1175,154 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack }) => {
                 </select>
               </div>
 
-              <div>
+              <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Work Schedule
                 </label>
-                <div className="relative">
-                  <Clock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                  <input
-                    type="text"
-                    value={form.work_schedule}
-                    onChange={(e) => setForm(prev => ({ ...prev, work_schedule: e.target.value }))}
-                    className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="e.g., 8:00 AM - 5:00 PM, Mon-Fri"
-                  />
-                </div>
-              </div>
+                <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                  <div className="flex items-center justify-between flex-wrap gap-4">
+                    <div>
+                      <p className="text-sm font-medium text-gray-800">Use default company schedule</p>
+                      <p className="text-xs text-gray-500">Disable to customize this staff member&apos;s working days and hours.</p>
+                    </div>
+                    <label className="inline-flex items-center gap-2">
+                      <span className="text-sm text-gray-600">Default</span>
+                      <div className="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={form.use_default_schedule}
+                          onChange={(e) => handleUseDefaultScheduleToggle(e.target.checked)}
+                          className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-gray-200 rounded-full transition-colors peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-300 peer-checked:bg-blue-600"></div>
+                        <div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-5"></div>
+                      </div>
+                      <span className="text-sm text-gray-600">Custom</span>
+                    </label>
+                  </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Payment Method
-                </label>
-                <select
-                  value={form.payment_method}
-                  onChange={(e) => setForm(prev => ({ ...prev, payment_method: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">Select Payment Method</option>
-                  <option value="bank_transfer">Bank Transfer</option>
-                  <option value="cash">Cash</option>
-                  <option value="check">Check</option>
-                  <option value="payroll_card">Payroll Card</option>
-                </select>
+                  {form.use_default_schedule ? (
+                    <p className="mt-3 text-sm text-gray-600">
+                      This staff member will follow the default branch/company work schedule.
+                    </p>
+                  ) : (
+                    <div className="mt-4 space-y-5">
+                      <div>
+                        <p className="text-sm font-medium text-gray-800">Work Days</p>
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          {WORK_DAYS.map(day => {
+                            const active = form.work_days.includes(day);
+                            return (
+                              <label
+                                key={day}
+                                className={`px-3 py-1 rounded-full border cursor-pointer text-sm transition-colors ${active ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400'}`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  className="sr-only"
+                                  checked={active}
+                                  onChange={() => handleWorkDayToggle(day)}
+                                />
+                                {day}
+                              </label>
+                            );
+                          })}
+                        </div>
+                        {errors.work_days && (
+                          <p className="mt-2 text-sm text-red-600">{errors.work_days}</p>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Time In *
+                          </label>
+                          <div className="relative">
+                            <Clock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                            <input
+                              type="time"
+                              value={form.time_in}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                setForm(prev => ({ ...prev, time_in: value }));
+                                setErrors(prev => {
+                                  if (!prev.time_in) return prev;
+                                  const newErrors = { ...prev };
+                                  delete newErrors.time_in;
+                                  return newErrors;
+                                });
+                              }}
+                              className={`w-full pl-10 pr-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.time_in ? 'border-red-300' : 'border-gray-300'}`}
+                            />
+                          </div>
+                          {errors.time_in && (
+                            <p className="mt-2 text-sm text-red-600">{errors.time_in}</p>
+                          )}
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Time Out *
+                          </label>
+                          <div className="relative">
+                            <Clock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                            <input
+                              type="time"
+                              value={form.time_out}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                setForm(prev => ({ ...prev, time_out: value }));
+                                setErrors(prev => {
+                                  if (!prev.time_out) return prev;
+                                  const newErrors = { ...prev };
+                                  delete newErrors.time_out;
+                                  return newErrors;
+                                });
+                              }}
+                              className={`w-full pl-10 pr-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.time_out ? 'border-red-300' : 'border-gray-300'}`}
+                            />
+                          </div>
+                          {errors.time_out && (
+                            <p className="mt-2 text-sm text-red-600">{errors.time_out}</p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Break Start (optional)
+                          </label>
+                          <div className="relative">
+                            <Clock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                            <input
+                              type="time"
+                              value={form.break_start}
+                              onChange={(e) => setForm(prev => ({ ...prev, break_start: e.target.value }))}
+                              className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Break End (optional)
+                          </label>
+                          <div className="relative">
+                            <Clock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                            <input
+                              type="time"
+                              value={form.break_end}
+                              onChange={(e) => setForm(prev => ({ ...prev, break_end: e.target.value }))}
+                              className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -883,7 +1331,7 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack }) => {
                 <input
                   type="checkbox"
                   checked={form.is_active}
-                  onChange={(e) => setForm(prev => ({ ...prev, is_active: e.target.checked }))}
+                  onChange={(e) => setForm((prev: StaffFormData) => ({ ...prev, is_active: e.target.checked }))}
                   className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                 />
                 <span className="ml-2 text-sm text-gray-700">Active employee</span>
@@ -891,117 +1339,86 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack }) => {
             </div>
           </div>
 
-          {/* Government IDs and Banking Information */}
+          {/* Face Registration */}
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-              <Shield className="w-5 h-5 mr-2" />
-              Government IDs & Banking
+              <Camera className="w-5 h-5 mr-2" />
+              Face Registration {isEditMode ? '(Optional)' : '(Optional)'}
             </h3>
             
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  SSS Number
-                </label>
-                <input
-                  type="text"
-                  value={form.sss_number}
-                  onChange={(e) => setForm(prev => ({ ...prev, sss_number: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Enter SSS number"
+            <div className="space-y-4">
+              {existingFaceData && !showFaceRegistration && (
+                <div className="p-4 bg-green-50 border border-green-200 rounded-md">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <CheckCircle className="w-5 h-5 text-green-600" />
+                      <span className="text-sm text-green-800">
+                        Face is already registered for this staff member
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowFaceRegistration(true)}
+                      className="text-sm text-green-700 hover:text-green-900 underline"
+                    >
+                      Re-register
+                    </button>
+                  </div>
+                </div>
+              )}
+              
+              {!existingFaceData && !showFaceRegistration && (
+                <div className="p-4 bg-blue-50 border border-blue-200 rounded-md">
+                  <p className="text-sm text-blue-800 mb-3">
+                    Register the staff member's face for attendance tracking using facial recognition.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setShowFaceRegistration(true)}
+                    className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                  >
+                    <Camera className="w-4 h-4" />
+                    <span>Register Face</span>
+                  </button>
+                </div>
+              )}
+              
+              {showFaceRegistration && (
+                <FaceRegistration
+                  staffId={isEditMode ? initialData?.id : undefined}
+                  branchId={form.branch_id}
+                  staffName={isEditMode ? `${form.first_name} ${form.last_name}` : undefined}
+                  existingFaceData={existingFaceData}
+                  onFaceRegistered={(data) => {
+                    setFaceData(data);
+                    setShowFaceRegistration(false);
+                    if (isEditMode && initialData?.id) {
+                      setExistingFaceData(data);
+                    }
+                  }}
+                  onCancel={() => setShowFaceRegistration(false)}
                 />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  PhilHealth Number
-                </label>
-                <input
-                  type="text"
-                  value={form.philhealth_number}
-                  onChange={(e) => setForm(prev => ({ ...prev, philhealth_number: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Enter PhilHealth number"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Pag-IBIG Number
-                </label>
-                <input
-                  type="text"
-                  value={form.pagibig_number}
-                  onChange={(e) => setForm(prev => ({ ...prev, pagibig_number: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Enter Pag-IBIG number"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  TIN Number
-                </label>
-                <input
-                  type="text"
-                  value={form.tin_number}
-                  onChange={(e) => setForm(prev => ({ ...prev, tin_number: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Enter TIN number"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Bank Name
-                </label>
-                <input
-                  type="text"
-                  value={form.bank_name}
-                  onChange={(e) => setForm(prev => ({ ...prev, bank_name: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Enter bank name"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Bank Account Number
-                </label>
-                <input
-                  type="text"
-                  value={form.bank_account}
-                  onChange={(e) => setForm(prev => ({ ...prev, bank_account: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Enter bank account number"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Emergency Contact
-                </label>
-                <input
-                  type="text"
-                  value={form.emergency_contact}
-                  onChange={(e) => setForm(prev => ({ ...prev, emergency_contact: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Enter emergency contact name"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Emergency Phone
-                </label>
-                <input
-                  type="tel"
-                  value={form.emergency_phone}
-                  onChange={(e) => setForm(prev => ({ ...prev, emergency_phone: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Enter emergency contact phone"
-                />
-              </div>
+              )}
+              
+              {faceData && !showFaceRegistration && !existingFaceData && (
+                <div className="p-4 bg-green-50 border border-green-200 rounded-md">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <CheckCircle className="w-5 h-5 text-green-600" />
+                      <span className="text-sm text-green-800">
+                        Face registered successfully {isEditMode ? '' : '(will be saved when staff is created)'}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowFaceRegistration(true)}
+                      className="text-sm text-green-700 hover:text-green-900 underline"
+                    >
+                      Change
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1017,7 +1434,17 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack }) => {
                 <input
                   type="checkbox"
                   checked={form.createUserAccount}
-                  onChange={(e) => setForm(prev => ({ ...prev, createUserAccount: e.target.checked }))}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setForm((prev: StaffFormData) => ({
+                      ...prev,
+                      createUserAccount: checked,
+                      accountDetails: {
+                        ...prev.accountDetails,
+                        role: checked && prev.position ? prev.position : prev.accountDetails.role
+                      }
+                    }));
+                  }}
                   className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                 />
                 <span className="ml-2 text-sm text-gray-700">Create user account for this staff member</span>
@@ -1031,12 +1458,11 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack }) => {
                     </label>
                     <select
                       value={form.accountDetails?.role || ''}
-                      onChange={(e) => setForm(prev => ({
+                      onChange={(e) => setForm((prev: StaffFormData) => ({
                         ...prev,
                         accountDetails: { 
                           role: e.target.value,
-                          sendEmailInvite: false,
-                          ...prev.accountDetails
+                          sendEmailInvite: prev.accountDetails?.sendEmailInvite || false
                         }
                       }))}
                       className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
@@ -1055,76 +1481,11 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack }) => {
                     )}
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Password
-                    </label>
-                    <div className="flex space-x-2">
-                      <div className="relative flex-1">
-                        <input
-                          type={showPassword ? 'text' : 'password'}
-                          value={form.accountDetails?.password || ''}
-                          onChange={(e) => setForm(prev => ({
-                            ...prev,
-                            accountDetails: { 
-                              role: 'staff',
-                              sendEmailInvite: false,
-                              ...prev.accountDetails,
-                              password: e.target.value 
-                            }
-                          }))}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          placeholder="Enter password"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowPassword(!showPassword)}
-                          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                        >
-                          {showPassword ? <XCircle className="w-5 h-5" /> : <Key className="w-5 h-5" />}
-                        </button>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={generatePassword}
-                        className="px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors"
-                      >
-                        Generate
-                      </button>
-                    </div>
-                    {generatedPassword && (
-                      <div className="mt-2 p-3 bg-gray-50 rounded-md">
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm text-gray-600">Generated Password:</span>
-                          <button
-                            type="button"
-                            onClick={copyPassword}
-                            className="text-blue-600 hover:text-blue-800 text-sm"
-                          >
-                            Copy
-                          </button>
-                        </div>
-                        <code className="text-sm font-mono text-gray-900">{generatedPassword}</code>
-                      </div>
-                    )}
+                  <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
+                    <p className="text-sm text-blue-800">
+                      When this checkbox is checked, a user account will be created for the staff member and an activation email with a magic link will be sent to their email address. The staff member will need to click the link to set their password and activate their account.
+                    </p>
                   </div>
-
-                  <label className="flex items-center">
-                    <input
-                      type="checkbox"
-                      checked={form.accountDetails?.sendEmailInvite || false}
-                      onChange={(e) => setForm(prev => ({
-                        ...prev,
-                        accountDetails: { 
-                          role: 'staff',
-                          sendEmailInvite: e.target.checked,
-                          ...prev.accountDetails
-                        }
-                      }))}
-                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                    />
-                    <span className="ml-2 text-sm text-gray-700">Send email invitation</span>
-                  </label>
                 </div>
               )}
             </div>
@@ -1151,7 +1512,11 @@ const AddStaff: React.FC<AddStaffProps> = ({ onBack }) => {
               ) : (
                 <Save className="w-4 h-4" />
               )}
-              <span>{loading ? 'Creating...' : 'Create Staff Member'}</span>
+              <span>
+                {loading
+                  ? (isEditMode ? 'Updating...' : 'Creating...')
+                  : (isEditMode ? 'Update Staff Member' : 'Create Staff Member')}
+              </span>
             </button>
           </div>
         </form>

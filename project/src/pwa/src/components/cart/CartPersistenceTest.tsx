@@ -254,7 +254,9 @@ const CartPersistenceTest: React.FC = () => {
             <div className="flex justify-between">
               <span className="text-gray-600">Last Save:</span>
               <span className="font-medium">
-                {lastSaveTime ? lastSaveTime.toLocaleTimeString() : 'Never'}
+                {lastSaveTime
+                  ? lastSaveTime.toLocaleTimeString('en-PH', { timeZone: 'Asia/Manila' })
+                  : 'Never'}
               </span>
             </div>
             {storageInfo && (

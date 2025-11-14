@@ -1,5 +1,7 @@
 import { EmailTemplate, EmailNotification } from '../types'
 import { supabase } from './supabase'
+import { getManilaTimestamp } from '../utils/dateTime'
+import { formatManilaDate } from '../utils/dateTime'
 
 interface EmailServiceConfig {
   supabaseUrl: string
@@ -270,7 +272,7 @@ class EmailService {
         content_html: data.contentHtml || null,
         content_text: data.contentText || null,
         status: 'pending',
-        created_at: new Date().toISOString()
+        created_at: getManilaTimestamp()
       }
 
       const { data: notification, error } = await supabase
@@ -319,8 +321,8 @@ class EmailService {
         .from('email_notifications')
         .update({
           status: 'sent',
-          sent_at: new Date().toISOString(),
-          delivered_at: new Date().toISOString()
+          sent_at: getManilaTimestamp(),
+          delivered_at: getManilaTimestamp()
         })
         .eq('id', notificationId)
 
@@ -350,7 +352,7 @@ class EmailService {
       '{{customer_name}}': data.customerName || data.customer_name || 'Customer',
       '{{order_number}}': data.orderNumber || data.order_number || 'N/A',
       '{{order_total}}': data.orderTotal ? `₱${data.orderTotal.toFixed(2)}` : 'N/A',
-      '{{order_date}}': data.orderDate || data.order_date || new Date().toLocaleDateString(),
+      '{{order_date}}': data.orderDate || data.order_date || formatManilaDate(new Date()),
       '{{branch_name}}': data.branchName || data.branch_name || 'AgriVet Branch',
       '{{branch_address}}': data.branchAddress || data.branch_address || 'N/A',
       '{{estimated_ready_time}}': data.estimatedReadyTime || data.estimated_ready_time || '30 minutes',

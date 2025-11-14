@@ -7,7 +7,7 @@ import {
   TrendingDown, Hash, PlayCircle
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { settingsService } from '../../lib/settingsService';
+import { useAttendanceDashboardData } from '../../hooks/useAttendanceDashboardData';
 interface AttendanceRecord {
   id: string;
   staff_id: string;
@@ -60,21 +60,6 @@ interface AttendanceStats {
 }
 
 const AttendanceDashboard: React.FC = () => {
-  const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
-  const [staffSummaries, setStaffSummaries] = useState<StaffSummary[]>([]);
-  const [stats, setStats] = useState<AttendanceStats>({
-    totalStaff: 0,
-    presentToday: 0,
-    absentToday: 0,
-    lateToday: 0,
-    onLeaveToday: 0,
-    averageHours: 0,
-    totalOvertime: 0,
-    attendanceRate: 0
-  });
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [dateRange, setDateRange] = useState<{ start: string; end: string }>({
     start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
@@ -91,184 +76,50 @@ const AttendanceDashboard: React.FC = () => {
   const [checkInPin, setCheckInPin] = useState('');
   const [checkInMethod, setCheckInMethod] = useState<'manual' | 'pin'>('manual');
   const [selectedStaffId, setSelectedStaffId] = useState('');
+  const [success, setSuccess] = useState<string | null>(null);
+  const [localError, setLocalError] = useState<string | null>(null);
   const [correctionData, setCorrectionData] = useState({
     time_in: '',
     time_out: '',
     status: 'present' as 'present' | 'absent' | 'late' | 'half_day' | 'on_leave',
     reason: ''
   });
-  const [branches, setBranches] = useState<Array<{ id: string; name: string }>>([]);
-  const [staffList, setStaffList] = useState<Array<{ id: string; name: string; pin: string }>>([]);
-  const [hrSettings, setHrSettings] = useState<any>(null);
+
+  // Data fetching with RBAC filtering - uses hook
+  const {
+    attendanceRecords,
+    staffSummaries,
+    stats,
+    branches,
+    staffList,
+    hrSettings,
+    loading,
+    error: dataError,
+    refreshData,
+    refreshSummary,
+    loadHRSettings,
+    loadInitialData
+  } = useAttendanceDashboardData();
+
+  // Combine data error and local error
+  const error = dataError || localError;
+
   useEffect(() => {
     loadInitialData();
-  }, []);
+    loadHRSettings();
+  }, [loadInitialData, loadHRSettings]);
 
   useEffect(() => {
     if (viewMode === 'daily') {
-      loadAttendanceData();
+      refreshData(selectedDate);
     } else {
-      loadAttendanceSummary();
+      refreshSummary(dateRange.start, dateRange.end);
     }
-  }, [selectedDate, dateRange, viewMode]);
-
-    useEffect(() => {
-    loadInitialData();
-    loadHRSettings(); // Add this line
-  }, []);
-  
-  
-  const loadHRSettings = async () => {
-  try {
-    const settings = await settingsService.getHRSettings();
-    setHrSettings(settings);
-    console.log('📋 HR Settings loaded:', settings);
-  } catch (err: any) {
-    console.error('Error loading HR settings:', err);
-  }
-};
-
-
-  const loadInitialData = async () => {
-    try {
-      // Load branches
-      const { data: branchesData } = await supabase
-        .from('branches')
-        .select('id, name')
-        .eq('is_active', true)
-        .order('name');
-      setBranches(branchesData || []);
-
-      // Load staff list
-      const { data: staffData } = await supabase
-        .from('staff')
-        .select('id, first_name, last_name, attendance_id')
-        .eq('is_active', true)
-        .order('first_name');
-      
-      setStaffList(staffData?.map(s => ({
-        id: s.id,
-        name: `${s.first_name} ${s.last_name}`,
-        pin: s.attendance_id || ''
-      })) || []);
-
-      await loadAttendanceData();
-    } catch (err: any) {
-      console.error('Error loading initial data:', err);
-      setError(err.message);
-    }
-  };
-
-  const loadAttendanceData = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const { data, error: fetchError } = await supabase
-        .from('attendance')
-        .select(`
-          *,
-          staff:staff_id (
-            id,
-            first_name,
-            last_name,
-            position,
-            department,
-            branch_id,
-            branches:branch_id (
-              id,
-              name
-            )
-          )
-        `)
-        .eq('attendance_date', selectedDate)
-        .order('time_in', { ascending: true });
-
-      if (fetchError) throw fetchError;
-
-      const transformedData: AttendanceRecord[] = (data || []).map(record => ({
-        id: record.id,
-        staff_id: record.staff_id,
-        staff_name: `${record.staff.first_name} ${record.staff.last_name}`,
-        position: record.staff.position || 'N/A',
-        department: record.staff.department || 'N/A',
-        branch_id: record.staff.branch_id,
-        branch_name: record.staff.branches?.name || 'Unknown',
-        attendance_date: record.attendance_date,
-        time_in: record.time_in,
-        time_out: record.time_out,
-        break_start: record.break_start,
-        break_end: record.break_end,
-        total_hours: record.total_hours,
-        overtime_hours: record.overtime_hours,
-        status: record.status,
-        is_late: record.is_late || false,
-        late_minutes: record.late_minutes,
-        notes: record.notes,
-        location: record.location,
-        check_in_method: record.check_in_method || 'manual',
-        corrected_by: record.corrected_by,
-        correction_reason: record.correction_reason,
-        created_at: record.created_at,
-        updated_at: record.updated_at
-      }));
-
-      setAttendanceRecords(transformedData);
-
-      // Calculate stats
-      const totalStaff = transformedData.length;
-      const presentToday = transformedData.filter(r => r.status === 'present').length;
-      const absentToday = transformedData.filter(r => r.status === 'absent').length;
-      const lateToday = transformedData.filter(r => r.is_late).length;
-      const onLeaveToday = transformedData.filter(r => r.status === 'on_leave').length;
-      const totalHoursWorked = transformedData.reduce((sum, r) => sum + (r.total_hours || 0), 0);
-      const averageHours = totalStaff > 0 ? totalHoursWorked / totalStaff : 0;
-      const totalOvertime = transformedData.reduce((sum, r) => sum + (r.overtime_hours || 0), 0);
-      const attendanceRate = totalStaff > 0 ? (presentToday / totalStaff) * 100 : 0;
-
-      setStats({
-        totalStaff,
-        presentToday,
-        absentToday,
-        lateToday,
-        onLeaveToday,
-        averageHours,
-        totalOvertime,
-        attendanceRate
-      });
-    } catch (err: any) {
-      console.error('Error loading attendance data:', err);
-      setError(err.message || 'Failed to load attendance data');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadAttendanceSummary = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const { data, error: fetchError } = await supabase
-        .rpc('get_attendance_summary', {
-          p_start_date: dateRange.start,
-          p_end_date: dateRange.end
-        });
-
-      if (fetchError) throw fetchError;
-
-      setStaffSummaries(data || []);
-    } catch (err: any) {
-      console.error('Error loading attendance summary:', err);
-      setError(err.message || 'Failed to load attendance summary');
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [selectedDate, dateRange, viewMode, refreshData, refreshSummary]);
 
   const handleCheckIn = async () => {
   try {
-    setError(null);
+    setLocalError(null);
     let staffId = selectedStaffId;
 
     // ... existing PIN validation code ...
@@ -313,22 +164,22 @@ const AttendanceDashboard: React.FC = () => {
     setShowCheckInModal(false);
     setCheckInPin('');
     setSelectedStaffId('');
-    await loadAttendanceData();
+    await refreshData(selectedDate);
     setTimeout(() => setSuccess(null), 3000);
   } catch (err: any) {
     console.error('Error checking in:', err);
-    setError(err.message || 'Failed to check in');
+    setLocalError(err.message || 'Failed to check in');
   }
 };
 
   const handleCheckOut = async (recordId: string) => {
   try {
-    setError(null);
+    setLocalError(null);
     const now = new Date().toISOString();
 
     const record = attendanceRecords.find(r => r.id === recordId);
     if (!record || !record.time_in) {
-      setError('No check-in time found');
+      setLocalError('No check-in time found');
       return;
     }
 
@@ -356,20 +207,20 @@ const AttendanceDashboard: React.FC = () => {
     if (updateError) throw updateError;
 
     setSuccess('Checked out successfully!');
-    await loadAttendanceData();
+    await refreshData(selectedDate);
     setTimeout(() => setSuccess(null), 3000);
   } catch (err: any) {
     console.error('Error checking out:', err);
-    setError(err.message || 'Failed to check out');
+    setLocalError(err.message || 'Failed to check out');
   }
 };  
 
   const handleCorrectAttendance = async () => {
     try {
-      setError(null);
+      setLocalError(null);
       
       if (!selectedRecord) {
-        setError('No record selected');
+        setLocalError('No record selected');
         return;
       }
 
@@ -413,11 +264,11 @@ const AttendanceDashboard: React.FC = () => {
         status: 'present',
         reason: ''
       });
-      await loadAttendanceData();
+      await refreshData(selectedDate);
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
       console.error('Error correcting attendance:', err);
-      setError(err.message || 'Failed to correct attendance');
+      setLocalError(err.message || 'Failed to correct attendance');
     }
   };
 
@@ -455,7 +306,7 @@ const AttendanceDashboard: React.FC = () => {
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
       console.error('Error exporting report:', err);
-      setError('Failed to export report');
+      setLocalError('Failed to export report');
     }
   };
 
@@ -520,7 +371,7 @@ const AttendanceDashboard: React.FC = () => {
   }
 
   return (
-    <div className="attendance-dashboard space-y-6">
+    <div className="attendance-dashboard space-y-6 p-6">
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
@@ -985,7 +836,7 @@ const AttendanceDashboard: React.FC = () => {
                   setShowCheckInModal(false);
                   setCheckInPin('');
                   setSelectedStaffId('');
-                  setError(null);
+                  setLocalError(null);
                 }}
                 className="text-gray-400 hover:text-gray-600"
               >
@@ -1059,7 +910,7 @@ const AttendanceDashboard: React.FC = () => {
                   setShowCheckInModal(false);
                   setCheckInPin('');
                   setSelectedStaffId('');
-                  setError(null);
+                  setLocalError(null);
                 }}
                 className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200"
               >
@@ -1087,7 +938,7 @@ const AttendanceDashboard: React.FC = () => {
                 onClick={() => {
                   setShowCorrectionModal(false);
                   setSelectedRecord(null);
-                  setError(null);
+                  setLocalError(null);
                 }}
                 className="text-gray-400 hover:text-gray-600"
               >
@@ -1162,7 +1013,7 @@ const AttendanceDashboard: React.FC = () => {
                 onClick={() => {
                   setShowCorrectionModal(false);
                   setSelectedRecord(null);
-                  setError(null);
+                  setLocalError(null);
                 }}
                 className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200"
               >
