@@ -1294,11 +1294,26 @@ const AttendanceTerminal: React.FC = () => {
         });
       }
       
+      console.log(`📝 Calling recordSessionAttendance:`, {
+        staffId: bestMatch.staff_id,
+        session: actualSession,
+        action: actualAction
+      });
+      
       const attendanceRecord = await attendanceService.recordSessionAttendance(
         bestMatch.staff_id,
         actualSession,
         actualAction
       );
+
+      console.log(`✅ Attendance record returned:`, {
+        id: attendanceRecord.id,
+        time_in: attendanceRecord.time_in,
+        break_start: attendanceRecord.break_start,
+        break_end: attendanceRecord.break_end,
+        time_out: attendanceRecord.time_out,
+        status: attendanceRecord.status
+      });
 
       // Get recorded time based on session and action
       let recordedTime: string | undefined;
@@ -1307,6 +1322,8 @@ const AttendanceTerminal: React.FC = () => {
       } else {
         recordedTime = actualAction === 'timein' ? attendanceRecord.break_end : attendanceRecord.time_out;
       }
+      
+      console.log(`⏰ Recorded time for ${actualSession} ${actualAction}:`, recordedTime);
 
       const formattedTime = recordedTime 
         ? new Date(recordedTime).toLocaleTimeString('en-US', { 
