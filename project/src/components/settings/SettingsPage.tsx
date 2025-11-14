@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { 
-  Settings, Lock, Bell, Mail, Shield, Download, Upload, 
+  Settings, Lock, Bell, Mail, Shield, Upload, 
   Save, RefreshCw, Monitor, 
-  Smartphone, MapPin, Phone, Building, X, Search, Plus,
+  MapPin, Phone, Building, X, Search, Plus,
   Palette, AlertTriangle, CheckCircle, Trash2,
-  FileText, HardDrive, Edit3, Ban,
+  FileText, Edit3, Ban,
   TestTube, ShieldCheck, Activity, Settings2, User,
   Clock, DollarSign, Calendar, BarChart3, Users, LogOut,
   Eye, Key, ShoppingCart
@@ -88,15 +88,6 @@ const SettingsPage: React.FC = () => {
   const [bccManager, setBccManager] = useState(true);
   const [managerEmail, setManagerEmail] = useState('manager@agrivet.com');
   const [dailySummaryRecipients, setDailySummaryRecipients] = useState<string[]>([]);
-
-  // Data settings state
-  const [backupFrequency, setBackupFrequency] = useState('daily');
-  const [retentionPeriod, setRetentionPeriod] = useState(365);
-  const [dataEncryption, setDataEncryption] = useState(true);
-  const [auditLogging, setAuditLogging] = useState(true);
-  const [exportFormat, setExportFormat] = useState('csv');
-  const [autoBackup, setAutoBackup] = useState(true);
-  const [backupLocation, setBackupLocation] = useState('cloud');
 
   // HR Management Settings State
   const [enableDeductionForAbsences, setEnableDeductionForAbsences] = useState(true);
@@ -193,18 +184,6 @@ const SettingsPage: React.FC = () => {
     allow_device_registration: false
   });
 
-  // PWA settings state
-  const [pwaName, setPwaName] = useState('Agrivet Kiosk');
-  const [pwaTheme, setPwaTheme] = useState('dark-green');
-  const [pwaLogo, setPwaLogo] = useState<string | null>(null);
-  const [onlineOrderingEnabled, setOnlineOrderingEnabled] = useState(true);
-  const [defaultBranchForOrders, setDefaultBranchForOrders] = useState('main');
-  const [deliveryEnabled, setDeliveryEnabled] = useState(true);
-  const [pickupEnabled, setPickupEnabled] = useState(true);
-  const [maintenanceMode, setMaintenanceMode] = useState(false);
-  const [pushNotificationsEnabled, setPushNotificationsEnabled] = useState(true);
-  const [pwaVersion, setPwaVersion] = useState('1.0.5');
-
   // POS Terminal management state
   const [posTerminals, setPosTerminals] = useState<POSTerminal[]>([]);
   const [userCandidates, setUserCandidates] = useState<UserCandidate[]>([]);
@@ -287,22 +266,6 @@ const SettingsPage: React.FC = () => {
       description: 'Attendance, payroll, and employee settings',
       bgColor: 'bg-purple-50',
       color: 'text-purple-600'
-    },
-    {
-      id: 'pwa',
-      title: 'PWA Settings',
-      icon: Smartphone,
-      description: 'Progressive web app and kiosk configurations',
-      bgColor: 'bg-indigo-50',
-      color: 'text-indigo-600'
-    },
-    {
-      id: 'data',
-      title: 'Data & Backup',
-      icon: HardDrive,
-      description: 'Database, backup, and data retention policies',
-      bgColor: 'bg-green-50',
-      color: 'text-green-600'
     },
     {
       id: 'branches',
@@ -864,8 +827,6 @@ const SettingsPage: React.FC = () => {
       const sec = s.security || {};
       const notif = s.notifications || {};
       const hr = s.hr || {};
-      const data = s.data || {};
-      const pwa = s.pwa || {};
 
       // General
       setAppName((g.appName ?? s.app_name) ?? appName);
@@ -950,26 +911,6 @@ const SettingsPage: React.FC = () => {
       setIncludeAttendanceSummary((hr.includeAttendanceSummary ?? s.include_attendance_summary) ?? includeAttendanceSummary);
       setEnablePerformanceReviews((hr.enablePerformanceReviews ?? s.enable_performance_reviews) ?? enablePerformanceReviews);
       setEnableEmployeeSelfService((hr.enableEmployeeSelfService ?? s.enable_employee_self_service) ?? enableEmployeeSelfService);
-
-      // Data
-      setBackupFrequency((data.backupFrequency ?? s.backup_frequency) ?? backupFrequency);
-      setRetentionPeriod((data.retentionPeriod ?? s.retention_period) ?? retentionPeriod);
-      setDataEncryption((data.dataEncryption ?? s.data_encryption) ?? dataEncryption);
-      setAuditLogging((data.auditLogging ?? s.audit_logging) ?? auditLogging);
-      setExportFormat((data.exportFormat ?? s.export_format) ?? exportFormat);
-      setAutoBackup((data.autoBackup ?? s.auto_backup) ?? autoBackup);
-      setBackupLocation((data.backupLocation ?? s.backup_location) ?? backupLocation);
-
-      // PWA
-      setPwaName((pwa.pwaName ?? s.pwa_name) ?? pwaName);
-      setPwaTheme((pwa.pwaTheme ?? s.pwa_theme) ?? pwaTheme);
-      setOnlineOrderingEnabled((pwa.onlineOrderingEnabled ?? s.online_ordering_enabled) ?? onlineOrderingEnabled);
-      setDefaultBranchForOrders((pwa.defaultBranchForOrders ?? s.default_branch_for_orders) ?? defaultBranchForOrders);
-      setDeliveryEnabled((pwa.deliveryEnabled ?? s.delivery_enabled) ?? deliveryEnabled);
-      setPickupEnabled((pwa.pickupEnabled ?? s.pickup_enabled) ?? pickupEnabled);
-      setMaintenanceMode((pwa.maintenanceMode ?? s.maintenance_mode) ?? maintenanceMode);
-      setPushNotificationsEnabled((pwa.pushNotificationsEnabled ?? s.push_notifications_enabled) ?? pushNotificationsEnabled);
-      if (s.pwa_version) setPwaVersion(s.pwa_version);
 
       // Branch Settings (load if available)
       const branchSettings = (s as any).branchSettings || {};
@@ -1085,25 +1026,6 @@ const SettingsPage: React.FC = () => {
           includeAttendanceSummary,
           enablePerformanceReviews,
           enableEmployeeSelfService
-        },
-        data: {
-          backupFrequency,
-          retentionPeriod,
-          dataEncryption,
-          auditLogging,
-          exportFormat,
-          autoBackup,
-          backupLocation
-        },
-        pwa: {
-          pwaName,
-          pwaTheme,
-          onlineOrderingEnabled,
-          defaultBranchForOrders,
-          deliveryEnabled,
-          pickupEnabled,
-          maintenanceMode,
-          pushNotificationsEnabled
         },
         pos: activeSection === 'pos' ? posSettings : undefined,
         branchSettings: activeSection === 'branches' ? branchSettings : undefined
@@ -2746,305 +2668,6 @@ const SettingsPage: React.FC = () => {
             </div>
           </div>
         </div>
-      </div>
-    </div>
-  );
-
-  const renderDataSettings = () => (
-    <div className="space-y-8">
-      {/* Backup Settings Card */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-        <div className="flex items-center space-x-3 mb-6">
-          <div className="p-2 bg-green-50 rounded-lg">
-            <Download className="w-5 h-5 text-green-600" />
-          </div>
-          <h3 className="text-lg font-semibold text-gray-900">Backup Settings</h3>
-        </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Backup Frequency
-            </label>
-            <select
-              value={backupFrequency}
-              onChange={(e) => setBackupFrequency(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-            >
-              <option value="hourly">Hourly</option>
-              <option value="daily">Daily</option>
-              <option value="weekly">Weekly</option>
-              <option value="monthly">Monthly</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Backup Location
-            </label>
-            <select
-              value={backupLocation}
-              onChange={(e) => setBackupLocation(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-            >
-              <option value="cloud">Cloud Storage</option>
-              <option value="local">Local Storage</option>
-              <option value="both">Both Cloud & Local</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Retention Period (days)
-            </label>
-            <input
-              type="number"
-              value={retentionPeriod}
-              onChange={(e) => setRetentionPeriod(Number(e.target.value))}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-              min="30"
-              max="3650"
-            />
-          </div>
-
-          <div className="flex items-center space-x-3">
-            <input
-              type="checkbox"
-              checked={autoBackup}
-              onChange={(e) => setAutoBackup(e.target.checked)}
-              className="rounded border-gray-300 text-green-600 focus:ring-green-500"
-              id="autoBackup"
-            />
-            <label htmlFor="autoBackup" className="text-sm text-gray-700">
-              Enable automatic backups
-            </label>
-          </div>
-        </div>
-
-        <div className="mt-6 flex space-x-3">
-          <button className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
-            Backup Now
-          </button>
-          <button className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">
-            View Backup History
-          </button>
-        </div>
-      </div>
-
-      {/* Data Security Card */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-        <div className="flex items-center space-x-3 mb-6">
-          <div className="p-2 bg-blue-50 rounded-lg">
-            <Shield className="w-5 h-5 text-blue-600" />
-          </div>
-          <h3 className="text-lg font-semibold text-gray-900">Data Security</h3>
-        </div>
-        
-        <div className="space-y-4">
-          <label className="flex items-center space-x-3">
-            <input
-              type="checkbox"
-              checked={dataEncryption}
-              onChange={(e) => setDataEncryption(e.target.checked)}
-              className="rounded border-gray-300 text-green-600 focus:ring-green-500"
-            />
-            <span className="text-sm text-gray-700">Enable data encryption at rest</span>
-          </label>
-
-          <label className="flex items-center space-x-3">
-            <input
-              type="checkbox"
-              checked={auditLogging}
-              onChange={(e) => setAuditLogging(e.target.checked)}
-              className="rounded border-gray-300 text-green-600 focus:ring-green-500"
-            />
-            <span className="text-sm text-gray-700">Enable audit logging for all data changes</span>
-          </label>
-        </div>
-      </div>
-
-      {/* Export Settings Card */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-        <div className="flex items-center space-x-3 mb-6">
-          <div className="p-2 bg-yellow-50 rounded-lg">
-            <Upload className="w-5 h-5 text-yellow-600" />
-          </div>
-          <h3 className="text-lg font-semibold text-gray-900">Export Settings</h3>
-        </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Default Export Format
-            </label>
-            <select
-              value={exportFormat}
-              onChange={(e) => setExportFormat(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-            >
-              <option value="csv">CSV</option>
-              <option value="xlsx">Excel (XLSX)</option>
-              <option value="pdf">PDF</option>
-              <option value="json">JSON</option>
-            </select>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-
-  const renderPWASettings = () => (
-    <div className="space-y-8">
-      {/* PWA Configuration Card */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-        <div className="flex items-center space-x-3 mb-6">
-          <div className="p-2 bg-indigo-50 rounded-lg">
-            <Smartphone className="w-5 h-5 text-indigo-600" />
-          </div>
-          <h3 className="text-lg font-semibold text-gray-900">PWA Configuration</h3>
-        </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              PWA Name
-            </label>
-            <input
-              type="text"
-              value={pwaName}
-              onChange={(e) => setPwaName(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-              placeholder="Agrivet Kiosk"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Theme Style
-            </label>
-            <select
-              value={pwaTheme}
-              onChange={(e) => setPwaTheme(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-            >
-              <option value="dark-green">Dark Green</option>
-              <option value="light-blue">Light Blue</option>
-              <option value="modern-dark">Modern Dark</option>
-              <option value="classic-light">Classic Light</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Default Branch for Orders
-            </label>
-            <select
-              value={defaultBranchForOrders}
-              onChange={(e) => setDefaultBranchForOrders(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-            >
-              <option value="main">Main Branch</option>
-              <option value="branch1">Branch 1</option>
-              <option value="branch2">Branch 2</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Version
-            </label>
-            <div className="px-4 py-2 border border-gray-300 rounded-lg bg-gray-50">
-              {pwaVersion}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Online Features Card */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-        <div className="flex items-center space-x-3 mb-6">
-          <div className="p-2 bg-green-50 rounded-lg">
-            <Activity className="w-5 h-5 text-green-600" />
-          </div>
-          <h3 className="text-lg font-semibold text-gray-900">Online Features</h3>
-        </div>
-        
-        <div className="space-y-4">
-          <label className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50">
-            <div>
-              <div className="font-medium text-gray-900">Online Ordering</div>
-              <div className="text-sm text-gray-500">Allow customers to place orders online</div>
-            </div>
-            <input
-              type="checkbox"
-              checked={onlineOrderingEnabled}
-              onChange={(e) => setOnlineOrderingEnabled(e.target.checked)}
-              className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-            />
-          </label>
-
-          <label className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50">
-            <div>
-              <div className="font-medium text-gray-900">Delivery Service</div>
-              <div className="text-sm text-gray-500">Enable delivery options for orders</div>
-            </div>
-            <input
-              type="checkbox"
-              checked={deliveryEnabled}
-              onChange={(e) => setDeliveryEnabled(e.target.checked)}
-              className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-            />
-          </label>
-
-          <label className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50">
-            <div>
-              <div className="font-medium text-gray-900">Pickup Orders</div>
-              <div className="text-sm text-gray-500">Allow customers to pick up orders</div>
-            </div>
-            <input
-              type="checkbox"
-              checked={pickupEnabled}
-              onChange={(e) => setPickupEnabled(e.target.checked)}
-              className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-            />
-          </label>
-
-          <label className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50">
-            <div>
-              <div className="font-medium text-gray-900">Push Notifications</div>
-              <div className="text-sm text-gray-500">Send push notifications to app users</div>
-            </div>
-            <input
-              type="checkbox"
-              checked={pushNotificationsEnabled}
-              onChange={(e) => setPushNotificationsEnabled(e.target.checked)}
-              className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-            />
-          </label>
-        </div>
-      </div>
-
-      {/* Maintenance Mode Card */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-        <div className="flex items-center space-x-3 mb-6">
-          <div className="p-2 bg-red-50 rounded-lg">
-            <AlertTriangle className="w-5 h-5 text-red-600" />
-          </div>
-          <h3 className="text-lg font-semibold text-gray-900">Maintenance Mode</h3>
-        </div>
-        
-        <label className="flex items-center justify-between">
-          <div>
-            <div className="font-medium text-gray-900">Enable Maintenance Mode</div>
-            <div className="text-sm text-gray-500">Temporarily disable PWA access for updates</div>
-          </div>
-          <input
-            type="checkbox"
-            checked={maintenanceMode}
-            onChange={(e) => setMaintenanceMode(e.target.checked)}
-            className="rounded border-gray-300 text-red-600 focus:ring-red-500"
-          />
-        </label>
       </div>
     </div>
   );
@@ -5279,8 +4902,6 @@ const SettingsPage: React.FC = () => {
               {activeSection === 'security' && renderSecuritySettings()}
               {activeSection === 'notifications' && renderNotificationSettings()}
               {activeSection === 'hr' && renderHRSettings()}
-              {activeSection === 'pwa' && renderPWASettings()}
-              {activeSection === 'data' && renderDataSettings()}
               {activeSection === 'branches' && renderBranchManagement()}
               {activeSection === 'pos' && renderPosTerminalManagement()}
             </div>
