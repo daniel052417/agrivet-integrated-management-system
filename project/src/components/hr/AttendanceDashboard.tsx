@@ -623,10 +623,16 @@ const AttendanceDashboard: React.FC = () => {
                     Staff Member
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Time In
+                    Morning In
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Time Out
+                    Morning Out
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Afternoon In
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Afternoon Out
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Hours
@@ -670,17 +676,35 @@ const AttendanceDashboard: React.FC = () => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm text-gray-900">
+                        {record.break_start ? new Date(record.break_start).toLocaleTimeString('en-US', { 
+                          hour: '2-digit', 
+                          minute: '2-digit' 
+                        }) : '-'}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-900">
+                        {record.break_end ? new Date(record.break_end).toLocaleTimeString('en-US', { 
+                          hour: '2-digit', 
+                          minute: '2-digit' 
+                        }) : '-'}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-900">
                         {record.time_out ? new Date(record.time_out).toLocaleTimeString('en-US', { 
                           hour: '2-digit', 
                           minute: '2-digit' 
                         }) : (
-                          <button
-                            onClick={() => handleCheckOut(record.id)}
-                            className="text-blue-600 hover:text-blue-900 flex items-center"
-                          >
-                            <LogOut className="w-4 h-4 mr-1" />
-                            Check Out
-                          </button>
+                          record.break_end && (
+                            <button
+                              onClick={() => handleCheckOut(record.id)}
+                              className="text-blue-600 hover:text-blue-900 flex items-center"
+                            >
+                              <LogOut className="w-4 h-4 mr-1" />
+                              Check Out
+                            </button>
+                          )
                         )}
                       </div>
                     </td>

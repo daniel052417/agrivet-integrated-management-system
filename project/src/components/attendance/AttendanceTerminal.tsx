@@ -1323,6 +1323,10 @@ const AttendanceTerminal: React.FC = () => {
         recordedTime = actualAction === 'timein' ? attendanceRecord.break_end : attendanceRecord.time_out;
       }
       
+      // Note: Morning time out is stored in break_start (lunch break start)
+      // Afternoon time in is stored in break_end (lunch break end)
+      // Afternoon time out is stored in time_out
+      
       console.log(`⏰ Recorded time for ${actualSession} ${actualAction}:`, recordedTime);
 
       const formattedTime = recordedTime 

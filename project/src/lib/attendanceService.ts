@@ -401,7 +401,7 @@ class AttendanceService {
       const morningHours = morningMinutes / 60;
       console.log('⏱️ Morning hours calculated:', morningHours);
 
-      // Update record with morning time out (stored in break_start)
+      // Update record with morning time out (stored in break_start as lunch break start)
       console.log('🔄 Updating attendance record:', {
         id: existing.id,
         break_start: timeOutIso,
@@ -436,8 +436,8 @@ class AttendanceService {
 
       console.log('✅ Morning time out recorded successfully:', {
         id: data.id,
-        break_start: data.break_start,
-        time_in: data.time_in
+        time_in: data.time_in,
+        break_start: data.break_start
       });
       
       return data;
