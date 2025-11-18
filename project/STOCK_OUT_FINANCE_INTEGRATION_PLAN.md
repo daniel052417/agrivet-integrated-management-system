@@ -210,3 +210,4 @@ const convertStockOutToExpense = (stockOut: StockOutTransaction): ExpenseRow => 
 - **Adjustments** depend on whether they result in a loss or just a correction
 
 
+

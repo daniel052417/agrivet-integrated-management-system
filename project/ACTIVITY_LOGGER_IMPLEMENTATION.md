@@ -304,3 +304,4 @@ await activityLogger.logActivity({
 - See `UserActivity.tsx` to understand how activities are displayed
 
 
+

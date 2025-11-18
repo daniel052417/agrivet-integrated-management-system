@@ -269,3 +269,4 @@ After integration, you should see:
 All authentication events are now being logged automatically. The activities will appear in the `UserActivity.tsx` component for monitoring and auditing purposes.
 
 
+

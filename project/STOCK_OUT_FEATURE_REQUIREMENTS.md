@@ -424,3 +424,4 @@ class StockOutService {
 - [ ] Integration tests for full flow
 
 
+
