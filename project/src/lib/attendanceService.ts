@@ -379,8 +379,12 @@ class AttendanceService {
    */
   async recordMorningTimeOut(staffId: string, timeOut?: string): Promise<AttendanceRecord> {
     try {
+      console.log('📝 Recording morning time out for staff:', staffId);
       const timeOutIso = this.normalizeTimestamp(timeOut);
+      console.log('⏰ Time out timestamp:', timeOutIso);
+      
       const existing = await this.getTodayAttendance(staffId);
+      console.log('📋 Existing attendance record:', existing ? { id: existing.id, time_in: existing.time_in, break_start: existing.break_start } : 'null');
 
       if (!existing || !existing.time_in) {
         throw new Error('No morning time in record found. Please record morning time in first.');
@@ -395,8 +399,15 @@ class AttendanceService {
       const timeOutDate = new Date(timeOutIso);
       const morningMinutes = Math.max(0, Math.floor((timeOutDate.getTime() - timeInDate.getTime()) / 60000));
       const morningHours = morningMinutes / 60;
+      console.log('⏱️ Morning hours calculated:', morningHours);
 
-      // Update record with morning time out (stored in break_start)
+      // Update record with morning time out (stored in break_start as lunch break start)
+      console.log('🔄 Updating attendance record:', {
+        id: existing.id,
+        break_start: timeOutIso,
+        updated_at: getManilaTimestamp()
+      });
+      
       const { data, error } = await supabase
         .from('attendance')
         .update({
@@ -407,10 +418,32 @@ class AttendanceService {
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('❌ Supabase update error:', error);
+        console.error('❌ Error details:', {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint
+        });
+        throw error;
+      }
+
+      if (!data) {
+        console.error('❌ Update returned no data');
+        throw new Error('Failed to update attendance record. No data returned.');
+      }
+
+      console.log('✅ Morning time out recorded successfully:', {
+        id: data.id,
+        time_in: data.time_in,
+        break_start: data.break_start
+      });
+      
       return data;
-    } catch (error) {
-      console.error('Error recording morning time out:', error);
+    } catch (error: any) {
+      console.error('❌ Error recording morning time out:', error);
+      console.error('❌ Error stack:', error.stack);
       throw error;
     }
   }

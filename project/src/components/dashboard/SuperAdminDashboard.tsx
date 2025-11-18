@@ -25,7 +25,7 @@ import PromotionsManagement from '../marketing/PromotionsManagement';
 import InsightsAnalytics from '../marketing/InsightsAnalytics';
 // import TemplateManagement from '../marketing/TemplateManagement';
 // import ClientNotifications from '../marketing/ClientNotifications';
-import FacebookIntegration from '../marketing/FacebookIntegration';
+// import FacebookIntegration from '../marketing/FacebookIntegration';
 // import EventCenter from '../reports/EventCenter';
 import ReportsAnalytics from '../reports/ReportsAnalytics';
 import SettingsPage from '../settings/SettingsPage';
@@ -135,8 +135,8 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, onLogou
           //   return <TemplateManagement />;
         // case 'client-notifications':
         //   return <ClientNotifications />;
-        case 'facebook-integration':
-          return <FacebookIntegration />;
+        // case 'facebook-integration':
+        //   return <FacebookIntegration />;
 
       case 'reports':
         return <ReportsAnalytics />;
@@ -192,8 +192,8 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ user, onLogou
       //   return <UserPermissions />;
       
       // New menu items from the updated sidebar
-      case 'sales-pos':
-        return <SalesDashboard />; // Use SalesDashboard for Sales & POS
+      // case 'sales-pos':
+      //   return <SalesDashboard />; // Use SalesDashboard for Sales & POS
       
       
       default:

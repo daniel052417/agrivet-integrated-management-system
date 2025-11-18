@@ -104,6 +104,34 @@ const AttendanceDashboard: React.FC = () => {
   // Combine data error and local error
   const error = dataError || localError;
 
+  // Calculate stats from summary data when in summary view
+  const computedStats = useMemo(() => {
+    if (viewMode === 'summary' && staffSummaries.length > 0) {
+      const totalStaff = staffSummaries.length;
+      const presentDays = staffSummaries.reduce((sum, s) => sum + s.present_days, 0);
+      const absentDays = staffSummaries.reduce((sum, s) => sum + s.absent_days, 0);
+      const lateDays = staffSummaries.reduce((sum, s) => sum + s.late_days, 0);
+      const leaveDays = staffSummaries.reduce((sum, s) => sum + s.leave_days, 0);
+      const totalHours = staffSummaries.reduce((sum, s) => sum + s.total_hours, 0);
+      const totalOvertime = staffSummaries.reduce((sum, s) => sum + s.overtime_hours, 0);
+      const totalWorkingDays = staffSummaries.reduce((sum, s) => sum + s.total_days, 0);
+      const attendanceRate = totalWorkingDays > 0 ? (presentDays / totalWorkingDays) * 100 : 0;
+
+      return {
+        totalStaff,
+        presentToday: presentDays,
+        absentToday: absentDays,
+        lateToday: lateDays,
+        onLeaveToday: leaveDays,
+        averageHours: totalStaff > 0 ? totalHours / totalStaff : 0,
+        totalOvertime,
+        attendanceRate
+      };
+    }
+    // Use hook stats for daily view
+    return stats;
+  }, [viewMode, staffSummaries, stats]);
+
   useEffect(() => {
     loadInitialData();
     loadHRSettings();
@@ -420,9 +448,9 @@ const AttendanceDashboard: React.FC = () => {
         <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">Present Today</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.presentToday}</p>
-              <p className="text-xs text-gray-500 mt-1">{stats.attendanceRate.toFixed(1)}% attendance rate</p>
+              <p className="text-sm font-medium text-gray-600">Present</p>
+              <p className="text-2xl font-bold text-gray-900">{computedStats.presentToday}</p>
+              <p className="text-xs text-gray-500 mt-1">{computedStats.attendanceRate.toFixed(1)}% attendance rate</p>
             </div>
             <div className="p-3 bg-green-100 rounded-lg">
               <CheckCircle className="w-6 h-6 text-green-600" />
@@ -433,8 +461,8 @@ const AttendanceDashboard: React.FC = () => {
         <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">Absent Today</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.absentToday}</p>
+              <p className="text-sm font-medium text-gray-600">Absent</p>
+              <p className="text-2xl font-bold text-gray-900">{computedStats.absentToday}</p>
               <p className="text-xs text-gray-500 mt-1">Requires attention</p>
             </div>
             <div className="p-3 bg-red-100 rounded-lg">
@@ -447,7 +475,7 @@ const AttendanceDashboard: React.FC = () => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600">Late Arrivals</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.lateToday}</p>
+              <p className="text-2xl font-bold text-gray-900">{computedStats.lateToday}</p>
               <p className="text-xs text-gray-500 mt-1">Monitor punctuality</p>
             </div>
             <div className="p-3 bg-yellow-100 rounded-lg">
@@ -460,7 +488,7 @@ const AttendanceDashboard: React.FC = () => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600">Total Overtime</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.totalOvertime.toFixed(1)}h</p>
+              <p className="text-2xl font-bold text-gray-900">{computedStats.totalOvertime.toFixed(1)}h</p>
               <p className="text-xs text-gray-500 mt-1">Extra compensation</p>
             </div>
             <div className="p-3 bg-purple-100 rounded-lg">
@@ -595,10 +623,16 @@ const AttendanceDashboard: React.FC = () => {
                     Staff Member
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Time In
+                    Morning In
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Time Out
+                    Morning Out
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Afternoon In
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Afternoon Out
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Hours
@@ -642,17 +676,35 @@ const AttendanceDashboard: React.FC = () => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm text-gray-900">
+                        {record.break_start ? new Date(record.break_start).toLocaleTimeString('en-US', { 
+                          hour: '2-digit', 
+                          minute: '2-digit' 
+                        }) : '-'}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-900">
+                        {record.break_end ? new Date(record.break_end).toLocaleTimeString('en-US', { 
+                          hour: '2-digit', 
+                          minute: '2-digit' 
+                        }) : '-'}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-900">
                         {record.time_out ? new Date(record.time_out).toLocaleTimeString('en-US', { 
                           hour: '2-digit', 
                           minute: '2-digit' 
                         }) : (
-                          <button
-                            onClick={() => handleCheckOut(record.id)}
-                            className="text-blue-600 hover:text-blue-900 flex items-center"
-                          >
-                            <LogOut className="w-4 h-4 mr-1" />
-                            Check Out
-                          </button>
+                          record.break_end && (
+                            <button
+                              onClick={() => handleCheckOut(record.id)}
+                              className="text-blue-600 hover:text-blue-900 flex items-center"
+                            >
+                              <LogOut className="w-4 h-4 mr-1" />
+                              Check Out
+                            </button>
+                          )
                         )}
                       </div>
                     </td>
@@ -730,6 +782,9 @@ const AttendanceDashboard: React.FC = () => {
             </h3>
             <p className="text-sm text-gray-600 mt-1">
               Summary used for payroll allowance computation
+              {!hrSettings?.include_allowance_in_pay && (
+                <span className="ml-2 text-orange-600 italic">(Allowances disabled in HR settings)</span>
+              )}
             </p>
           </div>
           <div className="overflow-x-auto">
@@ -802,12 +857,20 @@ const AttendanceDashboard: React.FC = () => {
                       )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-bold text-green-600">
-                        {summary.allowance_eligible_days} days
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        ₱{(summary.allowance_eligible_days * 100).toLocaleString()} allowance
-                      </div>
+                      {hrSettings?.include_allowance_in_pay ? (
+                        <>
+                          <div className="text-sm font-bold text-green-600">
+                            {summary.allowance_eligible_days} days
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            ₱{(summary.allowance_eligible_days * 100).toLocaleString()} allowance
+                          </div>
+                        </>
+                      ) : (
+                        <div className="text-sm text-gray-400 italic">
+                          Allowances disabled
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}

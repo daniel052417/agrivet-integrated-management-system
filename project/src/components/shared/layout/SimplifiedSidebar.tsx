@@ -183,7 +183,7 @@ const SimplifiedSidebar: React.FC<SimplifiedSidebarProps> = ({ user, activeSecti
         { id: 'promotions-announcements', label: 'Promotions & Announcements', icon: Tag, category: 'Marketing'},
         // { id: 'insights-analytics', label: 'Insights & Analytics', icon: TrendingUp, category: 'Marketing' },
         // { id: 'client-notifications', label: 'Client Notifications', icon: Gift, category: 'Marketing' },
-        { id: 'facebook-integration', label: 'Facebook Integration', icon: Users, category: 'Marketing' },
+        // { id: 'facebook-integration', label: 'Facebook Integration', icon: Users, category: 'Marketing' },
       ]
     },
     

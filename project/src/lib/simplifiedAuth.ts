@@ -53,7 +53,7 @@ export const ROLE_SIDEBAR_CONFIG = {
       'finance', 'expenses', 'cash-flow',
       'staff-user-management', 'user-accounts', 'session-history', 'user-roles-overview', 'roles-permissions', 'activity-logs',
       'hr', 'staff', 'attendance-dashboard', 'leave-management', 'hr-analytics', 'payroll',
-      'marketing', 'marketing-overview', 'promotions-announcements', 'facebook-integration',
+      'marketing', 'marketing-overview', 'promotions-announcements',
       'reports','settings'
     ]
   },

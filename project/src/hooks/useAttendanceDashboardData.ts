@@ -330,25 +330,37 @@ export const useAttendanceDashboardData = (): UseAttendanceDashboardDataReturn =
       setError(null);
       const filterConfig = getFilterConfig();
 
-      // If using RPC function, we might need to pass branch_id as parameter
-      // For now, fetch all and filter client-side, or modify RPC to accept branch_id
+      // Call the RPC function to get attendance summary
       const { data, error: fetchError } = await supabase
         .rpc('get_attendance_summary', {
           p_start_date: startDate,
           p_end_date: endDate
         });
 
-      if (fetchError) throw fetchError;
+      if (fetchError) {
+        console.error('Error calling get_attendance_summary:', fetchError);
+        // If function doesn't exist, provide helpful error message
+        if (fetchError.code === '42883' || fetchError.message?.includes('does not exist')) {
+          throw new Error('Attendance summary function not found. Please run database migrations.');
+        }
+        throw fetchError;
+      }
+
+      // Get staff branch information for filtering
+      let staffWithBranches: Array<{ id: string; branch_id: string | null }> = [];
+      if (filterConfig.shouldFilter && filterConfig.branchId) {
+        const { data: staffData } = await supabase
+          .from('staff')
+          .select('id, branch_id')
+          .eq('is_active', true);
+        staffWithBranches = staffData || [];
+      }
 
       // Filter by branch_id if needed
       if (filterConfig.shouldFilter && filterConfig.branchId) {
-        // Note: This requires the RPC function to return branch_id in the summary
-        // If not available, we'd need to filter differently
-        // For now, filter if branch_id is available in the result
         const filteredData = (data || []).filter((summary: any) => {
-          // If summary includes branch_id or staff info with branch_id, filter it
-          return summary.branch_id === filterConfig.branchId || 
-                 summary.staff?.branch_id === filterConfig.branchId;
+          const staffBranch = staffWithBranches.find(s => s.id === summary.staff_id);
+          return staffBranch?.branch_id === filterConfig.branchId;
         });
         setStaffSummaries(filteredData);
       } else {
@@ -357,6 +369,8 @@ export const useAttendanceDashboardData = (): UseAttendanceDashboardDataReturn =
     } catch (err: any) {
       console.error('Error loading attendance summary:', err);
       setError(err.message || 'Failed to load attendance summary');
+      // Set empty array on error to prevent UI issues
+      setStaffSummaries([]);
     } finally {
       setLoading(false);
     }

@@ -77,6 +77,8 @@ interface Employee {
 
 const PayrollCompensation: React.FC = () => {
   const [success, setSuccess] = useState<string | null>(null);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'periods' | 'records'>('periods');
   const [selectedPeriod, setSelectedPeriod] = useState<string>('');
   const [selectedBranch, setSelectedBranch] = useState<string>('all');
@@ -99,8 +101,8 @@ const PayrollCompensation: React.FC = () => {
     payrollRecords: hookPayrollRecords,
     branches,
     hrSettings,
-    loading,
-    error,
+    loading: hookLoading,
+    error: hookError,
     refreshPeriods,
     refreshRecords,
     loadBranches,
@@ -134,73 +136,6 @@ const PayrollCompensation: React.FC = () => {
       refreshRecords(selectedPeriod);
     }
   }, [selectedPeriod, refreshRecords]);
-
-  const computePayrollWithSettings = (record: any, attendance: any) => {
-  let grossPay = record.base_salary || 0;
-  let deductions = 0;
-  
-  // Add allowance if enabled
-  if (hrSettings?.include_allowance_in_pay && record.days_present) {
-    grossPay += (record.days_present * record.daily_allowance);
-  }
-  
-  // Deduct for absences if enabled
-  if (hrSettings?.enable_deduction_for_absences && attendance.absentDays) {
-    const dailyRate = (record.base_salary || 0) / 26; // Semi-monthly
-    grossPay -= (attendance.absentDays * dailyRate);
-  }
-  
-  // Add overtime if enabled
-  if (hrSettings?.enable_overtime_tracking && attendance.overtimeHours) {
-    const hourlyRate = (record.base_salary || 0) / 208; // 26 days * 8 hours
-    const overtimePay = attendance.overtimeHours * hourlyRate * 1.25;
-    grossPay += overtimePay;
-  }
-  
-  // Calculate deductions
-  if (hrSettings?.enable_tax_computation) {
-    deductions += computeTax(grossPay);
-  }
-  
-  if (hrSettings?.include_sss_deductions) {
-    deductions += computeSSS(grossPay);
-  }
-  
-  if (hrSettings?.include_philhealth_deductions) {
-    deductions += computePhilHealth(grossPay);
-  }
-  
-  if (hrSettings?.include_pagibig_deductions) {
-    deductions += computePagIBIG(grossPay);
-  }
-  
-  const netPay = grossPay - deductions;
-  
-  return {
-    grossPay,
-    deductions,
-    netPay
-  };
-};
-
-const computeTax = (income: number) => {
-  if (income <= 20833) return 0;
-  if (income <= 33332) return (income - 20833) * 0.20;
-  if (income <= 66666) return 2500 + (income - 33332) * 0.25;
-  return income * 0.15;
-};
-
-const computeSSS = (income: number) => {
-  return Math.min(income * 0.045, 900);
-};
-
-const computePhilHealth = (income: number) => {
-  return Math.min(income * 0.025, 2400);
-};
-
-const computePagIBIG = (income: number) => {
-  return income <= 1500 ? income * 0.01 : income * 0.02;
-};
 
   const handleCreatePeriod = async (e: React.FormEvent) => {
     e.preventDefault();
