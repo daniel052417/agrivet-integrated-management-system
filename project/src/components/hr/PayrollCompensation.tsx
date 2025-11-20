@@ -398,7 +398,9 @@ const PayrollCompensation: React.FC = () => {
             <div class="row"><span class="label">PhilHealth:</span><span>₱${record.philhealth_deduction.toLocaleString('en-PH', {minimumFractionDigits: 2})}</span></div>
             <div class="row"><span class="label">Pag-IBIG:</span><span>₱${record.pagibig_deduction.toLocaleString('en-PH', {minimumFractionDigits: 2})}</span></div>
             ${record.cash_advances > 0 ? `<div class="row"><span class="label">Cash Advances:</span><span>₱${record.cash_advances.toLocaleString('en-PH', {minimumFractionDigits: 2})}</span></div>` : ''}
-            ${(hrSettings?.enable_late_deductions || record.other_deductions > 0) ? `<div class="row"><span class="label">Late Deductions / Other:</span><span>₱${record.other_deductions.toLocaleString('en-PH', {minimumFractionDigits: 2})}</span></div>` : ''}
+            ${hrSettings?.enable_deduction_for_absences && record.other_deductions > 0 ? `<div class="row"><span class="label">${hrSettings?.enable_late_deductions ? 'Absence & Late Deductions / Other' : 'Absence Deductions / Other'}:</span><span>₱${record.other_deductions.toLocaleString('en-PH', {minimumFractionDigits: 2})}</span></div>` : ''}
+            ${!hrSettings?.enable_deduction_for_absences && hrSettings?.enable_late_deductions && record.other_deductions > 0 ? `<div class="row"><span class="label">Late Deductions / Other:</span><span>₱${record.other_deductions.toLocaleString('en-PH', {minimumFractionDigits: 2})}</span></div>` : ''}
+            ${!hrSettings?.enable_deduction_for_absences && !hrSettings?.enable_late_deductions && record.other_deductions > 0 ? `<div class="row"><span class="label">Other Deductions:</span><span>₱${record.other_deductions.toLocaleString('en-PH', {minimumFractionDigits: 2})}</span></div>` : ''}
             <div class="row total"><span class="label">Total Deductions:</span><span>₱${record.total_deductions.toLocaleString('en-PH', {minimumFractionDigits: 2})}</span></div>
           </div>
 
@@ -1348,9 +1350,25 @@ const PayrollCompensation: React.FC = () => {
                       <span className="font-medium">{formatCurrency(selectedRecord.cash_advances)}</span>
                     </div>
                   )}
-                  {(hrSettings?.enable_late_deductions || selectedRecord.other_deductions > 0) && (
+                  {hrSettings?.enable_deduction_for_absences && selectedRecord.other_deductions > 0 && (
+                    <div className="flex justify-between py-2 border-b border-gray-200">
+                      <span className="text-gray-600">
+                        {hrSettings?.enable_late_deductions 
+                          ? 'Absence & Late Deductions / Other'
+                          : 'Absence Deductions / Other'}
+                      </span>
+                      <span className="font-medium text-red-600">{formatCurrency(selectedRecord.other_deductions)}</span>
+                    </div>
+                  )}
+                  {!hrSettings?.enable_deduction_for_absences && hrSettings?.enable_late_deductions && selectedRecord.other_deductions > 0 && (
                     <div className="flex justify-between py-2 border-b border-gray-200">
                       <span className="text-gray-600">Late Deductions / Other</span>
+                      <span className="font-medium text-orange-600">{formatCurrency(selectedRecord.other_deductions)}</span>
+                    </div>
+                  )}
+                  {!hrSettings?.enable_deduction_for_absences && !hrSettings?.enable_late_deductions && selectedRecord.other_deductions > 0 && (
+                    <div className="flex justify-between py-2 border-b border-gray-200">
+                      <span className="text-gray-600">Other Deductions</span>
                       <span className="font-medium text-orange-600">{formatCurrency(selectedRecord.other_deductions)}</span>
                     </div>
                   )}

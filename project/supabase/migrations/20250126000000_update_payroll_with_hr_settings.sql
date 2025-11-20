@@ -93,6 +93,7 @@ DECLARE
     v_overtime_hours DECIMAL := 0;
     v_overtime_pay DECIMAL := 0;
     v_absent_days INTEGER := 0;
+    v_absence_deduction DECIMAL := 0;
     v_total_working_days INTEGER := 0;
     v_days_with_records INTEGER := 0;
     v_gross_pay DECIMAL := 0;
@@ -235,6 +236,7 @@ BEGIN
         v_days_present := 0;
         v_overtime_hours := 0;
         v_absent_days := 0;
+        v_absence_deduction := 0;
         v_total_allowance := 0;
         v_overtime_pay := 0;
         v_gross_pay := v_base_salary;
@@ -302,7 +304,8 @@ BEGIN
             v_gross_pay := v_gross_pay + v_total_allowance;
         END IF;
         
-        -- Deduct for absences if enabled
+        -- Calculate absence deduction if enabled
+        -- This will be included in total_deductions, not subtracted from gross_pay
         IF v_enable_deduction_for_absences AND v_absent_days > 0 THEN
             DECLARE
                 v_daily_rate DECIMAL;
@@ -315,7 +318,9 @@ BEGIN
                     v_daily_rate := v_base_salary / 26.0;
                 END IF;
                 
-                v_gross_pay := v_gross_pay - (v_absent_days * v_daily_rate);
+                -- Calculate absence deduction amount
+                v_absence_deduction := v_absent_days * v_daily_rate;
+                -- Note: This is NOT subtracted from gross_pay here, but added to total_deductions instead
             END;
         END IF;
         
@@ -405,8 +410,8 @@ BEGIN
             END IF;
         END IF;
         
-        -- Calculate total deductions (including late deductions)
-        v_total_deductions := v_tax_deduction + v_sss_deduction + v_philhealth_deduction + v_pagibig_deduction + v_late_deduction;
+        -- Calculate total deductions (including absence deduction, late deductions, and other deductions)
+        v_total_deductions := v_tax_deduction + v_sss_deduction + v_philhealth_deduction + v_pagibig_deduction + v_absence_deduction + v_late_deduction;
         
         -- Calculate net pay
         v_net_pay := v_gross_pay - v_total_deductions;
@@ -454,7 +459,7 @@ BEGIN
             v_philhealth_deduction,
             v_pagibig_deduction,
             0, -- cash_advances
-            v_late_deduction, -- other_deductions (includes late deductions)
+            v_absence_deduction + v_late_deduction, -- other_deductions (includes absence and late deductions)
             v_total_deductions,
             v_net_pay,
             CASE 
