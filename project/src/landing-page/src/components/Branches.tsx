@@ -1,4 +1,4 @@
-import { MapPin, Phone, Clock, Navigation, Loader2 } from 'lucide-react';
+import { MapPin, Phone, Clock, Navigation, Loader2, Map, Eye, Copy, Check } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import SanIsidro from '../assets/SanIsidro.jpg';
 import Poblacion from '../assets/Poblacion.jpg';
@@ -11,6 +11,8 @@ const Branches = () => {
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [mapViewMode, setMapViewMode] = useState<'map' | 'street'>('street'); // 'map' for map view, 'street' for street view
+  const [copiedLink, setCopiedLink] = useState<string | null>(null);
 
   // Fallback images
   const fallbackImages = [Lawaan, SanIsidro, Poblacion];
@@ -85,31 +87,71 @@ const Branches = () => {
   };
 
   // Branch-specific Google Maps embed URLs
-  const branchMapEmbedUrls: Record<string, string> = {
-    'mohon': 'https://www.google.com/maps/embed?pb=!4v1763062440871!6m8!1m7!1s0D5DGq2FmHnGSbElrkUqVA!2m2!1d10.25065433356093!2d123.8340852489282!3f61.65461!4f0!5f0.7820865974627469',
-    'san isidro': 'https://www.google.com/maps/embed?pb=!4v1763062462191!6m8!1m7!1su-8c79Npz9F9ZlmYz6Qv4A!2m2!1d10.25575864567557!2d123.839621346054!3f294.06165!4f0!5f0.7820865974627469',
-    'poblacion': 'https://www.google.com/maps/embed?pb=!4v1763062393450!6m8!1m7!1stK2-Z9EFHZmSl-1kUxqoEg!2m2!1d10.243592137193!2d123.8475750357959!3f237.4895!4f0!5f0.7820865974627469',
+  const branchMapUrls: Record<string, { street: string; map: string }> = {
+    'mohon': {
+      street: 'https://www.google.com/maps/embed?pb=!4v1763605453149!6m8!1m7!1s0D5DGq2FmHnGSbElrkUqVA!2m2!1d10.25065433356093!2d123.8340852489282!3f26.85369128213887!4f-4.329887757206507!5f0.7820865974627469',
+      map: 'https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3926.135495210314!2d123.8340852489282!3d10.25065433356093!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x33a99d9a62e30699%3A0xcf6125ca3eda639b!2sTiongson%20Agrivet!5e0!3m2!1sen!2sph!4v1763605466483!5m2!1sen!2sph'
+    },
+    'san isidro': {
+      street: 'https://www.google.com/maps/embed?pb=!4v1763605379302!6m8!1m7!1su-8c79Npz9F9ZlmYz6Qv4A!2m2!1d10.25575864567557!2d123.839621346054!3f294.06165!4f0!5f0.7820865974627469',
+      map: 'https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3926.072227176911!2d123.839621346054!3d10.25575864567557!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x33a99df4e5c0f6f7%3A0x7cf680cf4a4ea0d6!2sTiongson%20Pet%20Store%20and%20General%20Merchandise!5e0!3m2!1sen!2sph!4v1763605422124!5m2!1sen!2sph'
+    },
+    'poblacion': {
+      street: 'https://www.google.com/maps/embed?pb=!4v1763605335220!6m8!1m7!1stK2-Z9EFHZmSl-1kUxqoEg!2m2!1d10.243592137193!2d123.8475750357959!3f237.4895!4f0!5f0.7820865974627469',
+      map: 'https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3926.222979871238!2d123.8475750357959!3d10.243592137193!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x33a99d001be0ca47%3A0xb7f2313a0cafe191!2sTiongson%20Rice%20%26%20Agrivet%20Supply!5e0!3m2!1sen!2sph!4v1763605351612!5m2!1sen!2sph'
+    },
   };
 
   // Helper function to get Google Maps embed URL for a branch
-  const getMapEmbedUrl = (branchName: string, latitude: number | null, longitude: number | null): string => {
+  const getMapEmbedUrl = (branchName: string, latitude: number | null, longitude: number | null, viewMode: 'map' | 'street'): string => {
     // Normalize branch name for matching (lowercase, remove extra spaces)
     const normalizedName = branchName.toLowerCase().trim();
     
     // Try to find exact match or partial match
-    for (const [key, url] of Object.entries(branchMapEmbedUrls)) {
+    for (const [key, urls] of Object.entries(branchMapUrls)) {
       if (normalizedName.includes(key) || key.includes(normalizedName)) {
-        return url;
+        return viewMode === 'street' ? urls.street : urls.map;
       }
     }
     
-    // Fallback: use coordinates if available
+    // Fallback: use coordinates to generate map embed if available
     if (latitude && longitude) {
-      return `https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3929.5!2d${longitude}!3d${latitude}!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x0%3A0x0!2z${latitude}%2C${longitude}!5e0!3m2!1sen!2sph!4v1234567890!5m2!1sen!2sph`;
+      if (viewMode === 'map') {
+        // Map view with pin - using Google Maps embed API format
+        return `https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3929.5!2d${longitude}!3d${latitude}!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x0%3A0x0!2z${latitude}%2C${longitude}!5e0!3m2!1sen!2sph!4v${Date.now()}!5m2!1sen!2sph`;
+      } else {
+        // Street view fallback - use coordinates
+        return `https://www.google.com/maps/embed?pb=!4v${Date.now()}!6m8!1m7!1s0x0%3A0x0!2m2!1d${latitude}!2d${longitude}!3f0!4f0!5f0.7820865974627469`;
+      }
     }
     
     // Final fallback: default to Mohon Branch
-    return branchMapEmbedUrls['mohon'];
+    return viewMode === 'street' ? branchMapUrls['mohon'].street : branchMapUrls['mohon'].map;
+  };
+
+  // Helper function to generate Google Maps link URL (for copying)
+  const generateMapLinkUrl = (branchName: string, latitude: number | null, longitude: number | null, address: string): string => {
+    // Normalize branch name for matching
+    const normalizedName = branchName.toLowerCase().trim();
+    
+    // Try to match branch name to get the place ID or use coordinates
+    if (latitude && longitude) {
+      return `https://www.google.com/maps?q=${latitude},${longitude}`;
+    }
+    
+    // Fallback to search by address
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
+  };
+
+  // Function to copy link to clipboard
+  const copyLinkToClipboard = async (link: string, branchName: string) => {
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopiedLink(branchName);
+      setTimeout(() => setCopiedLink(null), 2000);
+    } catch (err) {
+      console.error('Failed to copy link:', err);
+    }
   };
 
   // Helper function to generate Google Maps directions URL
@@ -236,6 +278,27 @@ const Branches = () => {
                           <Navigation size={18} />
                           <span>Get Directions</span>
                         </a>
+                        
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const mapLink = generateMapLinkUrl(branch.name, branch.latitude, branch.longitude, fullAddress);
+                            copyLinkToClipboard(mapLink, branch.name);
+                          }}
+                          className="w-full flex items-center justify-center space-x-2 px-4 py-3 bg-gray-50 text-gray-700 rounded-lg hover:bg-gray-100 transition-colors duration-300 font-medium"
+                        >
+                          {copiedLink === branch.name ? (
+                            <>
+                              <Check size={18} className="text-green-600" />
+                              <span className="text-green-600">Copied!</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy size={18} />
+                              <span>Copy Link Address</span>
+                            </>
+                          )}
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -249,17 +312,60 @@ const Branches = () => {
         {branches.length > 0 && (
           <AnimatedSection animation="zoomIn" delay={0.5} duration={0.8}>
             <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
+              {/* Map View Toggle */}
+              <div className="bg-gray-50 px-6 py-4 border-b border-gray-200">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-4">
+                    <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
+                      <MapPin className="w-6 h-6 text-green-600" />
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-600">Currently viewing</p>
+                      <p className="text-lg font-bold text-gray-900">{branches[selectedBranch].name}</p>
+                    </div>
+                  </div>
+                  
+                  {/* View Mode Toggle */}
+                  <div className="flex items-center space-x-3 bg-white rounded-lg p-1 shadow-sm">
+                    <button
+                      onClick={() => setMapViewMode('street')}
+                      className={`flex items-center space-x-2 px-4 py-2 rounded-md transition-all duration-200 ${
+                        mapViewMode === 'street'
+                          ? 'bg-green-500 text-white shadow-md'
+                          : 'text-gray-600 hover:bg-gray-100'
+                      }`}
+                    >
+                      <Eye size={18} />
+                      <span className="text-sm font-medium">Street View</span>
+                    </button>
+                    <button
+                      onClick={() => setMapViewMode('map')}
+                      className={`flex items-center space-x-2 px-4 py-2 rounded-md transition-all duration-200 ${
+                        mapViewMode === 'map'
+                          ? 'bg-green-500 text-white shadow-md'
+                          : 'text-gray-600 hover:bg-gray-100'
+                      }`}
+                    >
+                      <Map size={18} />
+                      <span className="text-sm font-medium">Map View</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
               {/* Google Maps Embed */}
               <div className="aspect-video relative overflow-hidden">
                 {(() => {
                   const selectedBranchData = branches[selectedBranch];
                   const fullAddress = `${selectedBranchData.address}, ${selectedBranchData.city}, ${selectedBranchData.province}${selectedBranchData.postal_code ? ` ${selectedBranchData.postal_code}` : ''}`;
-                  const mapEmbedUrl = getMapEmbedUrl(selectedBranchData.name, selectedBranchData.latitude, selectedBranchData.longitude);
+                  const mapEmbedUrl = getMapEmbedUrl(selectedBranchData.name, selectedBranchData.latitude, selectedBranchData.longitude, mapViewMode);
                   const mapDirectionsUrl = generateMapDirectionsUrl(selectedBranchData.latitude, selectedBranchData.longitude, fullAddress);
+                  const mapLinkUrl = generateMapLinkUrl(selectedBranchData.name, selectedBranchData.latitude, selectedBranchData.longitude, fullAddress);
                   
                   return (
                     <>
                       <iframe
+                        key={`${selectedBranch}-${mapViewMode}`}
                         src={mapEmbedUrl}
                         width="100%"
                         height="100%"
@@ -268,30 +374,43 @@ const Branches = () => {
                         loading="lazy"
                         referrerPolicy="no-referrer-when-downgrade"
                         className="absolute inset-0 w-full h-full"
-                        title={`Map of ${selectedBranchData.name}`}
+                        title={`${mapViewMode === 'map' ? 'Map' : 'Street View'} of ${selectedBranchData.name}`}
                       ></iframe>
 
                       {/* Map Info Bar */}
-                      <div className="bg-gray-50 p-6 border-t border-gray-200">
-                        <div className="flex flex-col md:flex-row justify-between items-center space-y-4 md:space-y-0">
-                          <div className="flex items-center space-x-4">
-                            <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
-                              <MapPin className="w-6 h-6 text-green-600" />
-                            </div>
-                            <div>
-                              <p className="text-sm text-gray-600">Currently viewing</p>
-                              <p className="text-lg font-bold text-gray-900">{selectedBranchData.name}</p>
-                            </div>
+                      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-6">
+                        <div className="flex flex-col md:flex-row justify-between items-center space-y-3 md:space-y-0">
+                          <div className="text-white">
+                            <p className="text-sm opacity-90">{fullAddress}</p>
                           </div>
                           
-                          <a
-                            href={mapDirectionsUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-lg font-semibold hover:shadow-lg transform hover:scale-105 transition-all duration-300"
-                          >
-                            Open in Google Maps
-                          </a>
+                          <div className="flex items-center space-x-3">
+                            <button
+                              onClick={() => copyLinkToClipboard(mapLinkUrl, selectedBranchData.name)}
+                              className="px-4 py-2 bg-white/90 text-gray-700 rounded-lg font-medium hover:bg-white transition-all duration-200 flex items-center space-x-2"
+                            >
+                              {copiedLink === selectedBranchData.name ? (
+                                <>
+                                  <Check size={16} className="text-green-600" />
+                                  <span className="text-green-600">Copied!</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy size={16} />
+                                  <span>Copy Link</span>
+                                </>
+                              )}
+                            </button>
+                            <a
+                              href={mapDirectionsUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-lg font-semibold hover:shadow-lg transform hover:scale-105 transition-all duration-300 flex items-center space-x-2"
+                            >
+                              <Navigation size={18} />
+                              <span>Get Directions</span>
+                            </a>
+                          </div>
                         </div>
                       </div>
                     </>

@@ -19,11 +19,14 @@ import {
   DollarSign,
   Camera,
   Upload,
-  ChevronRight
+  ChevronRight,
+  Printer,
+  Download
 } from 'lucide-react';
 import TouchButton from '../components/shared/TouchButton';
 import Modal from '../components/shared/Modal';
 import MobileBottomSheet from '../components/shared/MobileBottomSheet';
+import TransactionReceipt from '../components/TransactionReceipt';
 import { ProductVariant, CartItem, Customer } from '../../types/pos';
 import { supabase } from '../../lib/supabase';
 import { customAuth } from '../../lib/customAuth';
@@ -49,6 +52,9 @@ const CashierScreen: React.FC = () => {
   const [productQuantities, setProductQuantities] = useState<Record<string, number>>({}); // productId -> quantity in cart
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [paymentSuccess, setPaymentSuccess] = useState(false);
+  const [showReceipt, setShowReceipt] = useState(false);
+  const [transactionResult, setTransactionResult] = useState<any>(null);
+  const [receiptData, setReceiptData] = useState<any>(null);
   const barcodeInputRef = useRef<HTMLInputElement>(null);
   const viewModeManuallySet = useRef(false); // Track if user manually changed view mode
   
@@ -869,20 +875,78 @@ const CashierScreen: React.FC = () => {
 
       console.log('POS session updated successfully');
 
+      // Store transaction result for receipt
+      setTransactionResult(result);
+      
+      // Prepare receipt data
+      const now = new Date();
+      const receiptNumber = result?.transaction_number || `TXN-${Date.now()}`;
+      
+      // Get branch name for receipt
+      let receiptBranchName = branchName || 'Branch';
+      if (!branchName || branchName === 'N/A') {
+        try {
+          const { data: branchData } = await supabase
+            .from('branches')
+            .select('name')
+            .eq('id', branchId)
+            .eq('is_active', true)
+            .single();
+          if (branchData?.name) {
+            receiptBranchName = branchData.name;
+          }
+        } catch (error) {
+          console.error('Error loading branch name for receipt:', error);
+        }
+      }
+      
+      const receiptInfo = {
+        receiptNumber,
+        date: now.toLocaleDateString('en-PH', { 
+          year: 'numeric', 
+          month: '2-digit', 
+          day: '2-digit' 
+        }),
+        time: now.toLocaleTimeString('en-PH', { 
+          hour: '2-digit', 
+          minute: '2-digit',
+          second: '2-digit'
+        }),
+        cashier: currentUser ? `${currentUser.first_name || ''} ${currentUser.last_name || ''}`.trim() || currentUser.email : 'Cashier',
+        items: cart.map(item => ({
+          name: item.product.name,
+          quantity: item.quantity,
+          unit: item.selectedUnit?.unit_label || item.product.unit_of_measure,
+          price: item.unitPrice,
+          total: item.lineTotal
+        })),
+        subtotal: calculateSubtotal(),
+        discount: cart.reduce((sum, item) => sum + (item.discount || 0), 0),
+        tax: 0,
+        total: calculateTotal(),
+        paymentMethod: paymentMethod,
+        amountReceived: paymentMethod === 'cash' ? parseFloat(cashAmount) : calculateTotal(),
+        change: paymentMethod === 'cash' ? parseFloat(cashAmount) - calculateTotal() : 0,
+        referenceNumber: paymentMethod === 'gcash' ? gcashReferenceNumber : undefined,
+        customer: selectedCustomer ? {
+          name: `${selectedCustomer.first_name} ${selectedCustomer.last_name}`,
+          phone: selectedCustomer.phone || 'N/A',
+          code: selectedCustomer.customer_code || selectedCustomer.customer_number
+        } : undefined,
+        branchName: receiptBranchName
+      };
+      
+      setReceiptData(receiptInfo);
+      
       // Show success message
       setPaymentSuccess(true);
       
-      // Reset form after a short delay
+      // Show receipt after a short delay
       setTimeout(() => {
-        setCart([]);
-        setSelectedCustomer(null);
-        setPaymentMethod(null);
-        setCashAmount('');
-        setGcashReferenceNumber('');
         setShowPaymentModal(false);
         setPaymentSuccess(false);
-        setIsProcessingPayment(false);
-      }, 2000);
+        setShowReceipt(true);
+      }, 1500);
 
     } catch (error) {
       console.error('Payment processing failed:', error);
@@ -1996,6 +2060,43 @@ const CashierScreen: React.FC = () => {
           )}
         </div>
       </Modal>
+
+      {/* Receipt Modal */}
+      {showReceipt && receiptData && (
+        <Modal
+          isOpen={showReceipt}
+          onClose={() => {
+            setShowReceipt(false);
+            // Reset everything after closing receipt
+            setCart([]);
+            setSelectedCustomer(null);
+            setPaymentMethod(null);
+            setCashAmount('');
+            setGcashReferenceNumber('');
+            setTransactionResult(null);
+            setReceiptData(null);
+            setIsProcessingPayment(false);
+          }}
+          title="Transaction Receipt"
+          size="lg"
+        >
+          <TransactionReceipt
+            receiptData={receiptData}
+            onClose={() => {
+              setShowReceipt(false);
+              // Reset everything after closing receipt
+              setCart([]);
+              setSelectedCustomer(null);
+              setPaymentMethod(null);
+              setCashAmount('');
+              setGcashReferenceNumber('');
+              setTransactionResult(null);
+              setReceiptData(null);
+              setIsProcessingPayment(false);
+            }}
+          />
+        </Modal>
+      )}
 
       <input
         ref={barcodeInputRef}

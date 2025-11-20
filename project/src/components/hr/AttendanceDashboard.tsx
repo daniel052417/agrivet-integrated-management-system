@@ -155,22 +155,27 @@ const AttendanceDashboard: React.FC = () => {
     const now = new Date();
     const timeIn = now.toISOString();
     
-    // Use HR settings for late threshold
+    // Use HR settings for late threshold and work_schedule
     let isLate = false;
     let lateMinutes = 0;
     
     if (hrSettings?.auto_mark_late_employees) {
-      const standardTime = new Date(now);
-      standardTime.setHours(8, 0, 0, 0);
+      // Fetch staff work_schedule
+      const { data: staffData } = await supabase
+        .from('staff')
+        .select('work_schedule')
+        .eq('id', staffId)
+        .single();
       
-      // Use the threshold from settings
+      // Import work schedule utilities
+      const { parseWorkSchedule, calculateLateStatus } = await import('../../lib/workScheduleUtils');
+      
+      const workSchedule = parseWorkSchedule(staffData?.work_schedule);
       const thresholdMinutes = hrSettings.late_threshold_minutes || 15;
-      const minutesDiff = Math.floor((now.getTime() - standardTime.getTime()) / 60000);
       
-      if (minutesDiff > thresholdMinutes) {
-        isLate = true;
-        lateMinutes = minutesDiff;
-      }
+      const lateStatus = calculateLateStatus(now, workSchedule, thresholdMinutes);
+      isLate = lateStatus.isLate;
+      lateMinutes = lateStatus.lateMinutes;
     }
 
     const { error: insertError } = await supabase

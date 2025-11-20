@@ -20,6 +20,9 @@ interface HRSettings {
   include_attendance_summary: boolean;
   enable_performance_reviews: boolean;
   enable_employee_self_service: boolean;
+  enable_late_deductions: boolean;
+  late_deduction_type: 'per_occurrence' | 'per_minute';
+  late_deduction_amount: number;
 }
 
 class SettingsService {
@@ -231,6 +234,9 @@ class SettingsService {
       include_attendance_summary: hr.includeAttendanceSummary ?? allSettings?.include_attendance_summary ?? true,
       enable_performance_reviews: hr.enablePerformanceReviews ?? allSettings?.enable_performance_reviews ?? false,
       enable_employee_self_service: hr.enableEmployeeSelfService ?? allSettings?.enable_employee_self_service ?? true,
+      enable_late_deductions: hr.enableLateDeductions ?? allSettings?.enable_late_deductions ?? false,
+      late_deduction_type: hr.lateDeductionType ?? allSettings?.late_deduction_type ?? 'per_occurrence',
+      late_deduction_amount: hr.lateDeductionAmount ?? allSettings?.late_deduction_amount ?? 50,
     };
   }
 

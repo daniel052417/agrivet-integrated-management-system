@@ -17,8 +17,8 @@ const DailySalesSummary: React.FC = () => {
 
   const [hourlyBreakdown, setHourlyBreakdown] = useState<{ hour: string; hour24: number; sales: number; orders: number; customers: number; percentOfDay: number; trend: 'up' | 'down' | 'flat'; diffAmount: number; }[]>([]);
 
-  const [branchFilter, setBranchFilter] = useState<string>('all');
-  const [branches, setBranches] = useState<{ id: string; name: string }[]>([]);
+  const [cashierBranchFilter, setCashierBranchFilter] = useState<string>('all');
+  const [cashierBranchOptions, setCashierBranchOptions] = useState<{ id: string; cashierId: string; branchId: string; displayName: string }[]>([]);
 
   const [topSellingToday, setTopSellingToday] = useState<{ product: string; quantity: number; revenue: string; percentage: number; }[]>([]);
 
@@ -34,23 +34,84 @@ const DailySalesSummary: React.FC = () => {
 
   useEffect(() => {
     loadDailyData();
-  }, [selectedDate, branchFilter]);
+  }, [selectedDate, cashierBranchFilter]);
 
   useEffect(() => {
-    const loadBranches = async () => {
+    const loadCashierBranchOptions = async () => {
       try {
-        const { data, error } = await supabase
+        // Get all transactions to find unique cashier-branch combinations
+        const startOfDay = new Date(selectedDate);
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(selectedDate);
+        endOfDay.setHours(23, 59, 59, 999);
+
+        const { data: transactions, error: transactionsError } = await supabase
+          .from('pos_transactions')
+          .select('cashier_id, branch_id')
+          .gte('transaction_date', startOfDay.toISOString())
+          .lte('transaction_date', endOfDay.toISOString());
+
+        if (transactionsError) throw transactionsError;
+
+        // Get unique cashier-branch combinations
+        const uniqueCombinations = new Map<string, { cashierId: string; branchId: string | null }>();
+        transactions?.forEach((t: any) => {
+          if (t.cashier_id && t.branch_id) {
+            const key = `${t.cashier_id}-${t.branch_id}`;
+            if (!uniqueCombinations.has(key)) {
+              uniqueCombinations.set(key, { cashierId: t.cashier_id, branchId: t.branch_id });
+            }
+          }
+        });
+
+        // Get cashier names
+        const cashierIds = [...new Set(Array.from(uniqueCombinations.values()).map(c => c.cashierId))];
+        const { data: cashiers, error: cashiersError } = await supabase
+          .from('users')
+          .select('id, first_name, last_name')
+          .in('id', cashierIds)
+          .eq('is_active', true);
+
+        if (cashiersError) throw cashiersError;
+
+        // Get branch names
+        const branchIds = [...new Set(Array.from(uniqueCombinations.values()).map(c => c.branchId).filter(Boolean))];
+        const { data: branches, error: branchesError } = await supabase
           .from('branches')
-          .select('id, name, is_active')
-          .eq('is_active', true)
-          .order('name');
-        if (error) throw error;
-        setBranches([{ id: 'all', name: 'All Branches' } as any, ...((data as any[]) || [])]);
+          .select('id, name')
+          .in('id', branchIds)
+          .eq('is_active', true);
+
+        if (branchesError) throw branchesError;
+
+        // Build options
+        const options = Array.from(uniqueCombinations.entries()).map(([key, combo]) => {
+          const cashier = cashiers?.find(c => c.id === combo.cashierId);
+          const branch = branches?.find(b => b.id === combo.branchId);
+          const cashierName = cashier ? `${cashier.first_name || ''} ${cashier.last_name || ''}`.trim() : 'Unknown Cashier';
+          const branchName = branch?.name || 'Unknown Branch';
+          return {
+            id: key,
+            cashierId: combo.cashierId,
+            branchId: combo.branchId || '',
+            displayName: `${cashierName} - ${branchName}`
+          };
+        }).sort((a, b) => a.displayName.localeCompare(b.displayName));
+
+        const allOptions = [{ id: 'all', cashierId: '', branchId: '', displayName: 'All Cashiers - All Branches' }, ...options];
+        setCashierBranchOptions(allOptions);
+        
+        // Reset filter if current selection doesn't exist in new options
+        if (cashierBranchFilter !== 'all' && !allOptions.some(opt => opt.id === cashierBranchFilter)) {
+          setCashierBranchFilter('all');
+        }
       } catch (e) {
+        console.error('Error loading cashier-branch options:', e);
       }
     };
-    loadBranches();
-  }, []);
+    loadCashierBranchOptions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDate]);
 
   const loadDailyData = async () => {
     try {
@@ -67,32 +128,111 @@ const DailySalesSummary: React.FC = () => {
       const prevEnd = new Date(endOfDay);
       prevEnd.setDate(prevEnd.getDate() - 1);
 
+      // Load POS transactions
       const { data: transactions, error: transactionsError } = await supabase
         .from('pos_transactions')
         .select(`
           id, transaction_date, total_amount, customer_id, cashier_id, branch_id,
-          subtotal, tax_amount, payment_status,
+          subtotal, tax_amount, payment_status, order_id,
           customers:customer_id (first_name, last_name)
         `)
         .gte('transaction_date', startOfDay.toISOString())
         .lte('transaction_date', endOfDay.toISOString())
         .order('transaction_date', { ascending: true });
 
+      // Load online orders
+      const { data: ordersData, error: ordersError } = await supabase
+        .from('orders')
+        .select(`
+          id,
+          order_number,
+          customer_id,
+          branch_id,
+          status,
+          subtotal,
+          tax_amount,
+          total_amount,
+          payment_status,
+          payment_method,
+          order_type,
+          created_at,
+          updated_at,
+          customer_name,
+          customer_email,
+          customer_phone,
+          confirmed_by,
+          completed_by
+        `)
+        .gte('created_at', startOfDay.toISOString())
+        .lte('created_at', endOfDay.toISOString())
+        .order('created_at', { ascending: true });
+
+      if (ordersError) throw ordersError;
+
+      // Filter to get only orders that are NOT yet converted to transactions
+      // Check which order IDs already have corresponding transactions in pos_transactions
+      const orderIdsWithTransactions = new Set(
+        (transactions || [])
+          .map((t: any) => t.order_id)
+          .filter(Boolean) // Only include transactions that have an order_id
+      );
+      
+      // Only include orders that don't have a transaction yet (their id is not in orderIdsWithTransactions)
+      const filteredOrders = (ordersData || []).filter(order => 
+        !orderIdsWithTransactions.has(order.id)
+      );
+
       let filteredTransactions = transactions || [];
-      if (branchFilter !== 'all') {
-        filteredTransactions = filteredTransactions.filter(t => t.branch_id === branchFilter);
+      let filteredOrdersList = filteredOrders || [];
+
+      if (cashierBranchFilter !== 'all') {
+        const selectedOption = cashierBranchOptions.find(opt => opt.id === cashierBranchFilter);
+        if (selectedOption) {
+          filteredTransactions = filteredTransactions.filter(t => 
+            t.cashier_id === selectedOption.cashierId && t.branch_id === selectedOption.branchId
+          );
+          // Filter orders by branch (orders don't have cashier_id, but we can filter by branch)
+          filteredOrdersList = filteredOrdersList.filter(o => o.branch_id === selectedOption.branchId);
+        }
       }
 
+      // Load previous day transactions for comparison
       const { data: prevTransactions, error: prevErr } = await supabase
         .from('pos_transactions')
-        .select(`id, transaction_date, total_amount, branch_id`)
+        .select(`id, transaction_date, total_amount, cashier_id, branch_id, order_id`)
         .gte('transaction_date', prevStart.toISOString())
         .lte('transaction_date', prevEnd.toISOString())
         .order('transaction_date', { ascending: true });
       if (prevErr) throw prevErr;
+
+      // Load previous day orders
+      const { data: prevOrdersData, error: prevOrdersErr } = await supabase
+        .from('orders')
+        .select(`id, created_at, total_amount, branch_id`)
+        .gte('created_at', prevStart.toISOString())
+        .lte('created_at', prevEnd.toISOString());
+      if (prevOrdersErr) throw prevOrdersErr;
+
+      // Filter previous day data - only get orders that don't have transactions yet
+      const prevOrderIdsWithTransactions = new Set(
+        (prevTransactions || [])
+          .map((t: any) => t.order_id)
+          .filter(Boolean)
+      );
+      const filteredPrevOrders = (prevOrdersData || []).filter(order => 
+        !prevOrderIdsWithTransactions.has(order.id)
+      );
+
       let filteredPrev = prevTransactions || [];
-      if (branchFilter !== 'all') {
-        filteredPrev = filteredPrev.filter(t => t.branch_id === branchFilter);
+      let filteredPrevOrdersList = filteredPrevOrders || [];
+      if (cashierBranchFilter !== 'all') {
+        const selectedOption = cashierBranchOptions.find(opt => opt.id === cashierBranchFilter);
+        if (selectedOption) {
+          filteredPrev = filteredPrev.filter(t => 
+            t.cashier_id === selectedOption.cashierId && t.branch_id === selectedOption.branchId
+          );
+          filteredPrevOrdersList = filteredPrevOrdersList.filter(o => o.branch_id === selectedOption.branchId);
+        }
       }
 
       if (transactionsError) throw transactionsError;
@@ -108,6 +248,7 @@ const DailySalesSummary: React.FC = () => {
 
       if (staffError) throw staffError;
 
+      // Load transaction items
       const { data: items, error: itemsError } = await supabase
         .from('pos_transaction_items')
         .select(`
@@ -118,9 +259,43 @@ const DailySalesSummary: React.FC = () => {
 
       if (itemsError) throw itemsError;
 
-      const sales = filteredTransactions?.reduce((sum: number, t: any) => sum + (t.total_amount || 0), 0) || 0;
-      const orders = filteredTransactions?.length || 0;
-      const customers = new Set(filteredTransactions?.map((t: any) => t.customer_id).filter(Boolean)).size;
+      // Load order items
+      const orderIds = filteredOrdersList.map(o => o.id);
+      let orderItems: any[] = [];
+      if (orderIds.length > 0) {
+        const { data: orderItemsData, error: orderItemsError } = await supabase
+          .from('order_items')
+          .select(`
+            id,
+            order_id,
+            product_name,
+            product_sku,
+            quantity,
+            unit_price,
+            line_total,
+            unit_name,
+            unit_label
+          `)
+          .in('order_id', orderIds);
+        
+        if (orderItemsError) throw orderItemsError;
+        orderItems = orderItemsData || [];
+      }
+
+      // Calculate combined metrics
+      const transactionSales = filteredTransactions?.reduce((sum: number, t: any) => sum + (t.total_amount || 0), 0) || 0;
+      const orderSales = filteredOrdersList?.reduce((sum: number, o: any) => sum + (o.total_amount || 0), 0) || 0;
+      const sales = transactionSales + orderSales;
+      const totalTransactions = filteredTransactions?.length || 0;
+      const totalOrdersCount = filteredOrdersList?.length || 0;
+      const orders = totalTransactions + totalOrdersCount;
+      
+      // Combine unique customers from both transactions and orders
+      const transactionCustomers = new Set(filteredTransactions?.map((t: any) => t.customer_id).filter(Boolean));
+      const orderCustomers = new Set(filteredOrdersList?.map((o: any) => o.customer_id).filter(Boolean));
+      const allCustomers = new Set([...transactionCustomers, ...orderCustomers]);
+      const customers = allCustomers.size;
+      
       const avg = orders > 0 ? sales / orders : 0;
 
       setTotalSales(sales);
@@ -143,6 +318,7 @@ const DailySalesSummary: React.FC = () => {
         diffAmount: 0,
       }));
 
+      // Process transactions for hourly breakdown
       filteredTransactions?.forEach((transaction: any) => {
         const hour = new Date(transaction.transaction_date).getHours();
         const idx = hours.indexOf(hour);
@@ -153,10 +329,26 @@ const DailySalesSummary: React.FC = () => {
         }
       });
 
+      // Process orders for hourly breakdown
+      filteredOrdersList?.forEach((order: any) => {
+        const hour = new Date(order.created_at).getHours();
+        const idx = hours.indexOf(hour);
+        if (idx !== -1) {
+          hourlyData[idx].sales += order.total_amount || 0;
+          hourlyData[idx].orders += 1;
+          if (order.customer_id) hourlyData[idx].customers += 1;
+        }
+      });
+
+      // Process previous day data for comparison
       const prevMap = new Map<number, number>();
       filteredPrev?.forEach((t: any) => {
         const h = new Date(t.transaction_date).getHours();
         prevMap.set(h, (prevMap.get(h) || 0) + (t.total_amount || 0));
+      });
+      filteredPrevOrdersList?.forEach((o: any) => {
+        const h = new Date(o.created_at).getHours();
+        prevMap.set(h, (prevMap.get(h) || 0) + (o.total_amount || 0));
       });
 
       hourlyData.forEach((h) => {
@@ -171,7 +363,17 @@ const DailySalesSummary: React.FC = () => {
 
       const productSales = new Map<string, { quantity: number; revenue: number; name: string }>();
       
+      // Process transaction items
       items?.forEach(item => {
+        const productName = item.product_name || 'Unknown Product';
+        const existing = productSales.get(productName) || { quantity: 0, revenue: 0, name: productName };
+        existing.quantity += item.quantity || 0;
+        existing.revenue += item.line_total || 0;
+        productSales.set(productName, existing);
+      });
+
+      // Process order items
+      orderItems?.forEach(item => {
         const productName = item.product_name || 'Unknown Product';
         const existing = productSales.get(productName) || { quantity: 0, revenue: 0, name: productName };
         existing.quantity += item.quantity || 0;
@@ -191,28 +393,89 @@ const DailySalesSummary: React.FC = () => {
 
       setTopSellingToday(topProducts);
 
-      const formattedTransactions = filteredTransactions?.slice(0, 10).map((transaction: any) => {
-        const staffMember = staff?.find(s => s.id === transaction.cashier_id);
-        return {
-          time: new Date(transaction.transaction_date).toLocaleTimeString(),
-          customer: transaction.customers 
-            ? `${(transaction.customers as any).first_name || ''} ${(transaction.customers as any).last_name || ''}`.trim()
-            : 'Walk-in Customer',
-          items: ['Multiple items'],
-          total: transaction.total_amount || 0,
-          payment: transaction.payment_status || 'Unknown',
-          staff: staffMember
-            ? `${staffMember.first_name || ''} ${staffMember.last_name || ''}`.trim()
-            : 'Unknown'
-        };
-      }) || [];
+      // Get users for order staff
+      const orderUserIds = [
+        ...new Set([
+          ...filteredOrdersList.map(o => o.confirmed_by).filter(Boolean),
+          ...filteredOrdersList.map(o => o.completed_by).filter(Boolean)
+        ])
+      ];
+      const { data: orderStaff, error: orderStaffError } = await supabase
+        .from('users')
+        .select('id, first_name, last_name')
+        .in('id', orderUserIds)
+        .eq('is_active', true);
+      
+      if (orderStaffError) console.error('Error loading order staff:', orderStaffError);
+
+      // Combine transactions and orders for recent activity
+      const allRecentRecords = [
+        ...filteredTransactions.map((t: any) => ({
+          id: t.id,
+          date: new Date(t.transaction_date),
+          type: 'transaction',
+          data: t
+        })),
+        ...filteredOrdersList.map((o: any) => ({
+          id: o.id,
+          date: new Date(o.created_at),
+          type: 'order',
+          data: o
+        }))
+      ].sort((a, b) => b.date.getTime() - a.date.getTime())
+      .slice(0, 10);
+
+      const formattedTransactions = allRecentRecords.map((record: any) => {
+        if (record.type === 'transaction') {
+          const transaction = record.data;
+          const staffMember = staff?.find(s => s.id === transaction.cashier_id);
+          return {
+            time: record.date.toLocaleTimeString(),
+            customer: transaction.customers 
+              ? `${(transaction.customers as any).first_name || ''} ${(transaction.customers as any).last_name || ''}`.trim()
+              : 'Walk-in Customer',
+            items: ['Multiple items'],
+            total: transaction.total_amount || 0,
+            payment: transaction.payment_status || 'Unknown',
+            staff: staffMember
+              ? `${staffMember.first_name || ''} ${staffMember.last_name || ''}`.trim()
+              : 'Unknown'
+          };
+        } else {
+          const order = record.data;
+          const confirmedBy = order.confirmed_by ? orderStaff?.find(s => s.id === order.confirmed_by) : null;
+          const completedBy = order.completed_by ? orderStaff?.find(s => s.id === order.completed_by) : null;
+          const staffName = completedBy 
+            ? `${completedBy.first_name || ''} ${completedBy.last_name || ''}`.trim()
+            : confirmedBy 
+            ? `${confirmedBy.first_name || ''} ${confirmedBy.last_name || ''}`.trim()
+            : 'System';
+          
+          return {
+            time: record.date.toLocaleTimeString(),
+            customer: order.customer_name || 'Walk-in Customer',
+            items: ['Multiple items'],
+            total: order.total_amount || 0,
+            payment: order.payment_status || order.status || 'Unknown',
+            staff: staffName
+          };
+        }
+      });
 
       setTodaysTransactions(formattedTransactions);
 
       const paymentData = new Map<string, number>();
-      transactions?.forEach(transaction => {
+      
+      // Process transaction payment statuses
+      filteredTransactions?.forEach(transaction => {
         const status = transaction.payment_status || 'Unknown';
         paymentData.set(status, (paymentData.get(status) || 0) + (transaction.total_amount || 0));
+      });
+
+      // Process order payment statuses
+      filteredOrdersList?.forEach(order => {
+        const status = order.payment_status || order.status || 'Unknown';
+        paymentData.set(status, (paymentData.get(status) || 0) + (order.total_amount || 0));
       });
 
       const colors = ['bg-blue-500', 'bg-green-500', 'bg-yellow-500', 'bg-purple-500', 'bg-red-500'];
@@ -291,15 +554,15 @@ const DailySalesSummary: React.FC = () => {
               className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
             <div className="flex items-center space-x-2">
-              <label className="text-sm font-medium text-gray-700">Branch:</label>
+              <label className="text-sm font-medium text-gray-700">Cashier - Branch:</label>
               <select
-                aria-label="Filter by branch"
-                value={branchFilter}
-                onChange={(e) => setBranchFilter(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                aria-label="Filter by cashier and branch"
+                value={cashierBranchFilter}
+                onChange={(e) => setCashierBranchFilter(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-[250px]"
               >
-                {branches.map((b: any) => (
-                  <option key={b.id} value={b.id}>{b.name}</option>
+                {cashierBranchOptions.map((option) => (
+                  <option key={option.id} value={option.id}>{option.displayName}</option>
                 ))}
               </select>
             </div>

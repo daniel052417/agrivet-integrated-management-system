@@ -107,6 +107,9 @@ const SettingsPage: React.FC = () => {
   const [includeAttendanceSummary, setIncludeAttendanceSummary] = useState(true);
   const [enablePerformanceReviews, setEnablePerformanceReviews] = useState(false);
   const [enableEmployeeSelfService, setEnableEmployeeSelfService] = useState(true);
+  const [enableLateDeductions, setEnableLateDeductions] = useState(false);
+  const [lateDeductionType, setLateDeductionType] = useState<'per_occurrence' | 'per_minute'>('per_occurrence');
+  const [lateDeductionAmount, setLateDeductionAmount] = useState(50);
 
   // Branch management state
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -911,6 +914,9 @@ const SettingsPage: React.FC = () => {
       setIncludeAttendanceSummary((hr.includeAttendanceSummary ?? s.include_attendance_summary) ?? includeAttendanceSummary);
       setEnablePerformanceReviews((hr.enablePerformanceReviews ?? s.enable_performance_reviews) ?? enablePerformanceReviews);
       setEnableEmployeeSelfService((hr.enableEmployeeSelfService ?? s.enable_employee_self_service) ?? enableEmployeeSelfService);
+      setEnableLateDeductions((hr.enableLateDeductions ?? s.enable_late_deductions) ?? enableLateDeductions);
+      setLateDeductionType((hr.lateDeductionType ?? s.late_deduction_type) ?? lateDeductionType);
+      setLateDeductionAmount((hr.lateDeductionAmount ?? s.late_deduction_amount) ?? lateDeductionAmount);
 
       // Branch Settings (load if available)
       const branchSettings = (s as any).branchSettings || {};
@@ -1025,7 +1031,10 @@ const SettingsPage: React.FC = () => {
           enableHRReportsDashboard,
           includeAttendanceSummary,
           enablePerformanceReviews,
-          enableEmployeeSelfService
+          enableEmployeeSelfService,
+          enableLateDeductions,
+          lateDeductionType,
+          lateDeductionAmount
         },
         pos: activeSection === 'pos' ? posSettings : undefined,
         branchSettings: activeSection === 'branches' ? branchSettings : undefined
@@ -2429,6 +2438,59 @@ const SettingsPage: React.FC = () => {
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
               />
             </div>
+            
+            <div>
+              <label className="flex items-center justify-between">
+                <div>
+                  <span className="text-sm font-medium text-gray-700">Enable Late Deductions</span>
+                  <p className="text-xs text-gray-500 mt-1">Deduct pay for late arrivals in payroll</p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={enableLateDeductions}
+                  onChange={(e) => setEnableLateDeductions(e.target.checked)}
+                  className="rounded border-gray-300 text-purple-600 focus:ring-purple-500 ml-4"
+                />
+              </label>
+            </div>
+            
+            {enableLateDeductions && (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Deduction Type
+                    <p className="text-xs text-gray-500 font-normal mt-1">How to calculate late deductions</p>
+                  </label>
+                  <select
+                    value={lateDeductionType}
+                    onChange={(e) => setLateDeductionType(e.target.value as 'per_occurrence' | 'per_minute')}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  >
+                    <option value="per_occurrence">Per Late Occurrence (Fixed Amount)</option>
+                    <option value="per_minute">Per Minute Late</option>
+                  </select>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Deduction Amount (₱)
+                    <p className="text-xs text-gray-500 font-normal mt-1">
+                      {lateDeductionType === 'per_occurrence' 
+                        ? 'Amount deducted per late occurrence' 
+                        : 'Amount deducted per minute late'}
+                    </p>
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={lateDeductionAmount}
+                    onChange={(e) => setLateDeductionAmount(Number(e.target.value))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>

@@ -1,6 +1,63 @@
 -- Migration: Update Payroll Functions to Use HR Settings from system_settings
 -- This migration updates payroll generation to read and apply HR settings
 
+-- Helper function to check if a date is a work day based on work_schedule
+CREATE OR REPLACE FUNCTION is_work_day(p_date DATE, p_work_schedule TEXT)
+RETURNS BOOLEAN AS $$
+DECLARE
+    v_day_name TEXT;
+    v_day_of_week INTEGER;
+    v_work_days TEXT[];
+BEGIN
+    -- If no work schedule, default to weekdays (Mon-Fri)
+    IF p_work_schedule IS NULL OR p_work_schedule = '' THEN
+        v_day_of_week := EXTRACT(DOW FROM p_date);
+        RETURN v_day_of_week >= 1 AND v_day_of_week <= 5;
+    END IF;
+    
+    -- Parse work schedule: "Mon, Tue, Wed, Thu, Fri • 07:00 - 19:00"
+    -- Extract days part (before the bullet)
+    v_work_days := string_to_array(
+        TRIM(SPLIT_PART(p_work_schedule, '•', 1)),
+        ','
+    );
+    
+    -- Get day name abbreviation (Sun, Mon, Tue, etc.)
+    v_day_name := TO_CHAR(p_date, 'Dy');
+    
+    -- Check if day name is in work_days array
+    RETURN v_day_name = ANY(v_work_days);
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+
+-- Helper function to get expected start time from work_schedule
+CREATE OR REPLACE FUNCTION get_expected_start_time(p_date DATE, p_work_schedule TEXT)
+RETURNS TIME AS $$
+DECLARE
+    v_time_part TEXT;
+    v_start_time TEXT;
+BEGIN
+    -- If no work schedule, default to 08:00
+    IF p_work_schedule IS NULL OR p_work_schedule = '' THEN
+        RETURN '08:00'::TIME;
+    END IF;
+    
+    -- Parse work schedule: "Mon, Tue, Wed, Thu, Fri • 07:00 - 19:00"
+    -- Extract time part (after the bullet)
+    v_time_part := TRIM(SPLIT_PART(p_work_schedule, '•', 2));
+    
+    -- Extract start time (before the dash)
+    v_start_time := TRIM(SPLIT_PART(v_time_part, '-', 1));
+    
+    -- Return as TIME type
+    RETURN v_start_time::TIME;
+EXCEPTION
+    WHEN OTHERS THEN
+        -- Default to 08:00 if parsing fails
+        RETURN '08:00'::TIME;
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+
 -- Create or replace function to generate payroll for a period with HR settings
 CREATE OR REPLACE FUNCTION generate_payroll_for_period(p_period_id UUID)
 RETURNS TABLE (
@@ -24,6 +81,9 @@ DECLARE
     v_include_sss_deductions BOOLEAN := true;
     v_include_philhealth_deductions BOOLEAN := true;
     v_include_pagibig_deductions BOOLEAN := true;
+    v_enable_late_deductions BOOLEAN := false;
+    v_late_deduction_type VARCHAR(20) := 'per_occurrence';
+    v_late_deduction_amount DECIMAL := 50.00;
     
     -- Payroll calculation variables
     v_base_salary DECIMAL := 0;
@@ -40,6 +100,7 @@ DECLARE
     v_sss_deduction DECIMAL := 0;
     v_philhealth_deduction DECIMAL := 0;
     v_pagibig_deduction DECIMAL := 0;
+    v_late_deduction DECIMAL := 0;
     v_total_deductions DECIMAL := 0;
     v_net_pay DECIMAL := 0;
     
@@ -132,6 +193,24 @@ BEGIN
         ELSIF v_settings ? 'include_pagibig_deductions' THEN
             v_include_pagibig_deductions := (v_settings->'include_pagibig_deductions')::boolean;
         END IF;
+        
+        IF v_hr_settings ? 'enableLateDeductions' THEN
+            v_enable_late_deductions := (v_hr_settings->'enableLateDeductions')::boolean;
+        ELSIF v_settings ? 'enable_late_deductions' THEN
+            v_enable_late_deductions := (v_settings->'enable_late_deductions')::boolean;
+        END IF;
+        
+        IF v_hr_settings ? 'lateDeductionType' THEN
+            v_late_deduction_type := (v_hr_settings->>'lateDeductionType')::VARCHAR;
+        ELSIF v_settings ? 'late_deduction_type' THEN
+            v_late_deduction_type := (v_settings->>'late_deduction_type')::VARCHAR;
+        END IF;
+        
+        IF v_hr_settings ? 'lateDeductionAmount' THEN
+            v_late_deduction_amount := (v_hr_settings->'lateDeductionAmount')::DECIMAL;
+        ELSIF v_settings ? 'late_deduction_amount' THEN
+            v_late_deduction_amount := (v_settings->'late_deduction_amount')::DECIMAL;
+        END IF;
     END IF;
     
     -- Process each active staff member
@@ -145,7 +224,8 @@ BEGIN
             s.department,
             s.branch_id,
             COALESCE(s.salary, 0) as base_salary,
-            COALESCE(s.daily_allowance, 100.00) as daily_allowance
+            COALESCE(s.daily_allowance, 100.00) as daily_allowance,
+            s.work_schedule
         FROM staff s
         WHERE s.is_active = true
     LOOP
@@ -162,21 +242,24 @@ BEGIN
         v_sss_deduction := 0;
         v_philhealth_deduction := 0;
         v_pagibig_deduction := 0;
+        v_late_deduction := 0;
         v_total_deductions := 0;
         v_net_pay := 0;
         
-        -- Calculate total working days in period (excluding weekends)
+        -- Calculate total working days in period based on work_schedule
         SELECT COUNT(*)::INTEGER
         INTO v_total_working_days
         FROM generate_series(v_start_date, v_end_date, '1 day'::interval) AS day
-        WHERE EXTRACT(DOW FROM day) NOT IN (0, 6); -- Exclude Sunday (0) and Saturday (6)
+        WHERE is_work_day(day::DATE, v_staff.work_schedule);
         
         -- Get attendance data for this period
         SELECT 
             COUNT(*) FILTER (WHERE status = 'present' OR status = 'late' OR status = 'half_day') as days_present,
             COUNT(*) FILTER (WHERE status = 'absent') as absent_days_from_records,
             COUNT(*) as total_records, -- Count all attendance records (present, absent, late, etc.)
-            COALESCE(SUM(overtime_hours), 0) as total_overtime_hours
+            COALESCE(SUM(overtime_hours), 0) as total_overtime_hours,
+            COUNT(*) FILTER (WHERE is_late = true OR status = 'late') as late_occurrences,
+            COALESCE(SUM(late_minutes), 0) as total_late_minutes
         INTO v_attendance
         FROM attendance
         WHERE staff_id = v_staff.id
@@ -192,10 +275,22 @@ BEGIN
             v_absent_days := COALESCE(v_attendance.absent_days_from_records, 0);
             
             -- Add days with no attendance record as absent days
-            -- (days that should have attendance but don't have any record)
-            IF v_total_working_days > v_days_with_records THEN
-                v_absent_days := v_absent_days + (v_total_working_days - v_days_with_records);
-            END IF;
+            -- Only count days that are work days according to work_schedule
+            DECLARE
+                v_missing_work_days INTEGER := 0;
+            BEGIN
+                SELECT COUNT(*)::INTEGER
+                INTO v_missing_work_days
+                FROM generate_series(v_start_date, v_end_date, '1 day'::interval) AS day
+                WHERE is_work_day(day::DATE, v_staff.work_schedule)
+                    AND NOT EXISTS (
+                        SELECT 1 FROM attendance a
+                        WHERE a.staff_id = v_staff.id
+                            AND a.attendance_date = day::DATE
+                    );
+                
+                v_absent_days := v_absent_days + v_missing_work_days;
+            END;
         ELSE
             -- No attendance records at all - all working days are absent
             v_absent_days := v_total_working_days;
@@ -244,6 +339,34 @@ BEGIN
             END;
         END IF;
         
+        -- Calculate late deductions if enabled
+        IF v_enable_late_deductions THEN
+            DECLARE
+                v_late_count INTEGER := 0;
+                v_late_minutes_total INTEGER := 0;
+            BEGIN
+                -- Get late occurrences and total late minutes from attendance
+                SELECT 
+                    COUNT(*) FILTER (WHERE is_late = true OR status = 'late')::INTEGER,
+                    COALESCE(SUM(late_minutes), 0)::INTEGER
+                INTO v_late_count, v_late_minutes_total
+                FROM attendance
+                WHERE staff_id = v_staff.id
+                    AND attendance_date >= v_start_date
+                    AND attendance_date <= v_end_date
+                    AND (is_late = true OR status = 'late');
+                
+                -- Calculate late deduction based on type
+                IF v_late_deduction_type = 'per_occurrence' THEN
+                    -- Fixed amount per late occurrence
+                    v_late_deduction := v_late_count * v_late_deduction_amount;
+                ELSIF v_late_deduction_type = 'per_minute' THEN
+                    -- Amount per minute late
+                    v_late_deduction := v_late_minutes_total * v_late_deduction_amount;
+                END IF;
+            END;
+        END IF;
+        
         -- Calculate deductions based on HR settings
         
         -- Tax deduction
@@ -282,8 +405,8 @@ BEGIN
             END IF;
         END IF;
         
-        -- Calculate total deductions
-        v_total_deductions := v_tax_deduction + v_sss_deduction + v_philhealth_deduction + v_pagibig_deduction;
+        -- Calculate total deductions (including late deductions)
+        v_total_deductions := v_tax_deduction + v_sss_deduction + v_philhealth_deduction + v_pagibig_deduction + v_late_deduction;
         
         -- Calculate net pay
         v_net_pay := v_gross_pay - v_total_deductions;
@@ -331,7 +454,7 @@ BEGIN
             v_philhealth_deduction,
             v_pagibig_deduction,
             0, -- cash_advances
-            0, -- other_deductions
+            v_late_deduction, -- other_deductions (includes late deductions)
             v_total_deductions,
             v_net_pay,
             CASE 
@@ -351,6 +474,7 @@ BEGIN
             sss_deduction = EXCLUDED.sss_deduction,
             philhealth_deduction = EXCLUDED.philhealth_deduction,
             pagibig_deduction = EXCLUDED.pagibig_deduction,
+            other_deductions = EXCLUDED.other_deductions,
             total_deductions = EXCLUDED.total_deductions,
             net_pay = EXCLUDED.net_pay,
             updated_at = now();
