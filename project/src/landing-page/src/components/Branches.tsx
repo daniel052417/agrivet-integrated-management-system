@@ -131,10 +131,7 @@ const Branches = () => {
 
   // Helper function to generate Google Maps link URL (for copying)
   const generateMapLinkUrl = (branchName: string, latitude: number | null, longitude: number | null, address: string): string => {
-    // Normalize branch name for matching
-    const normalizedName = branchName.toLowerCase().trim();
-    
-    // Try to match branch name to get the place ID or use coordinates
+    // Use coordinates if available
     if (latitude && longitude) {
       return `https://www.google.com/maps?q=${latitude},${longitude}`;
     }
